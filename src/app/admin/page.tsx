@@ -6,14 +6,23 @@ import OverviewTab from './components/OverviewTab';
 import KeysTab from './components/KeysTab';
 import ToolsTab from './components/ToolsTab';
 import WebhooksTab from './components/WebhooksTab';
-import type { ProviderInfo, AdminData } from './types';
+import SetupTab from './components/SetupTab';
+import ProviderHealthTab from './components/ProviderHealthTab';
+import RequestLogsTab from './components/RequestLogsTab';
+import type { AdminData } from './types';
 import { TRANSLATIONS } from './translations';
 import { useAdminHandlers } from './adminHandlers';
 
 export default function AdminPage() {
   const [apiKey, setApiKey] = useState('');
   const [lang, setLang] = useState<'zh' | 'en'>('zh');
-  const [activeTab, setActiveTab] = useState<'overview' | 'keys' | 'tools' | 'webhooks'>('overview');
+  const [activeTab, setActiveTab] = useState<'setup' | 'overview' | 'keys' | 'health' | 'logs' | 'tools' | 'webhooks'>('setup');
+  const [setupData, setSetupData] = useState<any>(null);
+  const [providerHealthData, setProviderHealthData] = useState<any>(null);
+  const [requestLogsData, setRequestLogsData] = useState<any>(null);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [providerFilter, setProviderFilter] = useState('');
+  const [v21Loading, setV21Loading] = useState(false);
 
   const t = TRANSLATIONS[lang];
 
@@ -136,6 +145,54 @@ export default function AdminPage() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [authenticated, fetchData]);
+
+
+  const adminFetch = async (path: string) => {
+    const res = await fetch(path, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      cache: 'no-store',
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error?.message || json.error || 'Admin API request failed');
+    return json;
+  };
+
+  const fetchSetup = async () => {
+    setV21Loading(true);
+    try {
+      setSetupData(await adminFetch('/api/admin/setup'));
+    } finally {
+      setV21Loading(false);
+    }
+  };
+
+  const fetchProviderHealth = async () => {
+    setV21Loading(true);
+    try {
+      setProviderHealthData(await adminFetch('/api/admin/provider-health'));
+    } finally {
+      setV21Loading(false);
+    }
+  };
+
+  const fetchRequestLogs = async () => {
+    setV21Loading(true);
+    try {
+      const params = new URLSearchParams({ status: statusFilter, limit: '100' });
+      if (providerFilter.trim()) params.set('provider', providerFilter.trim());
+      setRequestLogsData(await adminFetch(`/api/admin/request-logs?${params.toString()}`));
+    } finally {
+      setV21Loading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!authenticated) return;
+    if (activeTab === 'setup') fetchSetup().catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    if (activeTab === 'health') fetchProviderHealth().catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    if (activeTab === 'logs') fetchRequestLogs().catch((e) => setError(e instanceof Error ? e.message : String(e)));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authenticated, activeTab, statusFilter]);
 
   if (!authenticated) {
     return (
@@ -353,6 +410,12 @@ export default function AdminPage() {
       {/* Tabs list */}
       <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
         <button
+          className={`tab-btn ${activeTab === 'setup' ? 'active' : ''}`}
+          onClick={() => setActiveTab('setup')}
+        >
+          {t.tabSetup}
+        </button>
+        <button
           className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
           onClick={() => setActiveTab('overview')}
         >
@@ -363,6 +426,18 @@ export default function AdminPage() {
           onClick={() => setActiveTab('keys')}
         >
           {t.tabKeys}
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'health' ? 'active' : ''}`}
+          onClick={() => setActiveTab('health')}
+        >
+          {t.tabHealth}
+        </button>
+        <button
+          className={`tab-btn ${activeTab === 'logs' ? 'active' : ''}`}
+          onClick={() => setActiveTab('logs')}
+        >
+          {t.tabLogs}
         </button>
         <button
           className={`tab-btn ${activeTab === 'tools' ? 'active' : ''}`}
@@ -380,6 +455,14 @@ export default function AdminPage() {
 
       {/* Page Body */}
       <div className="content-area">
+        {activeTab === 'setup' && (
+          <SetupTab
+            t={t}
+            setupData={setupData}
+            loading={v21Loading}
+            onRunChecks={fetchSetup}
+          />
+        )}
         {activeTab === 'overview' && (
           <OverviewTab
             data={data!}
@@ -426,6 +509,26 @@ export default function AdminPage() {
             setEditingCustomProvider={setEditingCustomProvider}
             onSaveCustomProvider={handleSaveCustomProvider}
             onDeleteCustomProvider={handleDeleteCustomProvider}
+          />
+        )}
+        {activeTab === 'health' && (
+          <ProviderHealthTab
+            t={t}
+            data={providerHealthData}
+            loading={v21Loading}
+            onRefresh={fetchProviderHealth}
+          />
+        )}
+        {activeTab === 'logs' && (
+          <RequestLogsTab
+            t={t}
+            data={requestLogsData}
+            loading={v21Loading}
+            statusFilter={statusFilter}
+            setStatusFilter={setStatusFilter}
+            providerFilter={providerFilter}
+            setProviderFilter={setProviderFilter}
+            onRefresh={fetchRequestLogs}
           />
         )}
         {activeTab === 'tools' && (

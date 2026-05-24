@@ -13,6 +13,7 @@ import { NextRequest } from 'next/server';
 import { validateAuth, relayRequest, validateBase64ImageSizes } from '@/lib/relay';
 import { RelayError } from '@/lib/errors';
 import { KVUsageStorage, createUsageEvent } from '@/lib/usage';
+import { recordRequestLog } from '@/lib/observability/request-logs';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -42,7 +43,8 @@ function wrapStreamWithUsageTracking(
   providerName: string,
   model: string,
   startTime: number,
-  requestPromptTokens: number
+  requestPromptTokens: number,
+  traceId: string
 ): ReadableStream<Uint8Array> {
   const reader = upstreamBody.getReader();
   const decoder = new TextDecoder();
@@ -66,6 +68,20 @@ function wrapStreamWithUsageTracking(
       isStream: true,
     });
     await usageStorage.record(event);
+    await recordRequestLog({
+      traceId,
+      timestamp: new Date().toISOString(),
+      apiKeyHash,
+      model,
+      provider: providerName,
+      status: 'success',
+      httpStatus: 200,
+      latencyMs,
+      promptTokens,
+      completionTokens,
+      totalTokens: promptTokens + completionTokens,
+      isStream: true,
+    });
   }
 
   return new ReadableStream({
@@ -178,6 +194,9 @@ function estimatePromptTokens(body: { messages?: Array<{ content?: string | Arra
  * Routes requests to the appropriate upstream provider based on model prefix.
  */
 export async function POST(request: NextRequest) {
+  const traceId = request.headers.get('x-request-id') || `trace_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const routeStartTime = Date.now();
+  let requestedModel: string | undefined;
   // 1. Validate authentication
   if (!(await validateAuth(request))) {
     return new Response(
@@ -196,6 +215,7 @@ export async function POST(request: NextRequest) {
   let body;
   try {
     body = await request.json();
+    requestedModel = body?.model;
   } catch {
     return new Response(
       JSON.stringify({
@@ -289,7 +309,8 @@ export async function POST(request: NextRequest) {
         provider.name,
         body.model,
         startTime,
-        estimatedPromptTokens
+        estimatedPromptTokens,
+        traceId
       );
       return new Response(wrappedBody, {
         status: response.status,
@@ -330,6 +351,20 @@ export async function POST(request: NextRequest) {
             isStream: false,
           });
           await usageStorage.record(event);
+          await recordRequestLog({
+            traceId,
+            timestamp: new Date().toISOString(),
+            apiKeyHash: apiKey.hash,
+            model: body.model,
+            provider: provider.name,
+            status: 'success',
+            httpStatus: response.status,
+            latencyMs,
+            promptTokens,
+            completionTokens,
+            totalTokens: promptTokens + completionTokens,
+            isStream: false,
+          });
         } catch (e) {
           console.error('[Usage] non-stream track failed:', e);
         }
