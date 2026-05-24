@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Relay v2.1 Admin Wireframe</title>
+<style>
+:root{--bg:#09090b;--panel:rgba(30,41,59,.45);--line:rgba(255,255,255,.08);--text:#e5e7eb;--muted:#9ca3af;--blue:#60a5fa;--green:#10b981;--yellow:#f59e0b;--red:#ef4444;--violet:#8b5cf6}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at top,#1e293b,#09090b);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans SC",sans-serif}.wrap{max-width:1080px;margin:0 auto;padding:28px}.header,.panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;backdrop-filter:blur(12px);box-shadow:0 4px 30px rgba(0,0,0,.35)}.header{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:18px 20px;margin-bottom:18px}.brand{display:flex;align-items:center;gap:12px}.logo{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,#00f2fe,var(--violet));box-shadow:0 0 24px rgba(96,165,250,.35)}h1{font-size:24px;margin:0}.muted{color:var(--muted);font-size:13px}.tabs{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.tab{padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.03);color:var(--muted)}.tab.active{color:var(--blue);border-color:rgba(96,165,250,.45);background:linear-gradient(135deg,rgba(59,130,246,.16),rgba(139,92,246,.16))}.grid{display:grid;gap:16px}.cols3{grid-template-columns:repeat(3,1fr)}.cols2{grid-template-columns:1.1fr .9fr}.panel{padding:18px}.pill{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:5px 10px;font-size:12px;background:rgba(255,255,255,.04)}.dot{width:7px;height:7px;border-radius:50%}.green{background:var(--green)}.yellow{background:var(--yellow)}.red{background:var(--red)}button{min-height:40px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.04);color:var(--text);padding:0 14px}.primary{background:linear-gradient(135deg,#2563eb,var(--violet));border:0}.code{background:#0d0d14;border:1px solid var(--line);border-radius:12px;padding:14px;font-family:ui-monospace,Menlo,monospace;color:#cbd5e1;overflow:auto}.row{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}.row:last-child{border-bottom:0}@media(max-width:760px){.wrap{padding:16px}.header{align-items:flex-start;flex-direction:column}.cols3,.cols2{grid-template-columns:1fr}.tabs{overflow:auto;flex-wrap:nowrap}.tab{white-space:nowrap}.row{display:grid}}
+</style>
+</head>
+<body><main class="wrap">
+<section class="header">
+  <div class="brand"><div class="logo"></div><div><h1>AI Relay Admin v2.1</h1><div class="muted">Setup Wizard · Provider Health · Request Logs</div></div></div>
+  <button>🔄 Refresh</button>
+</section>
+<nav class="tabs"><span class="tab">📊 Overview</span><span class="tab active">🚀 Setup</span><span class="tab">🔑 Keys</span><span class="tab">🟢 Health</span><span class="tab">🧾 Logs</span><span class="tab">🛡️ Tools</span></nav>
+
+<section class="panel" style="margin-bottom:16px">
+  <div class="row"><div><strong>Finish setup in 5 minutes</strong><div class="muted">Complete environment check, provider key and your first request.</div></div><button class="primary">Continue setup</button></div>
+</section>
+
+<section class="grid cols2" style="margin-bottom:16px">
+  <div class="panel">
+    <h2>🚀 Setup Wizard</h2>
+    <div class="muted">Step 3 of 5 · Code Sample</div>
+    <div class="row"><span><span class="pill"><i class="dot green"></i> Environment ready</span></span><span>Relay Key · Admin Key · KV</span></div>
+    <div class="row"><span><span class="pill"><i class="dot green"></i> Provider tested</span></span><span>OpenAI · 842ms</span></div>
+    <pre class="code">curl https://your-domain.vercel.app/v1/chat/completions \
+  -H "Authorization: Bearer $AI_RELAY_KEY" \
+  -d '{"model":"gpt-4o-mini","messages":[...]}'</pre>
+    <button class="primary">Send test request</button>
+  </div>
+  <div class="panel">
+    <h2>Test Result</h2>
+    <p class="muted">First request preview after sending a prompt.</p>
+    <div class="row"><span>Provider</span><strong>openai</strong></div>
+    <div class="row"><span>Latency</span><strong>842ms</strong></div>
+    <div class="row"><span>Trace ID</span><code>tr_8x29...</code></div>
+  </div>
+</section>
+<section class="grid cols3" style="margin-bottom:16px">
+  <div class="panel"><span class="pill"><i class="dot green"></i> Healthy</span><h2>5</h2><div class="muted">Providers operational</div></div>
+  <div class="panel"><span class="pill"><i class="dot yellow"></i> Degraded</span><h2>1</h2><div class="muted">High latency / lower success rate</div></div>
+  <div class="panel"><span class="pill"><i class="dot red"></i> Down</span><h2>1</h2><div class="muted">Needs attention</div></div>
+</section>
+
+<section class="panel" style="margin-bottom:16px">
+  <h2>🟢 Provider Health</h2>
+  <div class="row"><strong>OpenAI</strong><span class="pill"><i class="dot green"></i> Healthy</span><span>842ms</span><span>99.2%</span><button>Run check</button></div>
+  <div class="row"><strong>Anthropic</strong><span class="pill"><i class="dot yellow"></i> Degraded</span><span>2.8s</span><span>91.4%</span><button>View error</button></div>
+  <div class="row"><strong>Custom Provider</strong><span class="pill"><i class="dot red"></i> Down</span><span>—</span><span>64.0%</span><button>Copy diagnostics</button></div>
+</section>
+
+<section class="panel">
+  <h2>🧾 Request Logs</h2>
+  <div class="row"><span><button>Last 24h</button> <button>All providers</button> <button>Errors first</button></span><button>Search Trace ID</button></div>
+  <div class="row"><code>03:12:09</code><strong>tr_c7a1...</strong><span>gpt-4o-mini</span><span>openai</span><span class="pill"><i class="dot green"></i> 200</span><span>842ms</span></div>
+  <div class="row"><code>03:10:44</code><strong>tr_a9f3...</strong><span>claude-3-5</span><span>anthropic</span><span class="pill"><i class="dot red"></i> 429</span><span>1.2s</span></div>
+  <div class="row"><code>03:08:17</code><strong>tr_1b20...</strong><span>gpt-4o</span><span>fallback → openai</span><span class="pill"><i class="dot yellow"></i> fallback</span><span>2.1s</span></div>
+</section>
+</main></body></html>
