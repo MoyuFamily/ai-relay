@@ -56,7 +56,7 @@ export default function ProviderTable({
           <thead>
             <tr>
               <th style={{ textAlign: 'left', padding: '0.75rem 0.5rem' }}>{t.tblProvider}</th>
-              <th style={{ textAlign: 'center', padding: '0.75rem 0.5rem' }}>{t.tblStatus}</th>
+              <th style={{ textAlign: 'center', padding: '0.75rem 0.5rem', minWidth: '112px', whiteSpace: 'nowrap' }}>{t.tblStatus}</th>
               <th style={{ textAlign: 'center', padding: '0.75rem 0.5rem' }}>{t.tblKeys}</th>
               <th style={{ textAlign: 'center', padding: '0.75rem 0.5rem' }}>{t.tblAvailable}</th>
               <th style={{ textAlign: 'left', padding: '0.75rem 0.5rem' }}>{t.tblModelPrefixes}</th>
@@ -77,12 +77,15 @@ export default function ProviderTable({
                   <td style={{ padding: '0.75rem 0.5rem', fontWeight: '600', color: isSelected ? '#60a5fa' : '#f3f4f6' }}>
                     {isSelected ? '👉 ' : ''}{p.name}
                   </td>
-                  <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center' }}>
+                  <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
                     <span style={{
                       padding: '0.2rem 0.6rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 500,
                       backgroundColor: p.configured ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
                       color: p.configured ? '#34d399' : '#fca5a5',
                       border: p.configured ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      whiteSpace: 'nowrap',
                     }}>
                       {p.configured ? t.statusOk : t.statusNoKeys}
                     </span>

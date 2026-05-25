@@ -37,6 +37,7 @@ const content = {
       api: 'API',
       models: '模型',
       architecture: '架构',
+      admin: '管理后台',
     },
     hero: {
       badge: 'Serverless · One-click Vercel deploy · OpenAI 兼容',
@@ -151,6 +152,7 @@ const content = {
       api: 'API',
       models: 'Models',
       architecture: 'Architecture',
+      admin: 'Admin',
     },
     hero: {
       badge: 'Serverless · One-click Vercel deploy · OpenAI-compatible',
@@ -432,6 +434,9 @@ export default function Homepage({ providers }: { providers: HomepageProvider[] 
           <a href="#models">{t.nav.models}</a>
           <a href="#architecture">{t.nav.architecture}</a>
         </nav>
+        <a className={styles.adminButton} href="/admin">
+          {t.nav.admin}
+        </a>
         <button type="button" className={styles.languageButton} onClick={() => setLanguage(language === 'zh' ? 'en' : 'zh')} aria-label="Switch language">
           <GlobeIcon />
           <span className={language === 'zh' ? styles.activeLanguage : undefined}>中</span>

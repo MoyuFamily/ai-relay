@@ -75,7 +75,7 @@
   left: 0;
   z-index: 20;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 24px;
   height: 64px;
@@ -95,6 +95,7 @@
 
 .brand,
 .navLinks a,
+.adminButton,
 .heroActions a,
 .footer a,
 .deployLink {
@@ -128,13 +129,18 @@
 
 .navLinks {
   display: flex;
+  align-items: center;
   justify-content: center;
   gap: 22px;
   color: var(--muted);
   font-size: 0.92rem;
+  line-height: 1;
 }
 
 .navLinks a {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
   transition: color 0.2s ease;
 }
 
@@ -143,22 +149,38 @@
 }
 
 .languageButton,
+.adminButton,
 .copyButton,
 .centerAction button {
   font: inherit;
 }
 
+.adminButton,
 .languageButton {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
   min-height: 36px;
   padding: 0 12px;
-  border: 1px solid var(--border);
   border-radius: 8px;
+  cursor: pointer;
+}
+
+.adminButton {
+  justify-content: center;
+  border: 1px solid rgba(0, 242, 254, 0.28);
+  background: rgba(0, 242, 254, 0.1);
+  color: #a5fbff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+}
+
+.languageButton {
+  gap: 5px;
+  border: 1px solid var(--border);
   background: rgba(17, 17, 24, 0.76);
   color: var(--muted);
-  cursor: pointer;
   transition: border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -174,6 +196,13 @@
   border-color: var(--border-bright);
   color: var(--text);
   box-shadow: 0 0 22px rgba(0, 242, 254, 0.09);
+}
+
+.adminButton:hover {
+  border-color: var(--border-bright);
+  background: rgba(0, 242, 254, 0.16);
+  color: white;
+  box-shadow: 0 0 22px rgba(0, 242, 254, 0.12);
 }
 
 .activeLanguage {
@@ -1060,15 +1089,28 @@
   }
 
   .navbar {
-    grid-template-columns: auto auto;
+    grid-template-areas:
+      "brand admin lang"
+      "nav nav nav";
+    grid-template-columns: minmax(0, 1fr) auto auto;
     height: auto;
     min-height: 64px;
     padding: 10px 16px;
+    gap: 10px 12px;
+  }
+
+  .brand {
+    grid-area: brand;
+  }
+
+  .adminButton {
+    grid-area: admin;
+    padding: 0 10px;
+    font-size: 0.84rem;
   }
 
   .navLinks {
-    grid-column: 1 / -1;
-    order: 3;
+    grid-area: nav;
     justify-content: flex-start;
     overflow-x: auto;
     padding: 0 0 4px;
@@ -1076,6 +1118,7 @@
   }
 
   .languageButton {
+    grid-area: lang;
     justify-self: end;
   }
 
@@ -1166,6 +1209,7 @@
   .primaryButton,
   .secondaryButton,
   .ghostButton,
+  .adminButton,
   .deployLink,
   .featureCard {
     transition: none;

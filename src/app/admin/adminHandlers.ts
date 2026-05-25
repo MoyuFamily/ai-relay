@@ -127,6 +127,8 @@ export function useAdminHandlers(apiKey: string, t: any) {
 
   const handleAddKey = useCallback(async () => {
     if (!selectedProvider || !newKeyInput.trim()) return;
+    const inputKeys = newKeyInput.split(/\r?\n/).map((key) => key.trim()).filter(Boolean);
+    const inputCount = inputKeys.length;
     setOperationLoading(true);
     setConfigMessage(null);
     try {
@@ -136,14 +138,25 @@ export function useAdminHandlers(apiKey: string, t: any) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({ key: newKeyInput.trim() }),
+        body: JSON.stringify(inputCount > 1 ? { keys: inputKeys } : { key: newKeyInput.trim() }),
       });
       const resData = await res.json();
       if (!res.ok) {
         throw new Error(resData.error?.message || 'Failed to add key');
       }
+      const addedCount = typeof resData.addedCount === 'number' ? resData.addedCount : (resData.added ? 1 : 0);
+      const duplicateCount = typeof resData.duplicateCount === 'number' ? resData.duplicateCount : 0;
+      const batchMessage = inputCount > 1
+        ? t.msgKeysAddedBatch
+          .replace('{added}', String(addedCount))
+          .replace('{duplicates}', String(duplicateCount))
+          .replace('{total}', String(resData.totalCount ?? ''))
+        : t.msgKeyAdded;
       setNewKeyInput('');
-      setConfigMessage({ text: t.msgKeyAdded, type: 'success' });
+      setConfigMessage({ text: batchMessage, type: 'success' });
+      if (inputCount > 1) {
+        alert(batchMessage);
+      }
       await fetchProviderConfig(selectedProvider);
       await fetchData(true);
     } catch (e) {

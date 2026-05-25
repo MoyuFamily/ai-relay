@@ -4,7 +4,7 @@
 // ============================================================
 
 import { NextRequest } from 'next/server';
-import { requireAdminAuth, getManagedKeys, addManagedKey, removeManagedKey, setManagedKeys, tryDecodeBase64 } from '@/lib/admin';
+import { requireAdminAuth, getManagedKeys, removeManagedKey, setManagedKeys, tryDecodeBase64 } from '@/lib/admin';
 import { getAllProviders } from '@/lib/providers';
 import { hashKey, updateMemoryKeyPool } from '@/lib/relay';
 import { KVUsageStorage } from '@/lib/usage';
@@ -70,8 +70,8 @@ export async function GET(request: NextRequest, { params }: { params: Params }) 
 /**
  * POST /api/admin/providers/:provider/keys
  *
- * Add an API key for a provider.
- * Body: { key: "sk-..." }
+ * Add one or more API keys for a provider.
+ * Body: { key: "sk-..." } or { keys: ["sk-...", "sk-..."] }
  */
 export async function POST(request: NextRequest, { params }: { params: Params }) {
   const authErr = requireAdminAuth(request);
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest, { params }: { params: Params })
     );
   }
 
-  let body: { key?: unknown };
+  let body: { key?: unknown; keys?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -97,30 +97,82 @@ export async function POST(request: NextRequest, { params }: { params: Params })
     );
   }
 
-  if (!body.key || typeof body.key !== 'string' || body.key.trim().length === 0) {
+  const rawKeys = Array.isArray(body.keys)
+    ? body.keys
+    : typeof body.key === 'string'
+      ? [body.key]
+      : [];
+
+  if (rawKeys.length === 0) {
     return Response.json(
-      { error: { message: 'body.key must be a non-empty string', code: 400 } },
+      { error: { message: 'Provide body.key as a non-empty string or body.keys as an array', code: 400 } },
       { status: 400 }
     );
   }
 
-  const newKey = tryDecodeBase64(body.key.trim());
+  const decodedKeys = rawKeys
+    .filter((key): key is string => typeof key === 'string')
+    .map((key) => tryDecodeBase64(key.trim()))
+    .filter(Boolean);
+
+  if (decodedKeys.length === 0) {
+    return Response.json(
+      { error: { message: 'No valid keys provided', code: 400 } },
+      { status: 400 }
+    );
+  }
+
   const envKeys = config.envKeyField
     ? (process.env[config.envKeyField] || '').split(',').map((k) => k.trim()).filter(Boolean)
     : [];
+  const existing = await getManagedKeys(provider);
+  const current = existing ? [...existing] : [...envKeys];
+  const initialCount = current.length;
+  const addedKeys: string[] = [];
+  const duplicateKeys: string[] = [];
+  const results: Array<{ hash: string; masked: string; added: boolean; duplicate: boolean }> = [];
 
-  const result = await addManagedKey(provider, newKey, envKeys);
-  updateMemoryKeyPool(provider, result);
+  for (const newKey of decodedKeys) {
+    if (current.includes(newKey)) {
+      duplicateKeys.push(newKey);
+      results.push({
+        hash: hashKey(newKey),
+        masked: maskKey(newKey),
+        added: false,
+        duplicate: true,
+      });
+      continue;
+    }
+    current.push(newKey);
+    addedKeys.push(newKey);
+    results.push({
+      hash: hashKey(newKey),
+      masked: maskKey(newKey),
+      added: true,
+      duplicate: false,
+    });
+  }
+
+  if (addedKeys.length > 0) {
+    await setManagedKeys(provider, current);
+    updateMemoryKeyPool(provider, current);
+  }
 
   return Response.json({
     provider,
-    keyHash: hashKey(newKey),
-    masked: maskKey(newKey),
-    totalCount: result.length,
-    message: result.length === envKeys.length + 1
-      ? 'Key added'
-      : 'Key already exists',
-    added: result.length > (await getManagedKeys(provider))?.length! - 1,
+    keyHash: addedKeys.length === 1 ? hashKey(addedKeys[0]) : null,
+    masked: addedKeys.length === 1 ? maskKey(addedKeys[0]) : null,
+    totalCount: current.length,
+    addedCount: addedKeys.length,
+    duplicateCount: duplicateKeys.length,
+    submittedCount: decodedKeys.length,
+    message: addedKeys.length === 0
+      ? 'Keys already exist'
+      : addedKeys.length === 1
+        ? 'Key added'
+        : `${addedKeys.length} keys added`,
+    added: current.length > initialCount,
+    results,
   });
 }
 

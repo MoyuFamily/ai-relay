@@ -221,7 +221,7 @@ Generate time-limited keys from the Admin dashboard:
 |----------|---------------|--------|
 | OpenAI | gpt-4o, gpt-4, gpt-3.5-turbo | ✅ Built-in |
 | Anthropic (Claude) | claude-3.5-sonnet, claude-3-opus | ✅ Built-in |
-| DeepSeek | deepseek-chat, deepseek-coder | ✅ Built-in |
+| DeepSeek | deepseek-v4-flash, deepseek-v4-pro | ✅ Built-in |
 | Xiaomi (MiMo) | mimo-7b | ✅ Built-in |
 | Custom | Any OpenAI-compatible API | ✅ Configurable |
 

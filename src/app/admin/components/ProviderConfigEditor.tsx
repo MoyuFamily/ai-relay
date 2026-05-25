@@ -73,6 +73,8 @@ export default function ProviderConfigEditor({
 
   const currentProviderObj = selectedProvider ? data.providers.find(p => p.id === selectedProvider) : undefined;
   const providerModels = useMemo(() => currentProviderObj?.models || [], [currentProviderObj]);
+  const inputKeyCount = newKeyInput.split(/\r?\n/).map((key) => key.trim()).filter(Boolean).length;
+  const canTestInputKey = inputKeyCount === 1;
 
   useEffect(() => {
     if (selectedInputModel && !providerModels.some((m) => m.id === selectedInputModel)) {
@@ -252,21 +254,24 @@ export default function ProviderConfigEditor({
 
             {/* Add Key Form */}
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-              <input
-                type="password"
+              <textarea
                 placeholder={t.addKeyPlaceholder}
                 value={newKeyInput}
                 onChange={(e) => setNewKeyInput(e.target.value)}
                 disabled={operationLoading}
+                rows={3}
                 style={{
                   flex: 1,
                   padding: '0.6rem 0.8rem',
                   minWidth: '220px',
+                  minHeight: '86px',
+                  resize: 'vertical',
                   borderRadius: '6px',
                   border: '1px solid rgba(255, 255, 255, 0.08)',
                   backgroundColor: 'rgba(0, 0, 0, 0.25)',
                   color: '#fff',
                   fontSize: '0.9rem',
+                  lineHeight: 1.45,
                   outline: 'none',
                   transition: 'border-color 0.2s',
                 }}
@@ -305,7 +310,7 @@ export default function ProviderConfigEditor({
               </select>
               <button
                 onClick={() => onTestInputKey(selectedInputModel)}
-                disabled={operationLoading || testingInput || !newKeyInput.trim()}
+                disabled={operationLoading || testingInput || !newKeyInput.trim() || !canTestInputKey}
                 style={{
                   padding: '0.6rem 1rem',
                   borderRadius: '6px',
@@ -314,8 +319,8 @@ export default function ProviderConfigEditor({
                   color: '#60a5fa',
                   fontWeight: '500',
                   fontSize: '0.9rem',
-                  cursor: operationLoading || testingInput || !newKeyInput.trim() ? 'not-allowed' : 'pointer',
-                  opacity: operationLoading || testingInput || !newKeyInput.trim() ? 0.5 : 1,
+                  cursor: operationLoading || testingInput || !newKeyInput.trim() || !canTestInputKey ? 'not-allowed' : 'pointer',
+                  opacity: operationLoading || testingInput || !newKeyInput.trim() || !canTestInputKey ? 0.5 : 1,
                   transition: 'all 0.2s',
                 }}
                 onMouseEnter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.2)'; }}

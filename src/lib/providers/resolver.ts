@@ -17,6 +17,8 @@ const MODEL_ALIASES: Record<string, string> = {
   'claude-3-opus': 'claude-3-opus-20240229',
   'claude-3-sonnet': 'claude-3-5-sonnet-20241022',
   'claude-3-haiku': 'claude-3-5-haiku-20241022',
+  'deepseek-chat': 'deepseek-v4-flash',
+  'deepseek-reasoner': 'deepseek-v4-pro',
 };
 
 /**
@@ -138,16 +140,16 @@ export async function resolveFallbackModel(originalModel: string, targetProvider
   // 2. Otherwise, map based on the target provider
   switch (targetProviderName) {
     case 'deepseek':
-      // Map reasoning models to deepseek-reasoner, others to deepseek-chat
+      // Map reasoning models to DeepSeek V4 Pro, others to DeepSeek V4 Flash
       if (
         lowerModel.startsWith('o1') ||
         lowerModel.startsWith('o3') ||
         lowerModel.includes('reasoner') ||
         lowerModel.includes('r1')
       ) {
-        return 'deepseek-reasoner';
+        return 'deepseek-v4-pro';
       }
-      return 'deepseek-chat';
+      return 'deepseek-v4-flash';
 
     case 'xiaomi_sgp_coding':
       // SGP has both mimo-v2.5-pro-sgp and mimo-v2.5-flash-sgp

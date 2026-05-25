@@ -221,7 +221,7 @@ for chunk in stream:
 |----------|---------|------|
 | OpenAI | gpt-4o, gpt-4, gpt-3.5-turbo | ✅ 内置 |
 | Anthropic (Claude) | claude-3.5-sonnet, claude-3-opus | ✅ 内置 |
-| DeepSeek | deepseek-chat, deepseek-coder | ✅ 内置 |
+| DeepSeek | deepseek-v4-flash, deepseek-v4-pro | ✅ 内置 |
 | Xiaomi (MiMo) | mimo-7b | ✅ 内置 |
 | 自定义 | 任意 OpenAI 兼容 API | ✅ 可配置 |
 

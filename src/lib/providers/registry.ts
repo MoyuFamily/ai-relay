@@ -90,8 +90,8 @@ export const PROVIDERS: Record<string, ProviderConfig> = {
     envKeyField: 'DEEPSEEK_KEYS',
     envBaseUrlField: 'DEEPSEEK_BASE_URL',
     models: [
-      { id: 'deepseek-chat', displayName: 'DeepSeek V3', contextWindow: 64000, maxOutput: 8192, supportsStream: true, supportsTools: true, pricing: { input: 0.27, output: 1.1 } },
-      { id: 'deepseek-reasoner', displayName: 'DeepSeek R1', contextWindow: 64000, maxOutput: 8192, supportsStream: true, pricing: { input: 0.55, output: 2.19 } },
+      { id: 'deepseek-v4-flash', displayName: 'DeepSeek V4 Flash', contextWindow: 1048576, maxOutput: 393216, supportsStream: true, supportsTools: true, pricing: { input: 0.14, output: 0.28 } },
+      { id: 'deepseek-v4-pro', displayName: 'DeepSeek V4 Pro', contextWindow: 1048576, maxOutput: 393216, supportsStream: true, supportsTools: true, pricing: { input: 0.435, output: 0.87 } },
     ],
   },
   // ⚠️ xiaomi 排在前面，同为 mimo- 前缀时优先作为默认解析
