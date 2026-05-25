@@ -61,7 +61,7 @@ describe('iteration one provider CRUD UI helpers', () => {
   });
 
   it('validates API key input before running connectivity test', () => {
-    expect(validateApiKeyInput('sk-123...7890')).toBeNull();
+    expect(validateApiKeyInput('sk-1234567890abcdef1234')).toBeNull();
     expect(validateApiKeyInput('')).toBe('missing-api-key');
     expect(validateApiKeyInput('short')).toBe('api-key-too-short');
     expect(validateApiKeyInput('sk-has whitespace 1234567890')).toBe('api-key-has-space');

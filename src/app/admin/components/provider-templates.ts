@@ -214,7 +214,7 @@ export function validateApiKeyInput(apiKey: string): string | null {
   if (!trimmed) {
     return 'missing-api-key';
   }
-  if (trimmed.length < 10) {
+  if (trimmed.length < 20) {
     return 'api-key-too-short';
   }
   if (/\s/.test(trimmed)) {
