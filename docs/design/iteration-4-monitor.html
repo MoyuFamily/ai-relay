@@ -1,504 +1,612 @@
-     1|     1|     1|     1|<!doctype html>
-     2|     2|     2|     2|<html lang="zh-CN">
-     3|     3|     3|     3|<head>
-     4|     4|     4|     4|<meta charset="utf-8" />
-     5|     5|     5|     5|<meta name="viewport" content="width=device-width, initial-scale=1" />
-     6|     6|     6|     6|<title>AI Relay 迭代四 — 监控与报告 UI 设计稿</title>
-     7|     7|     7|     7|<style>
-     8|     8|     8|     8|/* ===== Design Tokens (dark glassmorphism) ===== */
-     9|     9|     9|     9|:root {
-    10|    10|    10|    10|  --bg: #09090b;
-    11|    11|    11|    11|  --bg-radial: radial-gradient(circle at top, #1e293b, #09090b);
-    12|    12|    12|    12|  --panel: rgba(30,41,59,.45);
-    13|    13|    13|    13|  --panel-hover: rgba(30,41,59,.6);
-    14|    14|    14|    14|  --line: rgba(255,255,255,.08);
-    15|    15|    15|    15|  --line-active: rgba(96,165,250,.45);
-    16|    16|    16|    16|  --text: #e5e7eb;
-    17|    17|    17|    17|  --muted: #9ca3af;
-    18|    18|    18|    18|  --blue: #60a5fa;
-    19|    19|    19|    19|  --green: #34d399;
-    20|    20|    20|    20|  --yellow: #fbbf24;
-    21|    21|    21|    21|  --red: #f87171;
-    22|    22|    22|    22|  --gray: #6b7280;
-    23|    23|    23|    23|  --violet: #8b5cf6;
-    24|    24|    24|    24|  --gradient-primary: linear-gradient(135deg, #2563eb, var(--violet));
-    25|    25|    25|    25|  --gradient-active: linear-gradient(135deg, rgba(59,130,246,.16), rgba(139,92,246,.16));
-    26|    26|    26|    26|  --radius-sm: 8px;
-    27|    27|    27|    27|  --radius-md: 12px;
-    28|    28|    28|    28|  --radius-lg: 16px;
-    29|    29|    29|    29|  --radius-pill: 999px;
-    30|    30|    30|    30|  --shadow-panel: 0 4px 30px rgba(0,0,0,.35);
-    31|    31|    31|    31|  --blur: blur(12px);
-    32|    32|    32|    32|}
-    33|    33|    33|    33|* { box-sizing: border-box; margin: 0; padding: 0; }
-    34|    34|    34|    34|body {
-    35|    35|    35|    35|  background: var(--bg-radial);
-    36|    36|    36|    36|  color: var(--text);
-    37|    37|    37|    37|  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
-    38|    38|    38|    38|  line-height: 1.6;
-    39|    39|    39|    39|  min-height: 100vh;
-    40|    40|    40|    40|}
-    41|    41|    41|    41|.wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px; }
-    42|    42|    42|    42|.section-title {
-    43|    43|    43|    43|  font-size: 14px; font-weight: 600; color: var(--muted);
-    44|    44|    44|    44|  text-transform: uppercase; letter-spacing: 1px;
-    45|    45|    45|    45|  margin: 36px 0 16px; padding-bottom: 8px;
-    46|    46|    46|    46|  border-bottom: 1px solid var(--line);
-    47|    47|    47|    47|}
-    48|    48|    48|    48|.section-title:first-child { margin-top: 0; }
-    49|    49|    49|    49|</style>
-    50|    50|    50|    50|</head>
-    51|    51|    51|    51|<body>
-    52|    52|    52|    52|<div class="wrap">
-    53|    53|    53|    53|
-    54|    54|    54|    54|<!-- ===== Header ===== -->
-    55|    55|    55|    55|<h1 style="font-size:22px;font-weight:700;background:var(--gradient-primary);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">
-    56|    56|    56|    56|  迭代四 — 监控与报告 UI 设计稿
-    57|    57|    57|    57|</h1>
-    58|    58|    58|    58|<p style="color:var(--muted);font-size:13px;margin-top:6px;">
-    59|    59|    59|    59|  AI Relay · 巡检状态 + 用量仪表盘 · 设计师：像素姐 · 2026-05-26
-    60|    60|    60|    60|</p>
-    61|    61|    61|    61|
-    62|    62|    62|<!-- ===== SECTION 1: Provider Health 面板 ===== -->
-    63|    63|    63|<div class="section-title">1. Provider Health — 健康状态卡片</div>
-    64|    64|    64|
-    65|    65|    65|<style>
-    66|    66|    66|.panel {
-    67|    67|    67|  background: var(--panel); border: 1px solid var(--line);
-    68|    68|    68|  border-radius: var(--radius-lg); padding: 24px;
-    69|    69|    69|  backdrop-filter: var(--blur); box-shadow: var(--shadow-panel);
-    70|    70|    70|  margin-bottom: 20px;
-    71|    71|    71|}
-    72|    72|    72|.panel:hover { background: var(--panel-hover); }
-    73|    73|    73|.health-grid {
-    74|    74|    74|  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
-    75|    75|    75|}
-    76|    76|    76|.health-card {
-    77|    77|    77|  background: var(--panel); border: 1px solid var(--line);
-    78|    78|    78|  border-radius: var(--radius-md); padding: 20px;
-    79|    79|    79|  backdrop-filter: var(--blur); cursor: pointer;
-    80|    80|    80|  transition: all .2s ease; position: relative; overflow: hidden;
-    81|    81|    81|}
-    82|    82|    82|.health-card:hover {
-    83|    83|    83|  background: var(--panel-hover); border-color: var(--line-active);
-    84|    84|    84|  transform: translateY(-2px); box-shadow: var(--shadow-panel);
-    85|    85|    85|}
-    86|    86|    86|.health-card-header {
-    87|    87|    87|  display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
-    88|    88|    88|}
-    89|    89|    89|.health-card-name { display: flex; align-items: center; gap: 10px; }
-    90|    90|    90|.health-card-name .icon {
-    91|    91|    91|  width: 32px; height: 32px; border-radius: var(--radius-sm);
-    92|    92|    92|  background: rgba(255,255,255,.06); display: flex;
-    93|    93|    93|  align-items: center; justify-content: center; font-size: 16px;
-    94|    94|    94|}
-    95|    95|    95|.health-card-name .name { font-size: 15px; font-weight: 600; }
-    96|    96|    96|.status-badge {
-    97|    97|    97|  display: inline-flex; align-items: center; gap: 6px;
-    98|    98|    98|  padding: 3px 10px; border-radius: var(--radius-pill);
-    99|    99|    99|  font-size: 12px; font-weight: 600;
-   100|   100|   100|}
-   101|   101|   101|.status-badge .dot {
-   102|   102|   102|  width: 8px; height: 8px; border-radius: 50%;
-   103|   103|   103|  display: inline-block; position: relative;
-   104|   104|   104|}
-   105|   105|   105|.status-badge .dot::after {
-   106|   106|   106|  content: ""; position: absolute; inset: -3px;
-   107|   107|   107|  border-radius: 50%; opacity: .3;
-   108|   108|   108|}
-   109|   109|   109|.status-healthy { background: rgba(52,211,153,.1); color: var(--green); }
-   110|   110|   110|.status-healthy .dot { background: var(--green); }
-   111|   111|   111|.status-healthy .dot::after { border: 2px solid var(--green); animation: pulse-g 2s infinite; }
-   112|   112|   112|.status-degraded { background: rgba(251,191,36,.1); color: var(--yellow); }
-   113|   113|   113|.status-degraded .dot { background: var(--yellow); }
-   114|   114|   114|.status-degraded .dot::after { border: 2px solid var(--yellow); animation: pulse-y 2s infinite; }
-   115|   115|   115|.status-down { background: rgba(248,113,113,.1); color: var(--red); }
-   116|   116|   116|.status-down .dot { background: var(--red); }
-   117|   117|   117|.status-down .dot::after { border: 2px solid var(--red); animation: pulse-r 1.5s infinite; }
-   118|   118|   118|.status-unknown { background: rgba(107,114,128,.1); color: var(--gray); }
-   119|   119|   119|.status-unknown .dot { background: var(--gray); }
-   120|   120|   120|@keyframes pulse-g { 0%,100%{opacity:.3;transform:scale(1)} 50%{opacity:.6;transform:scale(1.4)} }
-   121|   121|   121|@keyframes pulse-y { 0%,100%{opacity:.3;transform:scale(1)} 50%{opacity:.5;transform:scale(1.3)} }
-   122|   122|   122|@keyframes pulse-r { 0%,100%{opacity:.4;transform:scale(1)} 50%{opacity:.8;transform:scale(1.5)} }
-   123|   123|   123|.health-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
-   124|   124|   124|.stat-item { font-size: 12px; color: var(--muted); }
-   125|   125|   125|.stat-item .val { font-size: 14px; font-weight: 600; color: var(--text); }
-   126|   126|   126|.sparkline-wrap { height: 36px; margin-top: 8px; position: relative; }
-   127|   127|   127|.sparkline-wrap svg { width: 100%; height: 100%; }
-   128|   128|   128|.sparkline-wrap .sparkline-label {
-   129|   129|   129|  position: absolute; right: 0; top: -2px; font-size: 10px; color: var(--muted);
-   130|   130|   130|}
-   131|   131|   131|.health-card-footer {
-   132|   132|   132|  display: flex; align-items: center; justify-content: space-between;
-   133|   133|   133|  margin-top: 10px; font-size: 11px; color: var(--muted);
-   134|   134|   134|}
-   135|   135|   135|.health-card-footer .hint { color: var(--blue); }
-   136|   136|   136|</style>
-   137|   137|   137|
-   138|   138|   138|<div class="panel">
-   139|   139|   139|  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
-   140|   140|   140|    <div>
-   141|   141|   141|      <h2 style="font-size:17px;font-weight:700;">🏥 Provider Health</h2>
-   142|   142|   142|      <p style="font-size:12px;color:var(--muted);margin-top:2px;">最近巡检：2 分钟前 · 自动刷新间隔 60s</p>
-   143|   143|   143|    </div>
-   144|   144|   144|    <button style="background:var(--gradient-primary);color:#fff;border:none;padding:8px 18px;border-radius:var(--radius-pill);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">
-   145|   145|   145|      🔄 手动巡检
-   146|   146|   146|    </button>
-   147|   147|   147|  </div>
-   148|   148|   148|
-   149|   149|   149|  <div class="health-grid">
-   150|   150|   150|
-   151|   151|   151|    <!-- OpenAI — Healthy -->
-   152|   152|   152|    <div class="health-card">
-   153|   153|   153|      <div class="health-card-header">
-   154|   154|   154|        <div class="health-card-name"><div class="icon">🟢</div><div class="name">OpenAI</div></div>
-   155|   155|   155|        <span class="status-badge status-healthy"><span class="dot"></span>Healthy</span>
-   156|   156|   156|      </div>
-   157|   157|   157|      <div class="health-stats">
-   158|   158|   158|        <div class="stat-item">可用 Key<span class="val" style="display:block;color:var(--green)">3 / 5</span></div>
-   159|   159|   159|        <div class="stat-item">响应时间<span class="val" style="display:block">234ms</span></div>
-   160|   160|   160|      </div>
-   161|   161|   161|      <div class="sparkline-wrap">
-   162|   162|   162|        <span class="sparkline-label">7 天趋势</span>
-   163|   163|   163|        <svg viewBox="0 0 200 36" preserveAspectRatio="none">
-   164|   164|   164|          <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#34d399" stop-opacity=".3"/><stop offset="100%" stop-color="#34d399" stop-opacity="0"/></linearGradient></defs>
-   165|   165|   165|          <path d="M0,34 L28,34 L57,32 L85,34 L114,34 L142,33 L171,34 L200,34 L200,36 L0,36Z" fill="url(#sg)"/>
-   166|   166|   166|          <polyline points="0,34 28,34 57,32 85,34 114,34 142,33 171,34 200,34" fill="none" stroke="#34d399" stroke-width="1.5"/>
-   167|   167|   167|        </svg>
-   168|   168|   168|      </div>
-   169|   169|   169|      <div class="health-card-footer">
-   170|   170|   170|        <span>上次巡检：10:30 UTC</span>
-   171|   171|   171|        <span class="hint">点击查看详情 →</span>
-   172|   172|   172|      </div>
-   173|   173|   173|    </div>
-   174|   174|   174|
-   175|   175|   175|    <!-- DeepSeek — Down -->
-   176|   176|   176|    <div class="health-card" style="border-color:rgba(248,113,113,.25);">
-   177|   177|   177|      <div class="health-card-header">
-   178|   178|   178|        <div class="health-card-name"><div class="icon">🔴</div><div class="name">DeepSeek</div></div>
-   179|   179|   179|        <span class="status-badge status-down"><span class="dot"></span>Down</span>
-   180|   180|   180|      </div>
-   181|   181|   181|      <div class="health-stats">
-   182|   182|   182|        <div class="stat-item">可用 Key<span class="val" style="display:block;color:var(--red)">0 / 3</span></div>
-   183|   183|   183|        <div class="stat-item">响应时间<span class="val" style="display:block;color:var(--muted)">—</span></div>
-   184|   184|   184|      </div>
-   185|   185|   185|      <div class="sparkline-wrap">
-   186|   186|   186|        <span class="sparkline-label">7 天趋势</span>
-   187|   187|   187|        <svg viewBox="0 0 200 36" preserveAspectRatio="none">
-   188|   188|   188|          <defs><linearGradient id="sr" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f87171" stop-opacity=".3"/><stop offset="100%" stop-color="#f87171" stop-opacity="0"/></linearGradient></defs>
-   189|   189|   189|          <path d="M0,8 L28,10 L57,34 L85,34 L114,34 L142,34 L171,34 L200,34 L200,36 L0,36Z" fill="url(#sr)"/>
-   190|   190|   190|          <polyline points="0,8 28,10 57,34 85,34 114,34 142,34 171,34 200,34" fill="none" stroke="#f87171" stroke-width="1.5"/>
-   191|   191|   191|          <circle cx="57" cy="34" r="3" fill="#f87171"/><circle cx="85" cy="34" r="3" fill="#f87171"/>
-   192|   192|   192|        </svg>
-   193|   193|   193|      </div>
-   194|   194|   194|      <div class="health-card-footer">
-   195|   195|   195|        <span>错误：ETIMEDOUT · 连续 2 次失败</span>
-   196|   196|   196|        <span style="color:var(--red)">⚠ 需要处理</span>
-   197|   197|   197|      </div>
-   198|   198|   198|    </div>
-   199|   199|   199|
-   200|   200|   200|    <!-- Claude — Degraded -->
-   201|   201|   201|    <div class="health-card" style="border-color:rgba(251,191,36,.2);">
-   202|   202|   202|      <div class="health-card-header">
-   203|   203|   203|        <div class="health-card-name"><div class="icon">🟡</div><div class="name">Claude</div></div>
-   204|   204|   204|        <span class="status-badge status-degraded"><span class="dot"></span>Degraded</span>
-   205|   205|   205|      </div>
-   206|   206|   206|      <div class="health-stats">
-   207|   207|   207|        <div class="stat-item">可用 Key<span class="val" style="display:block;color:var(--yellow)">2 / 4</span></div>
-   208|   208|   208|        <div class="stat-item">响应时间<span class="val" style="display:block;color:var(--yellow)">5,823ms</span></div>
-   209|   209|   209|      </div>
-   210|   210|   210|      <div class="sparkline-wrap">
-   211|   211|   211|        <span class="sparkline-label">7 天趋势</span>
-   212|   212|   212|        <svg viewBox="0 0 200 36" preserveAspectRatio="none">
-   213|   213|   213|          <defs><linearGradient id="sy" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#fbbf24" stop-opacity=".25"/><stop offset="100%" stop-color="#fbbf24" stop-opacity="0"/></linearGradient></defs>
-   214|   214|   214|          <path d="M0,28 L28,10 L57,12 L85,20 L114,18 L142,26 L171,22 L200,28 L200,36 L0,36Z" fill="url(#sy)"/>
-   215|   215|   215|          <polyline points="0,28 28,10 57,12 85,20 114,18 142,26 171,22 200,28" fill="none" stroke="#fbbf24" stroke-width="1.5"/>
-   216|   216|   216|          <circle cx="142" cy="26" r="3" fill="#fbbf24"/>
-   217|   217|   217|        </svg>
-   218|   218|   218|      </div>
-   219|   219|   219|      <div class="health-card-footer">
-   220|   220|   220|        <span>响应超时 >5s · HTTP 429</span>
-   221|   221|   221|        <span class="hint">点击查看详情 →</span>
-   222|   222|   222|      </div>
-   223|   223|   223|    </div>
-   224|   224|   224|
-   225|   225|   225|  </div>
-   226|   226|   226|
-   227|   227|   227|  <!-- Unknown edge case -->
-   228|   228|   228|  <div style="margin-top:12px;">
-   229|   229|   229|    <div class="health-card" style="display:inline-flex;align-items:center;gap:14px;padding:14px 20px;">
-   230|   230|   230|      <span class="status-badge status-unknown"><span class="dot"></span>Unknown</span>
-   231|   231|   231|      <span style="font-size:13px;">Groq · 无可用 Key，跳过巡检</span>
-   232|   232|   232|      <span style="font-size:12px;color:var(--muted);margin-left:auto;">请先配置 API Key</span>
-   233|   233|   233|    </div>
-   234|   234|   234|  </div>
-   235|   235|   235|</div>
-   236|   236|   236|
-   237|   237|<!-- ===== SECTION 2: 巡检历史 — 展开面板时间线 ===== -->
-   238|   238|<div class="section-title">2. 巡检历史 — 时间线（点击供应商卡片展开）</div>
-   239|   239|
-   240|   240|<style>
-   241|   241|.timeline-panel {
-   242|   242|  background: var(--panel); border: 1px solid var(--line);
-   243|   243|  border-radius: var(--radius-lg); padding: 24px;
-   244|   244|  backdrop-filter: var(--blur); box-shadow: var(--shadow-panel);
-   245|   245|  margin-bottom: 20px;
-   246|   246|}
-   247|   247|.timeline-header {
-   248|   248|  display: flex; align-items: center; justify-content: space-between;
-   249|   249|  margin-bottom: 20px; padding-bottom: 14px;
-   250|   250|  border-bottom: 1px solid var(--line);
-   251|   251|}
-   252|   252|.timeline-header h3 { font-size: 15px; font-weight: 700; }
-   253|   253|.timeline-header .close-btn {
-   254|   254|  background: none; border: 1px solid var(--line);
-   255|   255|  color: var(--muted); width: 28px; height: 28px;
-   256|   256|  border-radius: 50%; cursor: pointer; font-size: 14px;
-   257|   257|  display: flex; align-items: center; justify-content: center;
-   258|   258|}
-   259|   259|.timeline-header .close-btn:hover { border-color: var(--red); color: var(--red); }
-   260|   260|
-   261|   261|.timeline { position: relative; padding-left: 24px; }
-   262|   262|.timeline::before {
-   263|   263|  content: ""; position: absolute; left: 7px; top: 0; bottom: 0;
-   264|   264|  width: 2px; background: var(--line);
-   265|   265|}
-   266|   266|.timeline-item {
-   267|   267|  position: relative; padding: 10px 0 10px 20px;
-   268|   268|  display: flex; align-items: flex-start; gap: 14px;
-   269|   269|}
-   270|   270|.timeline-item::before {
-   271|   271|  content: ""; position: absolute; left: -20px; top: 14px;
-   272|   272|  width: 10px; height: 10px; border-radius: 50%;
-   273|   273|  border: 2px solid var(--line); background: var(--bg);
-   274|   274|}
-   275|   275|.timeline-item.ok::before { border-color: var(--green); background: var(--green); }
-   276|   276|.timeline-item.warn::before { border-color: var(--yellow); background: var(--yellow); }
-   277|   277|.timeline-item.fail::before { border-color: var(--red); background: var(--red); }
-   278|   278|.timeline-item.skip::before { border-color: var(--gray); background: transparent; }
-   279|   279|
-   280|   280|.tl-time { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 80px; }
-   281|   281|.tl-status {
-   282|   282|  font-size: 12px; font-weight: 600; padding: 2px 8px;
-   283|   283|  border-radius: var(--radius-pill); white-space: nowrap;
-   284|   284|}
-   285|   285|.tl-status.s-healthy { background: rgba(52,211,153,.1); color: var(--green); }
-   286|   286|.tl-status.s-degraded { background: rgba(251,191,36,.1); color: var(--yellow); }
-   287|   287|.tl-status.s-down { background: rgba(248,113,113,.1); color: var(--red); }
-   288|   288|.tl-status.s-unknown { background: rgba(107,114,128,.1); color: var(--gray); }
-   289|   289|.tl-detail { font-size: 12px; color: var(--muted); flex: 1; }
-   290|   290|.tl-latency { font-size: 12px; color: var(--muted); white-space: nowrap; }
-   291|   291|</style>
-   292|   292|
-   293|   293|<!-- Expanded Probe History: OpenAI example -->
-   294|   294|<div class="timeline-panel">
-   295|   295|  <div class="timeline-header">
-   296|   296|    <div>
-   297|   297|      <h3>🟢 OpenAI — 巡检历史</h3>
-   298|   298|      <p style="font-size:12px;color:var(--muted);margin-top:2px;">最近 48 小时 · 保留 7 天</p>
-   299|   299|    </div>
-   300|   300|    <button class="close-btn">✕</button>
-   301|   301|  </div>
-   302|   302|
-   303|   303|  <div class="timeline">
-   304|   304|    <div class="timeline-item ok">
-   305|   305|      <span class="tl-time">10:30 UTC</span>
-   306|   306|      <span class="tl-status s-healthy">Healthy</span>
-   307|   307|      <span class="tl-detail">GET /v1/models → 200 OK</span>
-   308|   308|      <span class="tl-latency">234ms</span>
-   309|   309|    </div>
-   310|   310|    <div class="timeline-item ok">
-   311|   311|      <span class="tl-time">10:00 UTC</span>
-   312|   312|      <span class="tl-status s-healthy">Healthy</span>
-   313|   313|      <span class="tl-detail">GET /v1/models → 200 OK</span>
-   314|   314|      <span class="tl-latency">198ms</span>
-   315|   315|    </div>
-   316|   316|    <div class="timeline-item warn">
-   317|   317|      <span class="tl-time">09:30 UTC</span>
-   318|   318|      <span class="tl-status s-degraded">Degraded</span>
-   319|   319|      <span class="tl-detail">GET /v1/models → 200 OK · 响应超时 &gt;5s</span>
-   320|   320|      <span class="tl-latency" style="color:var(--yellow)">5,241ms</span>
-   321|   321|    </div>
-   322|   322|    <div class="timeline-item ok">
-   323|   323|      <span class="tl-time">09:00 UTC</span>
-   324|   324|      <span class="tl-status s-healthy">Healthy</span>
-   325|   325|      <span class="tl-detail">GET /v1/models → 200 OK</span>
-   326|   326|      <span class="tl-latency">267ms</span>
-   327|   327|    </div>
-   328|   328|    <div class="timeline-item ok">
-   329|   329|      <span class="tl-time">08:30 UTC</span>
-   330|   330|      <span class="tl-status s-healthy">Healthy</span>
-   331|   331|      <span class="tl-detail">GET /v1/models → 200 OK</span>
-   332|   332|      <span class="tl-latency">312ms</span>
-   333|   333|    </div>
-   334|   334|    <div class="timeline-item fail">
-   335|   335|      <span class="tl-time">08:00 UTC</span>
-   336|   336|      <span class="tl-status s-down">Down</span>
-   337|   337|      <span class="tl-detail">GET /v1/models → 503 Service Unavailable</span>
-   338|   338|      <span class="tl-latency" style="color:var(--red)">timeout</span>
-   339|   339|    </div>
-   340|   340|    <div class="timeline-item skip">
-   341|   341|      <span class="tl-time">07:30 UTC</span>
-   342|   342|      <span class="tl-status s-unknown">Unknown</span>
-   343|   343|      <span class="tl-detail">巡检跳过 — 无可用 Key</span>
-   344|   344|      <span class="tl-latency">—</span>
-   345|   345|    </div>
-   346|   346|  </div>
-   347|   347|</div>
-   348|   348|
-   349|   349|<!-- DeepSeek Down Timeline (expanded) -->
-   350|   350|<div class="timeline-panel" style="border-color:rgba(248,113,113,.2);">
-   351|   351|  <div class="timeline-header">
-   352|   352|    <div>
-   353|   353|      <h3>🔴 DeepSeek — 巡检历史</h3>
-   354|   354|      <p style="font-size:12px;color:var(--muted);margin-top:2px;">连续 2 次失败，建议检查供应商状态或切换备用</p>
-   355|   355|    </div>
-   356|   356|    <button class="close-btn">✕</button>
-   357|   357|  </div>
-   358|   358|
-   359|   359|  <div class="timeline">
-   360|   360|    <div class="timeline-item fail">
-   361|   361|      <span class="tl-time">10:30 UTC</span>
-   362|   362|      <span class="tl-status s-down">Down</span>
-   363|   363|      <span class="tl-detail">fetch failed — ETIMEDOUT (10s)</span>
-   364|   364|      <span class="tl-latency" style="color:var(--red)">timeout</span>
-   365|   365|    </div>
-   366|   366|    <div class="timeline-item fail">
-   367|   367|      <span class="tl-time">10:00 UTC</span>
-   368|   368|      <span class="tl-status s-degraded">Degraded</span>
-   369|   369|      <span class="tl-detail">fetch failed — ETIMEDOUT (10s) · 首次失败</span>
-   370|   370|      <span class="tl-latency" style="color:var(--yellow)">timeout</span>
-   371|   371|    </div>
-   372|   372|    <div class="timeline-item ok">
-   373|   373|      <span class="tl-time">09:30 UTC</span>
-   374|   374|      <span class="tl-status s-healthy">Healthy</span>
-   375|   375|      <span class="tl-detail">GET /v1/models → 200 OK</span>
-   376|   376|      <span class="tl-latency">1,204ms</span>
-   377|   377|    </div>
-   378|   378|    <div class="timeline-item ok">
-   379|   379|      <span class="tl-time">09:00 UTC</span>
-   380|   380|      <span class="tl-status s-healthy">Healthy</span>
-   381|   381|      <span class="tl-detail">GET /v1/models → 200 OK</span>
-   382|   382|      <span class="tl-latency">987ms</span>
-   383|   383|    </div>
-   384|   384|  </div>
-   385|   385|</div>
-   386|   386|
-   387|<!-- ===== SECTION 3: 用量报告 — 日期选择器 + 折线图 ===== -->
-   388|<div class="section-title">3. 用量报告 — 仪表盘</div>
-   389|
-   390|<style>
-   391|.usage-panel {
-   392|  background: var(--panel); border: 1px solid var(--line);
-   393|  border-radius: var(--radius-lg); padding: 24px;
-   394|  backdrop-filter: var(--blur); box-shadow: var(--shadow-panel);
-   395|  margin-bottom: 20px;
-   396|}
-   397|.usage-controls {
-   398|  display: flex; align-items: center; gap: 12px;
-   399|  flex-wrap: wrap; margin-bottom: 20px;
-   400|}
-   401|.range-btn {
-   402|  background: none; border: 1px solid var(--line);
-   403|  color: var(--muted); padding: 6px 14px;
-   404|  border-radius: var(--radius-pill); font-size: 12px;
-   405|  cursor: pointer; transition: all .15s;
-   406|}
-   407|.range-btn:hover { border-color: var(--blue); color: var(--blue); }
-   408|.range-btn.active {
-   409|  background: var(--gradient-primary); color: #fff;
-   410|  border-color: transparent;
-   411|}
-   412|.date-input {
-   413|  background: rgba(255,255,255,.04); border: 1px solid var(--line);
-   414|  color: var(--text); padding: 6px 12px;
-   415|  border-radius: var(--radius-sm); font-size: 12px;
-   416|}
-   417|.metric-pills {
-   418|  display: flex; gap: 8px; margin-left: auto;
-   419|}
-   420|.metric-pill {
-   421|  background: none; border: 1px solid var(--line);
-   422|  color: var(--muted); padding: 4px 12px;
-   423|  border-radius: var(--radius-pill); font-size: 11px;
-   424|  cursor: pointer;
-   425|}
-   426|.metric-pill.active {
-   427|  background: rgba(96,165,250,.15); color: var(--blue);
-   428|  border-color: rgba(96,165,250,.3);
-   429|}
-   430|
-   431|/* Summary Stats */
-   432|.usage-summary {
-   433|  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
-   434|  margin-bottom: 20px;
-   435|}
-   436|.summary-card {
-   437|  background: rgba(255,255,255,.03); border: 1px solid var(--line);
-   438|  border-radius: var(--radius-sm); padding: 14px;
-   439|  text-align: center;
-   440|}
-   441|.summary-card .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
-   442|.summary-card .num { font-size: 20px; font-weight: 700; }
-   443|.summary-card .trend { font-size: 11px; margin-top: 2px; }
-   444|.trend-up { color: var(--green); }
-   445|.trend-down { color: var(--red); }
-   446|
-   447|/* Chart Area */
-   448|.chart-area {
-   449|  background: rgba(255,255,255,.02); border: 1px solid var(--line);
-   450|  border-radius: var(--radius-md); padding: 20px;
-   451|  height: 240px; position: relative;
-   452|}
-   453|.chart-area svg { width: 100%; height: 100%; }
-   454|.chart-legend {
-   455|  display: flex; gap: 16px; margin-top: 14px; justify-content: center;
-   456|}
-   457|.legend-item {
-   458|  display: flex; align-items: center; gap: 6px;
-   459|  font-size: 12px; color: var(--muted);
-   460|}
-   461|.legend-dot {
-   462|  width: 8px; height: 8px; border-radius: 50%;
-   463|}
-   464|
-   465|/* Provider Filter */
-   466|.provider-filter {
-   467|  display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap;
-   468|}
-   469|.pf-chip {
-   470|  display: flex; align-items: center; gap: 6px;
-   471|  background: rgba(255,255,255,.04); border: 1px solid var(--line);
-   472|  padding: 4px 12px; border-radius: var(--radius-pill);
-   473|  font-size: 12px; cursor: pointer;
-   474|}
-   475|.pf-chip.active { border-color: var(--blue); background: rgba(96,165,250,.08); }
-   476|.pf-chip .cb {
-   477|  width: 12px; height: 12px; border-radius: 3px;
-   478|  border: 1.5px solid var(--muted); display: flex;
-   479|  align-items: center; justify-content: center; font-size: 9px;
-   480|}
-   481|.pf-chip.active .cb { border-color: var(--blue); background: var(--blue); color: #fff; }
-   482|</style>
-   483|
-   484|<div class="usage-panel">
-   485|  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
-   486|    <div>
-   487|      <h2 style="font-size:17px;font-weight:700;">📊 用量报告</h2>
-   488|      <p style="font-size:12px;color:var(--muted);margin-top:2px;">数据来源：Cron 日报聚合 · 每日 08:05 CST 更新</p>
-   489|    </div>
-   490|  </div>
-   491|
-   492|  <!-- Controls Row -->
-   493|  <div class="usage-controls">
-   494|    <button class="range-btn active">7 天</button>
-   495|    <button class="range-btn">30 天</button>
-   496|    <span style="color:var(--line);">|</span>
-   497|    <input type="date" class="date-input" value="2026-05-01" />
-   498|    <span style="color:var(--muted);font-size:12px;">至</span>
-   499|    <input type="date" class="date-input" value="2026-05-26" />
-   500|    <div class="metric-pills">
-   501|
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Relay 迭代四 — 监控与报告 UI 设计稿</title>
+<style>
+/* ===== Design Tokens (dark glassmorphism, consistent with iter 1-3) ===== */
+:root {
+  --bg: #09090b;
+  --bg-radial: radial-gradient(circle at top, #1e293b, #09090b);
+  --panel: rgba(30,41,59,.45);
+  --panel-hover: rgba(30,41,59,.6);
+  --line: rgba(255,255,255,.08);
+  --line-active: rgba(96,165,250,.45);
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --dim: #6b7280;
+  --blue: #60a5fa;
+  --green: #34d399;
+  --yellow: #fbbf24;
+  --red: #f87171;
+  --gray: #6b7280;
+  --violet: #8b5cf6;
+  --gradient-primary: linear-gradient(135deg, #2563eb, var(--violet));
+  --gradient-active: linear-gradient(135deg, rgba(59,130,246,.16), rgba(139,92,246,.16));
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  --shadow-panel: 0 4px 30px rgba(0,0,0,.35);
+  --blur: blur(12px);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg-radial); background-attachment: fixed;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+  line-height: 1.6; min-height: 100vh;
+}
+.wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px; }
+.section-title {
+  font-size: 14px; font-weight: 600; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 1px;
+  margin: 36px 0 16px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.section-title:first-child { margin-top: 0; }
+
+/* ===== Shared Panel ===== */
+.panel {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); padding: 24px;
+  backdrop-filter: var(--blur); box-shadow: var(--shadow-panel);
+  margin-bottom: 20px;
+}
+.panel:hover { background: var(--panel-hover); }
+
+/* ===== Status Badge (four-state) ===== */
+.status-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 10px; border-radius: var(--radius-pill);
+  font-size: 12px; font-weight: 600;
+}
+.status-badge .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block; position: relative;
+}
+.status-badge .dot::after {
+  content: ""; position: absolute; inset: -3px;
+  border-radius: 50%; opacity: .3;
+}
+.status-healthy  { background: rgba(52,211,153,.1); color: var(--green); }
+.status-healthy .dot  { background: var(--green); }
+.status-healthy .dot::after  { border: 2px solid var(--green); animation: pulse-g 2s infinite; }
+.status-degraded { background: rgba(251,191,36,.1); color: var(--yellow); }
+.status-degraded .dot { background: var(--yellow); }
+.status-degraded .dot::after { border: 2px solid var(--yellow); animation: pulse-y 2s infinite; }
+.status-down     { background: rgba(248,113,113,.1); color: var(--red); }
+.status-down .dot     { background: var(--red); }
+.status-down .dot::after     { border: 2px solid var(--red); animation: pulse-r 1.5s infinite; }
+.status-unknown  { background: rgba(107,114,128,.1); color: var(--gray); }
+.status-unknown .dot  { background: var(--gray); }
+@keyframes pulse-g { 0%,100%{opacity:.3;transform:scale(1)} 50%{opacity:.6;transform:scale(1.4)} }
+@keyframes pulse-y { 0%,100%{opacity:.3;transform:scale(1)} 50%{opacity:.5;transform:scale(1.3)} }
+@keyframes pulse-r { 0%,100%{opacity:.4;transform:scale(1)} 50%{opacity:.8;transform:scale(1.5)} }
+
+/* ===== Responsive ===== */
+@media (max-width: 640px) {
+  .health-grid { grid-template-columns: 1fr !important; }
+  .usage-summary { grid-template-columns: repeat(2, 1fr) !important; }
+  .usage-controls { flex-direction: column; align-items: flex-start; }
+  .metric-pills { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ===== Header ===== -->
+<h1 style="font-size:22px;font-weight:700;background:var(--gradient-primary);-webkit-background-clip:text;-webkit-text-fill-color:transparent;">
+  迭代四 — 监控与报告 UI 设计稿
+</h1>
+<p style="color:var(--muted);font-size:13px;margin-top:6px;">
+  AI Relay · 巡检状态 + 用量仪表盘 · 设计师：像素姐 · 2026-05-26
+</p>
+
+
+<!-- ===== SECTION 1: Provider Health 面板 ===== -->
+<div class="section-title">1. Provider Health — 健康状态卡片</div>
+
+<style>
+.health-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+}
+.health-card {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-md); padding: 20px;
+  backdrop-filter: var(--blur); cursor: pointer;
+  transition: all .2s ease; position: relative; overflow: hidden;
+}
+.health-card:hover {
+  background: var(--panel-hover); border-color: var(--line-active);
+  transform: translateY(-2px); box-shadow: var(--shadow-panel);
+}
+.health-card-header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
+}
+.health-card-name { display: flex; align-items: center; gap: 10px; }
+.health-card-name .icon {
+  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  background: rgba(255,255,255,.06); display: flex;
+  align-items: center; justify-content: center; font-size: 16px;
+}
+.health-card-name .name { font-size: 15px; font-weight: 600; }
+.health-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.stat-item { font-size: 12px; color: var(--muted); }
+.stat-item .val { font-size: 14px; font-weight: 600; color: var(--text); }
+.sparkline-wrap { height: 36px; margin-top: 8px; position: relative; }
+.sparkline-wrap svg { width: 100%; height: 100%; }
+.sparkline-wrap .sparkline-label {
+  position: absolute; right: 0; top: -2px; font-size: 10px; color: var(--muted);
+}
+.health-card-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 10px; font-size: 11px; color: var(--muted);
+}
+.health-card-footer .hint { color: var(--blue); }
+</style>
+
+<div class="panel">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+    <div>
+      <h2 style="font-size:17px;font-weight:700;">🏥 Provider Health</h2>
+      <p style="font-size:12px;color:var(--muted);margin-top:2px;">最近巡检：2 分钟前 · 自动刷新间隔 60s</p>
+    </div>
+    <button style="background:var(--gradient-primary);color:#fff;border:none;padding:8px 18px;border-radius:var(--radius-pill);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">
+      🔄 手动巡检
+    </button>
+  </div>
+
+  <div class="health-grid">
+
+    <!-- OpenAI — Healthy -->
+    <div class="health-card">
+      <div class="health-card-header">
+        <div class="health-card-name"><div class="icon">🟢</div><div class="name">OpenAI</div></div>
+        <span class="status-badge status-healthy"><span class="dot"></span>Healthy</span>
+      </div>
+      <div class="health-stats">
+        <div class="stat-item">可用 Key<span class="val" style="display:block;color:var(--green)">3 / 5</span></div>
+        <div class="stat-item">响应时间<span class="val" style="display:block">234ms</span></div>
+      </div>
+      <div class="sparkline-wrap">
+        <span class="sparkline-label">7 天趋势</span>
+        <svg viewBox="0 0 200 36" preserveAspectRatio="none">
+          <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#34d399" stop-opacity=".3"/><stop offset="100%" stop-color="#34d399" stop-opacity="0"/></linearGradient></defs>
+          <path d="M0,34 L28,34 L57,32 L85,34 L114,34 L142,33 L171,34 L200,34 L200,36 L0,36Z" fill="url(#sg)"/>
+          <polyline points="0,34 28,34 57,32 85,34 114,34 142,33 171,34 200,34" fill="none" stroke="#34d399" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <div class="health-card-footer">
+        <span>上次巡检：10:30 UTC</span>
+        <span class="hint">点击查看详情 →</span>
+      </div>
+    </div>
+
+    <!-- DeepSeek — Down -->
+    <div class="health-card" style="border-color:rgba(248,113,113,.25);">
+      <div class="health-card-header">
+        <div class="health-card-name"><div class="icon">🔴</div><div class="name">DeepSeek</div></div>
+        <span class="status-badge status-down"><span class="dot"></span>Down</span>
+      </div>
+      <div class="health-stats">
+        <div class="stat-item">可用 Key<span class="val" style="display:block;color:var(--red)">0 / 3</span></div>
+        <div class="stat-item">响应时间<span class="val" style="display:block;color:var(--muted)">—</span></div>
+      </div>
+      <div class="sparkline-wrap">
+        <span class="sparkline-label">7 天趋势</span>
+        <svg viewBox="0 0 200 36" preserveAspectRatio="none">
+          <defs><linearGradient id="sr" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f87171" stop-opacity=".3"/><stop offset="100%" stop-color="#f87171" stop-opacity="0"/></linearGradient></defs>
+          <path d="M0,8 L28,10 L57,34 L85,34 L114,34 L142,34 L171,34 L200,34 L200,36 L0,36Z" fill="url(#sr)"/>
+          <polyline points="0,8 28,10 57,34 85,34 114,34 142,34 171,34 200,34" fill="none" stroke="#f87171" stroke-width="1.5"/>
+          <circle cx="57" cy="34" r="3" fill="#f87171"/><circle cx="85" cy="34" r="3" fill="#f87171"/>
+        </svg>
+      </div>
+      <div class="health-card-footer">
+        <span>错误：ETIMEDOUT · 连续 2 次失败</span>
+        <span style="color:var(--red)">⚠ 需要处理</span>
+      </div>
+    </div>
+
+    <!-- Claude — Degraded -->
+    <div class="health-card" style="border-color:rgba(251,191,36,.2);">
+      <div class="health-card-header">
+        <div class="health-card-name"><div class="icon">🟡</div><div class="name">Claude</div></div>
+        <span class="status-badge status-degraded"><span class="dot"></span>Degraded</span>
+      </div>
+      <div class="health-stats">
+        <div class="stat-item">可用 Key<span class="val" style="display:block;color:var(--yellow)">2 / 4</span></div>
+        <div class="stat-item">响应时间<span class="val" style="display:block;color:var(--yellow)">5,823ms</span></div>
+      </div>
+      <div class="sparkline-wrap">
+        <span class="sparkline-label">7 天趋势</span>
+        <svg viewBox="0 0 200 36" preserveAspectRatio="none">
+          <defs><linearGradient id="sy" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#fbbf24" stop-opacity=".25"/><stop offset="100%" stop-color="#fbbf24" stop-opacity="0"/></linearGradient></defs>
+          <path d="M0,28 L28,10 L57,12 L85,20 L114,18 L142,26 L171,22 L200,28 L200,36 L0,36Z" fill="url(#sy)"/>
+          <polyline points="0,28 28,10 57,12 85,20 114,18 142,26 171,22 200,28" fill="none" stroke="#fbbf24" stroke-width="1.5"/>
+          <circle cx="142" cy="26" r="3" fill="#fbbf24"/>
+        </svg>
+      </div>
+      <div class="health-card-footer">
+        <span>响应超时 >5s · HTTP 429</span>
+        <span class="hint">点击查看详情 →</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Unknown edge case -->
+  <div style="margin-top:12px;">
+    <div class="health-card" style="display:inline-flex;align-items:center;gap:14px;padding:14px 20px;">
+      <span class="status-badge status-unknown"><span class="dot"></span>Unknown</span>
+      <span style="font-size:13px;">Groq · 无可用 Key，跳过巡检</span>
+      <span style="font-size:12px;color:var(--muted);margin-left:auto;">请先配置 API Key</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SECTION 2: 巡检历史 — 时间线 ===== -->
+<div class="section-title">2. 巡检历史 — 时间线（点击供应商卡片展开）</div>
+
+<style>
+.timeline-panel {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); padding: 24px;
+  backdrop-filter: var(--blur); box-shadow: var(--shadow-panel);
+  margin-bottom: 20px;
+}
+.timeline-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 20px; padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.timeline-header h3 { font-size: 15px; font-weight: 700; }
+.timeline-header .close-btn {
+  background: none; border: 1px solid var(--line);
+  color: var(--muted); width: 28px; height: 28px;
+  border-radius: 50%; cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+}
+.timeline-header .close-btn:hover { border-color: var(--red); color: var(--red); }
+.timeline { position: relative; padding-left: 24px; }
+.timeline::before {
+  content: ""; position: absolute; left: 7px; top: 0; bottom: 0;
+  width: 2px; background: var(--line);
+}
+.timeline-item {
+  position: relative; padding: 10px 0 10px 20px;
+  display: flex; align-items: flex-start; gap: 14px;
+}
+.timeline-item::before {
+  content: ""; position: absolute; left: -20px; top: 14px;
+  width: 10px; height: 10px; border-radius: 50%;
+  border: 2px solid var(--line); background: var(--bg);
+}
+.timeline-item.ok::before { border-color: var(--green); background: var(--green); }
+.timeline-item.warn::before { border-color: var(--yellow); background: var(--yellow); }
+.timeline-item.fail::before { border-color: var(--red); background: var(--red); }
+.timeline-item.skip::before { border-color: var(--gray); background: transparent; }
+.tl-time { font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 80px; }
+.tl-status {
+  font-size: 12px; font-weight: 600; padding: 2px 8px;
+  border-radius: var(--radius-pill); white-space: nowrap;
+}
+.tl-status.s-healthy { background: rgba(52,211,153,.1); color: var(--green); }
+.tl-status.s-degraded { background: rgba(251,191,36,.1); color: var(--yellow); }
+.tl-status.s-down { background: rgba(248,113,113,.1); color: var(--red); }
+.tl-status.s-unknown { background: rgba(107,114,128,.1); color: var(--gray); }
+.tl-detail { font-size: 12px; color: var(--muted); flex: 1; }
+.tl-latency { font-size: 12px; color: var(--muted); white-space: nowrap; }
+</style>
+
+<!-- Expanded Probe History: OpenAI -->
+<div class="timeline-panel">
+  <div class="timeline-header">
+    <div>
+      <h3>🟢 OpenAI — 巡检历史</h3>
+      <p style="font-size:12px;color:var(--muted);margin-top:2px;">最近 48 小时 · 保留 7 天</p>
+    </div>
+    <button class="close-btn">✕</button>
+  </div>
+
+  <div class="timeline">
+    <div class="timeline-item ok">
+      <span class="tl-time">10:30 UTC</span>
+      <span class="tl-status s-healthy">Healthy</span>
+      <span class="tl-detail">GET /v1/models → 200 OK</span>
+      <span class="tl-latency">234ms</span>
+    </div>
+    <div class="timeline-item ok">
+      <span class="tl-time">10:00 UTC</span>
+      <span class="tl-status s-healthy">Healthy</span>
+      <span class="tl-detail">GET /v1/models → 200 OK</span>
+      <span class="tl-latency">198ms</span>
+    </div>
+    <div class="timeline-item warn">
+      <span class="tl-time">09:30 UTC</span>
+      <span class="tl-status s-degraded">Degraded</span>
+      <span class="tl-detail">GET /v1/models → 200 OK · 响应超时 &gt;5s</span>
+      <span class="tl-latency" style="color:var(--yellow)">5,241ms</span>
+    </div>
+    <div class="timeline-item ok">
+      <span class="tl-time">09:00 UTC</span>
+      <span class="tl-status s-healthy">Healthy</span>
+      <span class="tl-detail">GET /v1/models → 200 OK</span>
+      <span class="tl-latency">267ms</span>
+    </div>
+    <div class="timeline-item ok">
+      <span class="tl-time">08:30 UTC</span>
+      <span class="tl-status s-healthy">Healthy</span>
+      <span class="tl-detail">GET /v1/models → 200 OK</span>
+      <span class="tl-latency">312ms</span>
+    </div>
+    <div class="timeline-item fail">
+      <span class="tl-time">08:00 UTC</span>
+      <span class="tl-status s-down">Down</span>
+      <span class="tl-detail">GET /v1/models → 503 Service Unavailable</span>
+      <span class="tl-latency" style="color:var(--red)">timeout</span>
+    </div>
+    <div class="timeline-item skip">
+      <span class="tl-time">07:30 UTC</span>
+      <span class="tl-status s-unknown">Unknown</span>
+      <span class="tl-detail">巡检跳过 — 无可用 Key</span>
+      <span class="tl-latency">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- DeepSeek Down Timeline -->
+<div class="timeline-panel" style="border-color:rgba(248,113,113,.2);">
+  <div class="timeline-header">
+    <div>
+      <h3>🔴 DeepSeek — 巡检历史</h3>
+      <p style="font-size:12px;color:var(--muted);margin-top:2px;">连续 2 次失败，建议检查供应商状态或切换备用</p>
+    </div>
+    <button class="close-btn">✕</button>
+  </div>
+
+  <div class="timeline">
+    <div class="timeline-item fail">
+      <span class="tl-time">10:30 UTC</span>
+      <span class="tl-status s-down">Down</span>
+      <span class="tl-detail">fetch failed — ETIMEDOUT (10s)</span>
+      <span class="tl-latency" style="color:var(--red)">timeout</span>
+    </div>
+    <div class="timeline-item fail">
+      <span class="tl-time">10:00 UTC</span>
+      <span class="tl-status s-degraded">Degraded</span>
+      <span class="tl-detail">fetch failed — ETIMEDOUT (10s) · 首次失败</span>
+      <span class="tl-latency" style="color:var(--yellow)">timeout</span>
+    </div>
+    <div class="timeline-item ok">
+      <span class="tl-time">09:30 UTC</span>
+      <span class="tl-status s-healthy">Healthy</span>
+      <span class="tl-detail">GET /v1/models → 200 OK</span>
+      <span class="tl-latency">1,204ms</span>
+    </div>
+    <div class="timeline-item ok">
+      <span class="tl-time">09:00 UTC</span>
+      <span class="tl-status s-healthy">Healthy</span>
+      <span class="tl-detail">GET /v1/models → 200 OK</span>
+      <span class="tl-latency">987ms</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SECTION 3: 用量报告 — 日期选择器 + 折线图 ===== -->
+<div class="section-title">3. 用量报告 — 仪表盘</div>
+
+<style>
+.usage-panel {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius-lg); padding: 24px;
+  backdrop-filter: var(--blur); box-shadow: var(--shadow-panel);
+  margin-bottom: 20px;
+}
+.usage-controls {
+  display: flex; align-items: center; gap: 12px;
+  flex-wrap: wrap; margin-bottom: 20px;
+}
+.range-btn {
+  background: none; border: 1px solid var(--line);
+  color: var(--muted); padding: 6px 14px;
+  border-radius: var(--radius-pill); font-size: 12px;
+  cursor: pointer; transition: all .15s;
+}
+.range-btn:hover { border-color: var(--blue); color: var(--blue); }
+.range-btn.active {
+  background: var(--gradient-primary); color: #fff;
+  border-color: transparent;
+}
+.date-input {
+  background: rgba(255,255,255,.04); border: 1px solid var(--line);
+  color: var(--text); padding: 6px 12px;
+  border-radius: var(--radius-sm); font-size: 12px;
+}
+.metric-pills {
+  display: flex; gap: 8px; margin-left: auto;
+}
+.metric-pill {
+  background: none; border: 1px solid var(--line);
+  color: var(--muted); padding: 4px 12px;
+  border-radius: var(--radius-pill); font-size: 11px;
+  cursor: pointer;
+}
+.metric-pill.active {
+  background: rgba(96,165,250,.15); color: var(--blue);
+  border-color: rgba(96,165,250,.3);
+}
+
+/* Summary Stats */
+.usage-summary {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px;
+  margin-bottom: 20px;
+}
+.summary-card {
+  background: rgba(255,255,255,.03); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 14px;
+  text-align: center;
+}
+.summary-card .label { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.summary-card .num { font-size: 20px; font-weight: 700; }
+.summary-card .trend { font-size: 11px; margin-top: 2px; }
+.trend-up { color: var(--green); }
+.trend-down { color: var(--red); }
+
+/* Chart Area */
+.chart-area {
+  background: rgba(255,255,255,.02); border: 1px solid var(--line);
+  border-radius: var(--radius-md); padding: 20px;
+  height: 240px; position: relative;
+}
+.chart-area svg { width: 100%; height: 100%; }
+.chart-legend {
+  display: flex; gap: 16px; margin-top: 14px; justify-content: center;
+}
+.legend-item {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--muted);
+}
+.legend-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+}
+
+/* Provider Filter */
+.provider-filter {
+  display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap;
+}
+.pf-chip {
+  display: flex; align-items: center; gap: 6px;
+  background: rgba(255,255,255,.04); border: 1px solid var(--line);
+  padding: 4px 12px; border-radius: var(--radius-pill);
+  font-size: 12px; cursor: pointer;
+}
+.pf-chip.active { border-color: var(--blue); background: rgba(96,165,250,.08); }
+.pf-chip .cb {
+  width: 12px; height: 12px; border-radius: 3px;
+  border: 1.5px solid var(--muted); display: flex;
+  align-items: center; justify-content: center; font-size: 9px;
+}
+.pf-chip.active .cb { border-color: var(--blue); background: var(--blue); color: #fff; }
+</style>
+
+<div class="usage-panel">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+    <div>
+      <h2 style="font-size:17px;font-weight:700;">📊 用量报告</h2>
+      <p style="font-size:12px;color:var(--muted);margin-top:2px;">数据来源：Cron 日报聚合 · 每日 08:05 CST 更新</p>
+    </div>
+  </div>
+
+  <!-- Controls Row -->
+  <div class="usage-controls">
+    <button class="range-btn active">7 天</button>
+    <button class="range-btn">30 天</button>
+    <span style="color:var(--line);">|</span>
+    <input type="date" class="date-input" value="2026-05-01" />
+    <span style="color:var(--muted);font-size:12px;">至</span>
+    <input type="date" class="date-input" value="2026-05-26" />
+    <div class="metric-pills">
+      <button class="metric-pill active">请求数</button>
+      <button class="metric-pill">Token 总量</button>
+      <button class="metric-pill">Prompt</button>
+      <button class="metric-pill">Completion</button>
+    </div>
+  </div>
+
+  <!-- Summary Stats -->
+  <div class="usage-summary">
+    <div class="summary-card">
+      <div class="label">总请求数</div>
+      <div class="num" style="color:var(--blue)">12,340</div>
+      <div class="trend trend-up">↑ 18% vs 上周</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">Token 总量</div>
+      <div class="num" style="color:var(--violet)">56.7M</div>
+      <div class="trend trend-up">↑ 12%</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">错误率</div>
+      <div class="num" style="color:var(--yellow)">2.1%</div>
+      <div class="trend trend-down">↑ 0.3%</div>
+    </div>
+    <div class="summary-card">
+      <div class="label">P95 延迟</div>
+      <div class="num">3.2s</div>
+      <div class="trend trend-up">↓ 0.4s</div>
+    </div>
+  </div>
+
+  <!-- Line Chart -->
+  <div class="chart-area">
+    <svg viewBox="0 0 700 200" preserveAspectRatio="none">
+      <!-- Grid lines -->
+      <line x1="0" y1="50" x2="700" y2="50" stroke="rgba(255,255,255,.04)" stroke-width="1"/>
+      <line x1="0" y1="100" x2="700" y2="100" stroke="rgba(255,255,255,.04)" stroke-width="1"/>
+      <line x1="0" y1="150" x2="700" y2="150" stroke="rgba(255,255,255,.04)" stroke-width="1"/>
+
+      <!-- Y axis labels -->
+      <text x="4" y="48" fill="#6b7280" font-size="10">2000</text>
+      <text x="4" y="98" fill="#6b7280" font-size="10">1500</text>
+      <text x="4" y="148" fill="#6b7280" font-size="10">1000</text>
+      <text x="4" y="198" fill="#6b7280" font-size="10">500</text>
+
+      <!-- X axis labels (7 days) -->
+      <text x="50" y="198" fill="#6b7280" font-size="10">05/20</text>
+      <text x="150" y="198" fill="#6b7280" font-size="10">05/21</text>
+      <text x="250" y="198" fill="#6b7280" font-size="10">05/22</text>
+      <text x="350" y="198" fill="#6b7280" font-size="10">05/23</text>
+      <text x="450" y="198" fill="#6b7280" font-size="10">05/24</text>
+      <text x="550" y="198" fill="#6b7280" font-size="10">05/25</text>
+      <text x="650" y="198" fill="#6b7280" font-size="10">05/26</text>
+
+      <!-- OpenAI area + line -->
+      <defs>
+        <linearGradient id="area-blue" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#60a5fa" stop-opacity=".2"/>
+          <stop offset="100%" stop-color="#60a5fa" stop-opacity="0"/>
+        </linearGradient>
+        <linearGradient id="area-violet" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#8b5cf6" stop-opacity=".2"/>
+          <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="M50,120 L150,90 L250,100 L350,60 L450,80 L550,40 L650,50 L650,200 L50,200Z" fill="url(#area-blue)"/>
+      <polyline points="50,120 150,90 250,100 350,60 450,80 550,40 650,50" fill="none" stroke="#60a5fa" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="50" cy="120" r="3" fill="#60a5fa"/><circle cx="150" cy="90" r="3" fill="#60a5fa"/>
+      <circle cx="250" cy="100" r="3" fill="#60a5fa"/><circle cx="350" cy="60" r="3" fill="#60a5fa"/>
+      <circle cx="450" cy="80" r="3" fill="#60a5fa"/><circle cx="550" cy="40" r="3" fill="#60a5fa"/>
+      <circle cx="650" cy="50" r="3" fill="#60a5fa"/>
+
+      <!-- DeepSeek area + line -->
+      <path d="M50,160 L150,140 L250,150 L350,130 L450,170 L550,180 L650,170 L650,200 L50,200Z" fill="url(#area-violet)"/>
+      <polyline points="50,160 150,140 250,150 350,130 450,170 550,180 650,170" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="50" cy="160" r="3" fill="#8b5cf6"/><circle cx="150" cy="140" r="3" fill="#8b5cf6"/>
+      <circle cx="250" cy="150" r="3" fill="#8b5cf6"/><circle cx="350" cy="130" r="3" fill="#8b5cf6"/>
+      <circle cx="450" cy="170" r="3" fill="#8b5cf6"/><circle cx="550" cy="180" r="3" fill="#8b5cf6"/>
+      <circle cx="650" cy="170" r="3" fill="#8b5cf6"/>
+    </svg>
+  </div>
+
+  <!-- Legend + Provider Filter -->
+  <div class="chart-legend">
+    <span class="legend-item"><span class="legend-dot" style="background:#60a5fa"></span>OpenAI</span>
+    <span class="legend-item"><span class="legend-dot" style="background:#8b5cf6"></span>DeepSeek</span>
+    <span class="legend-item"><span class="legend-dot" style="background:#fbbf24"></span>Claude</span>
+  </div>
+
+  <div class="provider-filter">
+    <span style="font-size:12px;color:var(--muted);margin-right:4px;">供应商筛选：</span>
+    <span class="pf-chip active"><span class="cb">✓</span> OpenAI</span>
+    <span class="pf-chip active"><span class="cb">✓</span> DeepSeek</span>
+    <span class="pf-chip"><span class="cb"></span> Claude</span>
+    <span class="pf-chip"><span class="cb"></span> Groq</span>
+  </div>
+</div>
+
 <!-- ===== SECTION 4: 状态定义 & 边缘情况 ===== -->
 <div class="section-title">4. 设计规范 — 状态 & 边缘情况</div>
 
@@ -514,7 +622,6 @@
   border-bottom: 1px solid rgba(255,255,255,.03);
 }
 .spec-table tr:hover td { background: rgba(255,255,255,.02); }
-
 .edge-card {
   background: rgba(255,255,255,.03); border: 1px solid var(--line);
   border-radius: var(--radius-md); padding: 16px;
@@ -555,7 +662,7 @@
   </table>
 </div>
 
-<div class="section-title">5. 边缘情况 & 空状态</div>
+<div class="section-title">5. 边缘情况 &amp; 空状态</div>
 
 <div class="edge-card">
   <h4>📭 无供应商配置</h4>
