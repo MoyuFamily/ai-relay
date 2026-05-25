@@ -1,4 +1,8 @@
 {
   "version": 2,
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "crons": [
+    { "path": "/api/cron/probe", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/usage", "schedule": "5 0 * * *" }
+  ]
 }

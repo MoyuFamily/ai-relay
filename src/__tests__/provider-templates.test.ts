@@ -5,6 +5,8 @@ import {
   buildEnvKeyField,
   findProviderTemplate,
   validateDraftProvider,
+  parseModelPrefixes,
+  buildDraftProvider,
 } from '@/app/admin/components/provider-templates';
 
 describe('provider templates', () => {
@@ -103,5 +105,31 @@ describe('provider templates', () => {
     expect(validateDraftProvider({ ...validDraft, name: 'bad-id' })).toBe('invalid-provider-id');
     expect(validateDraftProvider({ ...validDraft, baseUrl: 'http://api.openai.com/v1' })).toBe('invalid-base-url');
     expect(validateDraftProvider({ ...validDraft, modelPrefixes: [] })).toBe('missing-model-prefixes');
+  });
+
+  it('parses model prefixes from comma or newline separated input', () => {
+    expect(parseModelPrefixes('gpt-, o1-\n text-embedding-')).toEqual(['gpt-', 'o1-', 'text-embedding-']);
+    expect(parseModelPrefixes('  ,\n  ')).toEqual([]);
+  });
+
+  it('builds a draft provider payload including env key field and models', () => {
+    const draft = buildDraftProvider({
+      id: 'custom_openai',
+      displayName: 'Custom OpenAI',
+      baseUrl: 'https://proxy.example.com/v1',
+      headerFormat: 'openai',
+      modelPrefixesText: 'gpt-, o3-',
+      models: [{ id: 'gpt-4o', displayName: 'GPT-4o', contextWindow: 128000 }],
+    });
+
+    expect(draft).toMatchObject({
+      name: 'custom_openai',
+      displayName: 'Custom OpenAI',
+      baseUrl: 'https://proxy.example.com/v1',
+      headerFormat: 'openai',
+      envKeyField: 'CUSTOM_OPENAI_KEYS',
+      modelPrefixes: ['gpt-', 'o3-'],
+      models: [{ id: 'gpt-4o', displayName: 'GPT-4o', contextWindow: 128000 }],
+    });
   });
 });

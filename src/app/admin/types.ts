@@ -94,8 +94,11 @@ export interface PriorityRule {
 }
 
 export interface PriorityRuleConflict {
+  type: 'overlap' | 'duplicate' | 'shadow';
+  severity: 'warning' | 'error';
   ruleIds: [string, string];
   ruleNames: [string, string];
   sampleModel: string;
+  matchedModels: string[];
   message: string;
 }

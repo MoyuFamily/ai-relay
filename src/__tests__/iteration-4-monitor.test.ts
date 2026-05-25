@@ -128,4 +128,93 @@ describe('iteration 4 health probe and usage report', () => {
       trend: [{ date: '2026-05-25', requests: 10, totalTokens: 300 }],
     });
   });
+
+  it('exposes persisted four-state provider health snapshot with recent probe history via admin API', async () => {
+    await recordHealthProbeResult({
+      providerId: 'openai',
+      providerName: 'OpenAI',
+      ok: true,
+      statusCode: 200,
+      responseTimeMs: 280,
+      checkedAt: '2026-05-26T10:00:00.000Z',
+    });
+    await recordHealthProbeResult({
+      providerId: 'deepseek',
+      providerName: 'DeepSeek',
+      ok: false,
+      skipped: true,
+      checkedAt: '2026-05-26T10:00:00.000Z',
+      error: 'no_available_key',
+    });
+
+    vi.resetModules();
+    vi.doMock('../lib/providers', () => ({
+      getAllProviders: vi.fn(async () => ({
+        openai: { name: 'openai', displayName: 'OpenAI', envKeyField: 'OPENAI_KEYS' },
+        deepseek: { name: 'deepseek', displayName: 'DeepSeek', envKeyField: 'DEEPSEEK_KEYS' },
+      })),
+    }));
+    vi.doMock('../lib/relay', () => ({
+      initAllKeyPools: vi.fn(async () => undefined),
+      getKeyPoolStats: vi.fn(() => ({
+        openai: { total: 1, available: 1, keyHashes: ['openai-hash'] },
+        deepseek: { total: 0, available: 0, keyHashes: [] },
+      })),
+      getRateLimiterStats: vi.fn(() => ({})),
+    }));
+
+    const { GET } = await import('../app/api/admin/provider-health/route');
+    const res = await GET(new NextRequest('http://localhost/api/admin/provider-health', {
+      headers: { Authorization: 'Bearer admin-test-key' },
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.providers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'openai', status: 'healthy', responseTimeMs: 280 }),
+      expect.objectContaining({ id: 'deepseek', status: 'unknown', error: 'no_available_key' }),
+    ]));
+    expect(body.providers.find((p: { id: string }) => p.id === 'openai').history[0]).toMatchObject({
+      status: 'healthy',
+      checkedAt: '2026-05-26T10:00:00.000Z',
+    });
+  });
+
+  it('fills missing usage-report dates with zero trend points and preserves saved daily reports', async () => {
+    const kv = installMockKV();
+    await kv.set('relay:report:daily:2026-05-25', {
+      date: '2026-05-25',
+      summary: {
+        totalRequests: 10,
+        totalTokens: 300,
+        promptTokens: 120,
+        completionTokens: 180,
+        errorRate: 0,
+        p95LatencyMs: null,
+      },
+      byProvider: { openai: { requests: 10, tokens: 300, promptTokens: 120, completionTokens: 180 } },
+      topModels: [],
+    });
+
+    vi.resetModules();
+    const usageReport = await import('../app/api/admin/usage-report/route');
+    const res = await usageReport.GET(new NextRequest('http://localhost/api/admin/usage-report?from=2026-05-24&to=2026-05-26', {
+      headers: { Authorization: 'Bearer admin-test-key' },
+    }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.trend).toEqual([
+      expect.objectContaining({ date: '2026-05-24', requests: 0, totalTokens: 0 }),
+      expect.objectContaining({ date: '2026-05-25', requests: 10, totalTokens: 300 }),
+      expect.objectContaining({ date: '2026-05-26', requests: 0, totalTokens: 0 }),
+    ]);
+    expect(body.reports).toHaveLength(1);
+  });
+
+  it('configures Vercel Cron schedules for 30-minute probes and daily usage aggregation', async () => {
+    const vercel = await import('../../vercel.json');
+    expect(vercel.default.crons).toEqual(expect.arrayContaining([
+      { path: '/api/cron/probe', schedule: '*/30 * * * *' },
+      { path: '/api/cron/usage', schedule: '5 0 * * *' },
+    ]));
+  });
 });

@@ -10,9 +10,12 @@ export interface PriorityRule {
 }
 
 export interface PriorityRuleConflict {
+  type: 'overlap' | 'duplicate' | 'shadow';
+  severity: 'warning' | 'error';
   ruleIds: [string, string];
   ruleNames: [string, string];
   sampleModel: string;
+  matchedModels: string[];
   message: string;
 }
 
@@ -67,7 +70,13 @@ export function matchesPriorityPattern(model: string, pattern: string): boolean 
   const normalizedPattern = pattern.toLowerCase().trim();
   if (!normalizedPattern) return false;
   if (normalizedPattern === '*') return true;
-  const escaped = normalizedPattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+
+  const hasGlob = /[*?]/.test(normalizedPattern);
+  if (!hasGlob) {
+    return normalizedModel.startsWith(normalizedPattern);
+  }
+
+  const escaped = normalizedPattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
   return new RegExp(`^${escaped}$`).test(normalizedModel);
 }
 
@@ -75,6 +84,34 @@ function sampleForPattern(pattern: string): string {
   const p = pattern.toLowerCase().trim();
   if (!p || p === '*') return 'gpt-4o';
   return p.includes('*') ? p.replace(/\*/g, '4o') : p;
+}
+
+function patternSpecificity(pattern: string): number {
+  return pattern.replace(/\*/g, '').length;
+}
+
+function sameProviderOrder(a: PriorityRule, b: PriorityRule): boolean {
+  return a.providerOrder.length === b.providerOrder.length && a.providerOrder.every((provider, index) => provider === b.providerOrder[index]);
+}
+
+function classifyConflict(a: PriorityRule, b: PriorityRule, sample: string): Pick<PriorityRuleConflict, 'type' | 'severity' | 'message'> {
+  if (a.modelPattern === b.modelPattern && !sameProviderOrder(a, b)) {
+    return {
+      type: 'duplicate',
+      severity: 'error',
+      message: `规则重复：${a.name} 和 ${b.name} 使用相同条件但目标供应商不同`,
+    };
+  }
+
+  const aSpecificity = patternSpecificity(a.modelPattern);
+  const bSpecificity = patternSpecificity(b.modelPattern);
+  const type: PriorityRuleConflict['type'] = aSpecificity !== bSpecificity ? 'shadow' : 'overlap';
+  const shadowText = type === 'shadow' ? `${b.name} 可能被 ${a.name} 覆盖，` : '';
+  return {
+    type,
+    severity: 'warning',
+    message: `${shadowText}${a.name} 和 ${b.name} 的条件存在交集，${sample} 将按 ${a.name} 的优先级执行`,
+  };
 }
 
 function patternsOverlap(a: string, b: string): string | null {
@@ -98,11 +135,13 @@ export function detectPriorityRuleConflicts(rules: PriorityRule[]): PriorityRule
     for (let j = i + 1; j < enabled.length; j++) {
       const sample = patternsOverlap(enabled[i].modelPattern, enabled[j].modelPattern);
       if (!sample) continue;
+      const classification = classifyConflict(enabled[i], enabled[j], sample);
       conflicts.push({
+        ...classification,
         ruleIds: [enabled[i].id, enabled[j].id],
         ruleNames: [enabled[i].name, enabled[j].name],
         sampleModel: sample,
-        message: `${enabled[i].name} 和 ${enabled[j].name} 的条件存在交集，${sample} 将按 ${enabled[i].name} 的优先级执行`,
+        matchedModels: [sample],
       });
     }
   }

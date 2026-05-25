@@ -8,6 +8,7 @@ import ToolsTab from './components/ToolsTab';
 import WebhooksTab from './components/WebhooksTab';
 import SetupTab from './components/SetupTab';
 import ProviderHealthTab from './components/ProviderHealthTab';
+import UsageReportTab from './components/UsageReportTab';
 import RequestLogsTab from './components/RequestLogsTab';
 import ModelAliasesTab from './components/ModelAliasesTab';
 import type { AdminData } from './types';
@@ -17,7 +18,7 @@ import { useAdminHandlers } from './adminHandlers';
 export default function AdminPage() {
   const [apiKey, setApiKey] = useState('');
   const [lang, setLang] = useState<'zh' | 'en'>('zh');
-  const [activeTab, setActiveTab] = useState<'setup' | 'overview' | 'keys' | 'models' | 'health' | 'logs' | 'tools' | 'webhooks'>('setup');
+  const [activeTab, setActiveTab] = useState<'setup' | 'overview' | 'keys' | 'models' | 'health' | 'usage' | 'logs' | 'tools' | 'webhooks'>('setup');
   const [setupData, setSetupData] = useState<any>(null);
   const [providerHealthData, setProviderHealthData] = useState<any>(null);
   const [v21Loading, setV21Loading] = useState(false);
@@ -168,6 +169,9 @@ export default function AdminPage() {
   const fetchProviderHealth = async (forceRefresh = false) => {
     setV21Loading(true);
     try {
+      if (forceRefresh) {
+        await adminFetch('/api/cron/probe?manual=1');
+      }
       setProviderHealthData(await adminFetch(`/api/admin/provider-health${forceRefresh ? '?refresh=1' : ''}`));
     } finally {
       setV21Loading(false);
@@ -428,6 +432,12 @@ export default function AdminPage() {
           {t.tabHealth}
         </button>
         <button
+          className={`tab-btn ${activeTab === 'usage' ? 'active' : ''}`}
+          onClick={() => setActiveTab('usage')}
+        >
+          {lang === 'zh' ? '📈 用量报告' : '📈 Usage Report'}
+        </button>
+        <button
           className={`tab-btn ${activeTab === 'logs' ? 'active' : ''}`}
           onClick={() => setActiveTab('logs')}
         >
@@ -523,6 +533,12 @@ export default function AdminPage() {
             data={providerHealthData}
             loading={v21Loading}
             onRefresh={() => fetchProviderHealth(true)}
+          />
+        )}
+        {activeTab === 'usage' && (
+          <UsageReportTab
+            apiKey={apiKey}
+            lang={lang}
           />
         )}
         {activeTab === 'logs' && (

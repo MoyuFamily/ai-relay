@@ -12,6 +12,40 @@ interface ProviderTableProps {
   t: any;
 }
 
+export type ProviderStatusTone = 'healthy' | 'degraded' | 'down';
+
+export function getProviderStatusView(provider: { configured: boolean; availableKeys: number }): {
+  tone: ProviderStatusTone;
+  dot: '●' | '⚠' | '✕';
+  labelKey: 'statusOk' | 'statusNoKeys';
+} {
+  if (provider.configured && provider.availableKeys > 0) {
+    return { tone: 'healthy', dot: '●', labelKey: 'statusOk' };
+  }
+  if (provider.configured) {
+    return { tone: 'degraded', dot: '⚠', labelKey: 'statusNoKeys' };
+  }
+  return { tone: 'down', dot: '✕', labelKey: 'statusNoKeys' };
+}
+
+const statusStyles: Record<ProviderStatusTone, { backgroundColor: string; color: string; border: string }> = {
+  healthy: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    color: '#34d399',
+    border: '1px solid rgba(16, 185, 129, 0.2)',
+  },
+  degraded: {
+    backgroundColor: 'rgba(245, 158, 11, 0.13)',
+    color: '#fbbf24',
+    border: '1px solid rgba(245, 158, 11, 0.24)',
+  },
+  down: {
+    backgroundColor: 'rgba(239, 68, 68, 0.15)',
+    color: '#fca5a5',
+    border: '1px solid rgba(239, 68, 68, 0.2)',
+  },
+};
+
 export default function ProviderTable({
   data,
   selectedProvider,
@@ -56,7 +90,7 @@ export default function ProviderTable({
           <thead>
             <tr>
               <th style={{ textAlign: 'left', padding: '0.75rem 0.5rem' }}>{t.tblProvider}</th>
-              <th style={{ textAlign: 'center', padding: '0.75rem 0.5rem', minWidth: '112px', whiteSpace: 'nowrap' }}>{t.tblStatus}</th>
+              <th style={{ textAlign: 'center', padding: '0.75rem 0.5rem', minWidth: '132px', whiteSpace: 'nowrap' }}>{t.tblStatus}</th>
               <th style={{ textAlign: 'center', padding: '0.75rem 0.5rem' }}>{t.tblKeys}</th>
               <th style={{ textAlign: 'center', padding: '0.75rem 0.5rem' }}>{t.tblAvailable}</th>
               <th style={{ textAlign: 'left', padding: '0.75rem 0.5rem' }}>{t.tblModelPrefixes}</th>
@@ -65,6 +99,8 @@ export default function ProviderTable({
           <tbody>
             {data.providers.map((p) => {
               const isSelected = selectedProvider === p.id;
+              const status = getProviderStatusView(p);
+              const styles = statusStyles[status.tone];
               return (
                 <tr
                   key={p.id}
@@ -79,15 +115,17 @@ export default function ProviderTable({
                   </td>
                   <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center', whiteSpace: 'nowrap' }}>
                     <span style={{
-                      padding: '0.2rem 0.6rem', borderRadius: '6px', fontSize: '0.8rem', fontWeight: 500,
-                      backgroundColor: p.configured ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                      color: p.configured ? '#34d399' : '#fca5a5',
-                      border: p.configured ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)',
+                      padding: '0.2rem 0.6rem', borderRadius: '999px', fontSize: '0.8rem', fontWeight: 600,
+                      backgroundColor: styles.backgroundColor,
+                      color: styles.color,
+                      border: styles.border,
                       display: 'inline-flex',
                       alignItems: 'center',
+                      gap: '0.35rem',
                       whiteSpace: 'nowrap',
                     }}>
-                      {p.configured ? t.statusOk : t.statusNoKeys}
+                      <span aria-hidden="true">{status.dot}</span>
+                      {t[status.labelKey]}
                     </span>
                   </td>
                   <td style={{ padding: '0.75rem 0.5rem', textAlign: 'center', color: '#d1d5db' }}>{p.keyCount}</td>

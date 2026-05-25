@@ -249,9 +249,18 @@ function parseJsonOrArray(val: unknown): string[] | null {
 
 // ── Priority Rule Management ────────────────────────────────
 
+interface PriorityRulesStore {
+  version: 1;
+  rules: PriorityRule[];
+  updatedAt: number;
+}
+
 function parsePriorityRules(raw: unknown): PriorityRule[] {
   if (!raw) return [];
   const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Array.isArray((parsed as { rules?: unknown }).rules)) {
+    return normalizePriorityRules((parsed as { rules: unknown }).rules);
+  }
   return normalizePriorityRules(parsed);
 }
 
@@ -286,7 +295,8 @@ export async function savePriorityRules(rulesInput: unknown): Promise<PriorityRu
   if (!kv) {
     throw new Error('KV storage not configured — cannot persist priority rules');
   }
-  await kv.set(PREFIX.priorityRules, JSON.stringify(rules));
+  const store: PriorityRulesStore = { version: 1, rules, updatedAt: Date.now() };
+  await kv.set(PREFIX.priorityRules, store);
   clearCache('priorityRules');
   return rules;
 }

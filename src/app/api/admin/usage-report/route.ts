@@ -5,7 +5,7 @@
 
 import { NextRequest } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin';
-import { getUsageDailyReports, reportsToTrend } from '@/lib/usage/daily-report-store';
+import { getUsageDailyReportsWithGaps, reportsToTrend } from '@/lib/usage/daily-report-store';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -23,11 +23,11 @@ export async function GET(request: NextRequest) {
   const from = url.searchParams.get('from') || to;
 
   try {
-    const reports = await getUsageDailyReports(from, to);
+    const { reports, timeline } = await getUsageDailyReportsWithGaps(from, to);
     return Response.json({
       range: { from, to },
       reports,
-      trend: reportsToTrend(reports),
+      trend: reportsToTrend(timeline),
     }, {
       headers: { 'Cache-Control': 'no-store, max-age=0' },
     });

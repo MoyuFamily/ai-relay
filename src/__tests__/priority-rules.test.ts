@@ -6,7 +6,7 @@ import {
   getPriorityRules,
   savePriorityRules,
 } from '../lib/admin/admin-config';
-import { detectPriorityRuleConflicts, normalizePriorityRules } from '../lib/admin/priority-rules-core';
+import { detectPriorityRuleConflicts, findMatchingPriorityRule, normalizePriorityRules } from '../lib/admin/priority-rules-core';
 import { GET, PUT, POST, DELETE } from '../app/api/admin/priority-rules/route';
 
 function installMockKV() {
@@ -45,7 +45,8 @@ describe('priority rules admin config', () => {
       { id: 'r1', name: 'GPT primary', enabled: true, modelPattern: 'gpt-*', providerOrder: ['openai', 'deepseek'] },
     ]);
 
-    await expect(kv.get('relay:priority:rules')).resolves.toBeTruthy();
+    const stored = await kv.get('relay:priority:rules');
+    expect(stored).toMatchObject({ version: 1, rules: [expect.objectContaining({ id: 'r1' })], updatedAt: expect.any(Number) });
     vi.mocked(kv.get).mockClear();
     await expect(getPriorityRules()).resolves.toHaveLength(1);
     await expect(getPriorityRules()).resolves.toHaveLength(1);
@@ -65,16 +66,39 @@ describe('priority rules admin config', () => {
     expect(() => normalizePriorityRules(rules)).toThrow('Priority rules are limited to 20');
   });
 
-  it('detects overlapping model-pattern conflicts before save', () => {
+  it('detects duplicate, overlap, and shadow conflicts with severity metadata', () => {
     const conflicts = detectPriorityRuleConflicts([
       { id: 'a', name: 'Rule A', enabled: true, modelPattern: 'gpt-*', providerOrder: ['openai'] },
       { id: 'b', name: 'Rule B', enabled: true, modelPattern: 'gpt-4o', providerOrder: ['deepseek'] },
       { id: 'c', name: 'Rule C', enabled: true, modelPattern: 'o1-*', providerOrder: ['openai'] },
+      { id: 'd', name: 'Rule D', enabled: true, modelPattern: 'o1-*', providerOrder: ['deepseek'] },
     ]);
 
-    expect(conflicts).toEqual([
-      expect.objectContaining({ ruleIds: ['a', 'b'], sampleModel: 'gpt-4o' }),
+    expect(conflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'shadow', severity: 'warning', ruleIds: ['a', 'b'], sampleModel: 'gpt-4o' }),
+      expect.objectContaining({ type: 'duplicate', severity: 'error', ruleIds: ['c', 'd'], sampleModel: 'o1-4o' }),
+    ]));
+  });
+
+  it('matches enabled rules by priority order and ignores disabled rules', () => {
+    const rules = normalizePriorityRules([
+      { id: 'disabled', name: 'Disabled', enabled: false, modelPattern: '*', providerOrder: ['deepseek'] },
+      { id: 'first', name: 'GPT wildcard', enabled: true, modelPattern: 'gpt-*', providerOrder: ['openai'] },
+      { id: 'second', name: 'GPT-4o exact', enabled: true, modelPattern: 'gpt-4o', providerOrder: ['deepseek'] },
     ]);
+
+    expect(findMatchingPriorityRule(rules, 'gpt-4o')?.id).toBe('first');
+    expect(findMatchingPriorityRule(rules, 'claude-3-5-sonnet')).toBeNull();
+  });
+
+  it('matches bare patterns as prefix and supports ? glob wildcards', () => {
+    expect(findMatchingPriorityRule(normalizePriorityRules([
+      { id: 'prefix', name: 'GPT-4o prefix', enabled: true, modelPattern: 'gpt-4o', providerOrder: ['openai'] },
+    ]), 'gpt-4o-mini')?.id).toBe('prefix');
+
+    expect(findMatchingPriorityRule(normalizePriorityRules([
+      { id: 'reasoning', name: 'Reasoning', enabled: true, modelPattern: 'o?-mini', providerOrder: ['openai'] },
+    ]), 'o3-mini')?.id).toBe('reasoning');
   });
 
   it('exposes CRUD API for priority rules', async () => {

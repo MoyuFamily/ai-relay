@@ -180,6 +180,49 @@ export function applyProviderTemplate(template: ProviderTemplate): ProviderTempl
   };
 }
 
+export function parseModelPrefixes(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map((prefix) => prefix.trim())
+    .filter(Boolean);
+}
+
+export function buildDraftProvider(input: {
+  id: string;
+  displayName: string;
+  baseUrl: string;
+  headerFormat: ProviderHeaderFormat;
+  modelPrefixesText: string;
+  models: DraftProviderPayload['models'];
+}): DraftProviderPayload {
+  const name = input.id.trim();
+  return {
+    name,
+    displayName: input.displayName.trim(),
+    baseUrl: input.baseUrl.trim(),
+    headerFormat: input.headerFormat,
+    modelPrefixes: parseModelPrefixes(input.modelPrefixesText),
+    envKeyField: buildEnvKeyField(name),
+    models: input.models,
+  };
+}
+
+export const buildDraftProviderFromForm = buildDraftProvider;
+
+export function validateApiKeyInput(apiKey: string): string | null {
+  const trimmed = apiKey.trim();
+  if (!trimmed) {
+    return 'missing-api-key';
+  }
+  if (trimmed.length < 10) {
+    return 'api-key-too-short';
+  }
+  if (/\s/.test(trimmed)) {
+    return 'api-key-has-space';
+  }
+  return null;
+}
+
 export function validateDraftProvider(provider: DraftProviderPayload): string | null {
   if (!provider.name.trim() || !/^[a-zA-Z0-9_]+$/.test(provider.name.trim())) {
     return 'invalid-provider-id';

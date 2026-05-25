@@ -150,6 +150,34 @@ export async function getUsageDailyReports(from: string, to: string): Promise<Us
   return values.map(parseReport).filter((v): v is UsageDailyReport => Boolean(v));
 }
 
+const ZERO_REPORT_SUMMARY: UsageDailyReport['summary'] = {
+  totalRequests: 0,
+  totalTokens: 0,
+  promptTokens: 0,
+  completionTokens: 0,
+  errorRate: 0,
+  p95LatencyMs: null,
+};
+
+export function createEmptyUsageDailyReport(date: string): UsageDailyReport {
+  return {
+    date,
+    summary: { ...ZERO_REPORT_SUMMARY },
+    byProvider: {},
+    topModels: [],
+  };
+}
+
+export async function getUsageDailyReportsWithGaps(from: string, to: string): Promise<{ reports: UsageDailyReport[]; timeline: UsageDailyReport[] }> {
+  const dates = enumerateDateKeys(from, to);
+  const reports = await getUsageDailyReports(from, to);
+  const byDate = new Map(reports.map((report) => [report.date, report]));
+  return {
+    reports,
+    timeline: dates.map((date) => byDate.get(date) ?? createEmptyUsageDailyReport(date)),
+  };
+}
+
 export function reportsToTrend(reports: UsageDailyReport[]): TrendPoint[] {
   return reports.map((r) => ({
     date: r.date,

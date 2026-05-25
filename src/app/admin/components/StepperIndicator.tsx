@@ -15,7 +15,10 @@ export default function StepperIndicator({ steps, currentStep }: StepperIndicato
         const active = index === currentStep;
         return (
           <React.Fragment key={step}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}>
+            <div
+              aria-current={active ? 'step' : undefined}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', minWidth: 0 }}
+            >
               <div style={{
                 width: '30px',
                 height: '30px',
