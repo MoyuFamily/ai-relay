@@ -43,7 +43,7 @@ export default function ModelAliasesTab({ apiKey, providers, onRefreshData }: Mo
   const fetchAliases = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/aliases', { headers: { Authorization: `Bearer ${apiKey}` }, cache: 'no-store' });
+      const res = await fetch('/api/admin/model-aliases', { headers: { Authorization: `Bearer ${apiKey}` }, cache: 'no-store' });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error?.message || 'Failed to load aliases');
       setData(json);
@@ -60,7 +60,7 @@ export default function ModelAliasesTab({ apiKey, providers, onRefreshData }: Mo
   }, [apiKey]);
 
   const saveAlias = async (alias: string, target: string, hidden = false) => {
-    const res = await fetch('/api/admin/aliases', {
+    const res = await fetch('/api/admin/model-aliases', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ alias, target, hidden }),
@@ -75,7 +75,7 @@ export default function ModelAliasesTab({ apiKey, providers, onRefreshData }: Mo
     const row = data?.aliases[alias];
     if (!row) return;
     if (!confirm(`确认删除别名 ${alias} → ${row.target}？`)) return;
-    const res = await fetch(`/api/admin/aliases?alias=${encodeURIComponent(alias)}`, {
+    const res = await fetch(`/api/admin/model-aliases?alias=${encodeURIComponent(alias)}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${apiKey}` },
     });
@@ -90,7 +90,7 @@ export default function ModelAliasesTab({ apiKey, providers, onRefreshData }: Mo
     const hiddenSet = new Set(data.hidden);
     if (hidden) hiddenSet.delete(target); else hiddenSet.add(target);
     const userAliases = Object.fromEntries(Object.entries(data.aliases).filter(([, row]) => row.source === 'user').map(([alias, row]) => [alias, row.target]));
-    const res = await fetch('/api/admin/aliases', {
+    const res = await fetch('/api/admin/model-aliases', {
       method: 'PUT',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ aliases: userAliases, hidden: Array.from(hiddenSet) }),
@@ -112,7 +112,7 @@ export default function ModelAliasesTab({ apiKey, providers, onRefreshData }: Mo
     const form = new FormData();
     form.set('mode', 'append');
     form.set('file', file);
-    const res = await fetch('/api/admin/aliases/import', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}` }, body: form });
+    const res = await fetch('/api/admin/model-aliases/import', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}` }, body: form });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error?.message || 'CSV import failed');
     setMessage(`CSV 导入完成：新增 ${json.stats.added}，更新 ${json.stats.updated}，跳过 ${json.stats.skipped}，错误 ${json.stats.errors}`);
@@ -121,7 +121,7 @@ export default function ModelAliasesTab({ apiKey, providers, onRefreshData }: Mo
   };
 
   const exportCsv = async () => {
-    const res = await fetch('/api/admin/aliases/export', { headers: { Authorization: `Bearer ${apiKey}` } });
+    const res = await fetch('/api/admin/model-aliases/export', { headers: { Authorization: `Bearer ${apiKey}` } });
     const text = await res.text();
     if (!res.ok) throw new Error(text || 'CSV export failed');
     const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
