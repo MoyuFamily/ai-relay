@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin';
 import { getModelAliasConfig, saveModelAliasConfig } from '@/lib/admin/admin-config';
+import { getAllProviders } from '@/lib/providers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -34,6 +35,15 @@ function validateAlias(alias: string): string | null {
   return null;
 }
 
+async function isRegisteredModel(target: string): Promise<boolean> {
+  const lower = target.toLowerCase();
+  const providers = await getAllProviders(true);
+  return Object.values(providers).some((provider) => {
+    if (provider.models?.some((model) => model.id.toLowerCase() === lower)) return true;
+    return provider.modelPrefixes.some((prefix) => lower.startsWith(prefix));
+  });
+}
+
 async function responsePayload() {
   const config = await getModelAliasConfig(true);
   const aliases: Record<string, AliasRow> = {};
@@ -64,6 +74,7 @@ export async function PUT(request: NextRequest) {
     if (validation) return error(validation);
     const target = String(rawTarget || '').trim();
     if (!target) return error(`Target model is required for alias ${alias}`);
+    if (!(await isRegisteredModel(target))) return error('Target model does not exist');
     aliases[alias] = target;
   }
   if (Object.keys(aliases).length > 200) return error('Aliases are limited to 200 entries');
@@ -80,6 +91,7 @@ export async function POST(request: NextRequest) {
   if (validation) return error(validation);
   const target = String(body.target || body.target_model || '').trim();
   if (!target) return error('Target model is required');
+  if (!(await isRegisteredModel(target))) return error('Target model does not exist');
   const config = await getModelAliasConfig(true);
   if (!config.aliases[alias] && Object.keys(config.aliases).length >= 200) return error('Aliases are limited to 200 entries');
   config.aliases[alias] = target;

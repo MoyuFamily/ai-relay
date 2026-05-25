@@ -72,6 +72,28 @@ describe('model aliases admin config', () => {
     await expect(resolveModelAlias('claude-3')).resolves.toBe('claude-3-5-sonnet-20241022');
   });
 
+  it('rejects aliases whose target model is not registered in any provider', async () => {
+    const res = await POST(req('POST', { alias: 'ghost', target: 'not-a-real-model' }));
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: { message: 'Target model does not exist' } });
+  });
+
+  it('resolves alias chains and stops cyclic aliases at a safe depth', async () => {
+    await saveModelAliasConfig({
+      aliases: {
+        fast: 'smart',
+        smart: 'gpt-4o-mini',
+        loop_a: 'loop_b',
+        loop_b: 'loop_a',
+      },
+      hidden: [],
+    });
+
+    await expect(resolveModelAlias('fast')).resolves.toBe('gpt-4o-mini');
+    await expect(resolveModelAlias('loop_a')).resolves.toBe('loop_a');
+  });
+
   it('exposes CRUD API for model aliases and rejects invalid aliases', async () => {
     let res = await POST(req('POST', { alias: 'Fast_Model', target: 'gpt-4o-mini', hidden: false }));
     await expect(res.json()).resolves.toMatchObject({ success: true, alias: { alias: 'fast_model', target: 'gpt-4o-mini', source: 'user' } });
@@ -93,7 +115,7 @@ describe('model aliases admin config', () => {
   });
 
   it('imports and exports CSV with alias targets and hidden flags', async () => {
-    const csv = 'alias,target_model,hidden,note\nfast,gpt-4o-mini,false,team\nlegacy,davinci-002,true,old\n';
+    const csv = 'alias,target_model,hidden,note\nfast,gpt-4o-mini,false,team\nlegacy,gpt-3.5-turbo,true,old\n';
 
     const importRes = await importPOST(csvReq(csv));
     await expect(importRes.json()).resolves.toMatchObject({ success: true, stats: { added: 2, errors: 0 } });
@@ -103,7 +125,7 @@ describe('model aliases admin config', () => {
     const exported = await exportRes.text();
     expect(exported).toContain('alias,target_model,hidden,note');
     expect(exported).toContain('fast,gpt-4o-mini,false,');
-    expect(exported).toContain('legacy,davinci-002,true,');
+    expect(exported).toContain('legacy,gpt-3.5-turbo,true,');
   });
 
   it('filters hidden models from /v1/models without disabling direct alias resolution', async () => {

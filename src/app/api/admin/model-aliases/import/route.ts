@@ -1,1 +1,4 @@
-export { POST, dynamic, runtime } from '../../aliases/import/route';
+export { POST } from '../../aliases/import/route';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';

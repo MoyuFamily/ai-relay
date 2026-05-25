@@ -1,1 +1,4 @@
-export { GET, dynamic, runtime } from '../../aliases/export/route';
+export { GET } from '../../aliases/export/route';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';

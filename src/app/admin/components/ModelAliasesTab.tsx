@@ -11,6 +11,23 @@ type AliasResponse = {
   total: number;
 };
 
+type CsvImportRow = {
+  line: number;
+  alias: string;
+  target_model: string;
+  hidden: boolean;
+  status: 'added' | 'updated' | 'skipped' | 'error';
+  error?: string;
+};
+
+type CsvPreview = {
+  file: File;
+  mode: 'append' | 'overwrite';
+  stats: { added: number; updated: number; skipped: number; errors: number };
+  rows: CsvImportRow[];
+  errors: Array<{ line: number; alias?: string; error: string }>;
+};
+
 interface ModelAliasesTabProps {
   apiKey: string;
   providers: ProviderInfo[];
@@ -34,6 +51,8 @@ export default function ModelAliasesTab({ apiKey, providers, onRefreshData }: Mo
   const [filter, setFilter] = useState<'all' | 'visible' | 'hidden'>('all');
   const [newAlias, setNewAlias] = useState('');
   const [newTarget, setNewTarget] = useState('');
+  const [csvMode, setCsvMode] = useState<'append' | 'overwrite'>('append');
+  const [csvPreview, setCsvPreview] = useState<CsvPreview | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const modelIds = useMemo(() => {
@@ -108,14 +127,37 @@ export default function ModelAliasesTab({ apiKey, providers, onRefreshData }: Mo
     setNewTarget('');
   };
 
-  const importCsv = async (file: File) => {
+  const importCsv = async (file: File, previewOnly = true) => {
     const form = new FormData();
-    form.set('mode', 'append');
+    form.set('mode', csvMode);
+    if (previewOnly) form.set('preview', 'true');
     form.set('file', file);
     const res = await fetch('/api/admin/model-aliases/import', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}` }, body: form });
     const json = await res.json();
     if (!res.ok) throw new Error(json.error?.message || 'CSV import failed');
+    if (previewOnly) {
+      setCsvPreview({ file, mode: csvMode, stats: json.stats, rows: json.rows || [], errors: json.errors || [] });
+      setMessage(`CSV 预览：新增 ${json.stats.added}，更新 ${json.stats.updated}，跳过 ${json.stats.skipped}，错误 ${json.stats.errors}`);
+      return;
+    }
     setMessage(`CSV 导入完成：新增 ${json.stats.added}，更新 ${json.stats.updated}，跳过 ${json.stats.skipped}，错误 ${json.stats.errors}`);
+    setCsvPreview(null);
+    await fetchAliases();
+    await onRefreshData();
+  };
+
+  const confirmCsvImport = async () => {
+    if (!csvPreview) return;
+    const { stats } = csvPreview;
+    if (!confirm(`将新增 ${stats.added} 条、更新 ${stats.updated} 条、跳过 ${stats.skipped} 条、错误 ${stats.errors} 条，确认导入？`)) return;
+    const form = new FormData();
+    form.set('mode', csvPreview.mode);
+    form.set('file', csvPreview.file);
+    const res = await fetch('/api/admin/model-aliases/import', { method: 'POST', headers: { Authorization: `Bearer ${apiKey}` }, body: form });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error?.message || 'CSV import failed');
+    setMessage(`CSV 导入完成：新增 ${json.stats.added}，更新 ${json.stats.updated}，跳过 ${json.stats.skipped}，错误 ${json.stats.errors}`);
+    setCsvPreview(null);
     await fetchAliases();
     await onRefreshData();
   };
@@ -154,6 +196,12 @@ export default function ModelAliasesTab({ apiKey, providers, onRefreshData }: Mo
             <option value="visible">仅可见</option>
             <option value="hidden">仅隐藏</option>
           </select>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#9ca3af', fontSize: '0.85rem' }}>
+            <input type="radio" name="csv-mode" checked={csvMode === 'append'} onChange={() => setCsvMode('append')} /> 追加
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#9ca3af', fontSize: '0.85rem' }}>
+            <input type="radio" name="csv-mode" checked={csvMode === 'overwrite'} onChange={() => setCsvMode('overwrite')} /> 覆盖
+          </label>
           <button className="tab-btn" onClick={() => fileRef.current?.click()}>导入 CSV</button>
           <button className="tab-btn" onClick={exportCsv}>导出 CSV</button>
           <button className="tab-btn" onClick={fetchAliases} disabled={loading}>{loading ? '刷新中...' : '刷新'}</button>
@@ -162,6 +210,64 @@ export default function ModelAliasesTab({ apiKey, providers, onRefreshData }: Mo
       </div>
 
       {message && <div style={{ color: message.includes('失败') || message.includes('Failed') ? '#f87171' : '#93c5fd', fontSize: '0.9rem' }}>{message}</div>}
+
+      {csvPreview && (
+        <div style={{ border: '1px solid rgba(96,165,250,0.35)', borderRadius: 12, padding: '1rem', background: 'rgba(59,130,246,0.08)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ color: '#e5e7eb', fontWeight: 700 }}>CSV 导入预览 · {csvPreview.mode === 'overwrite' ? '覆盖模式' : '追加模式'}</div>
+              <div style={{ color: '#9ca3af', fontSize: '0.85rem', marginTop: 4 }}>
+                文件：{csvPreview.file.name}；新增 {csvPreview.stats.added}，更新 {csvPreview.stats.updated}，跳过 {csvPreview.stats.skipped}，错误 {csvPreview.stats.errors}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="tab-btn" onClick={() => setCsvPreview(null)}>取消</button>
+              <button className="tab-btn" onClick={() => confirmCsvImport().catch((err) => setMessage(err.message))} disabled={csvPreview.stats.errors > 0}>
+                确认导入
+              </button>
+            </div>
+          </div>
+          {csvPreview.stats.errors > 0 && (
+            <div style={{ color: '#fca5a5', fontSize: '0.85rem' }}>存在错误行，请修正 CSV 后重新导入。</div>
+          )}
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ color: '#9ca3af', textAlign: 'left' }}>
+                  <th style={{ padding: '0.5rem' }}>行号</th>
+                  <th style={{ padding: '0.5rem' }}>别名</th>
+                  <th style={{ padding: '0.5rem' }}>目标模型</th>
+                  <th style={{ padding: '0.5rem' }}>隐藏</th>
+                  <th style={{ padding: '0.5rem' }}>状态</th>
+                </tr>
+              </thead>
+              <tbody>
+                {csvPreview.rows.map((row, index) => (
+                  <tr key={`${row.line}-${row.alias}-${index}`} style={{ background: index % 2 === 0 ? 'rgba(255,255,255,0.035)' : 'transparent' }}>
+                    <td style={{ padding: '0.5rem', color: '#9ca3af' }}>{row.line}</td>
+                    <td style={{ padding: '0.5rem', color: '#e5e7eb', fontFamily: 'monospace' }}>{row.alias || '-'}</td>
+                    <td style={{ padding: '0.5rem', color: '#e5e7eb', fontFamily: 'monospace' }}>{row.target_model || '-'}</td>
+                    <td style={{ padding: '0.5rem', color: '#9ca3af' }}>{row.hidden ? '是' : '否'}</td>
+                    <td style={{ padding: '0.5rem', color: row.status === 'error' ? '#f87171' : row.status === 'skipped' ? '#fbbf24' : '#34d399' }}>
+                      {row.error || row.status}
+                    </td>
+                  </tr>
+                ))}
+                {csvPreview.errors.map((err) => (
+                  <tr key={`error-${err.line}-${err.alias || ''}`} style={{ background: 'rgba(248,113,113,0.08)' }}>
+                    <td style={{ padding: '0.5rem', color: '#fca5a5' }}>{err.line}</td>
+                    <td style={{ padding: '0.5rem', color: '#fca5a5', fontFamily: 'monospace' }}>{err.alias || '-'}</td>
+                    <td style={{ padding: '0.5rem', color: '#9ca3af' }}>-</td>
+                    <td style={{ padding: '0.5rem', color: '#9ca3af' }}>-</td>
+                    <td style={{ padding: '0.5rem', color: '#f87171' }}>{err.error}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ color: '#9ca3af', fontSize: '0.8rem' }}>仅展示前 10 条有效预览与错误明细。确认后才会写入配置。</div>
+        </div>
+      )}
 
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>

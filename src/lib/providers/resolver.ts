@@ -27,10 +27,19 @@ const MODEL_ALIASES: Record<string, string> = {
  * Returns the original name if no alias exists.
  */
 export async function resolveModelAlias(model: string, forceRefresh = false): Promise<string> {
-  const requested = model.toLowerCase();
+  const original = model;
+  let requested = model.toLowerCase();
+  const seen = new Set<string>();
   try {
     const config = await getModelAliasConfig(forceRefresh);
-    return config.aliases[requested] || MODEL_ALIASES[requested] || model;
+    for (let depth = 0; depth < 5; depth++) {
+      if (seen.has(requested)) return original;
+      seen.add(requested);
+      const next = config.aliases[requested] || MODEL_ALIASES[requested];
+      if (!next) return depth === 0 ? original : requested;
+      requested = next.toLowerCase();
+    }
+    return original;
   } catch {
     return MODEL_ALIASES[requested] || model;
   }

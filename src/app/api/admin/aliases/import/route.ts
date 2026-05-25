@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin';
 import { getModelAliasConfig, saveModelAliasConfig } from '@/lib/admin/admin-config';
+import { getAllProviders } from '@/lib/providers';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,15 @@ function jsonError(message: string, status = 400) {
   return Response.json({ error: { message } }, { status });
 }
 
+async function getRegisteredModels(): Promise<Set<string>> {
+  const providers = await getAllProviders(true);
+  const models = new Set<string>();
+  for (const provider of Object.values(providers)) {
+    for (const model of provider.models || []) models.add(model.id.toLowerCase());
+  }
+  return models;
+}
+
 export async function POST(request: NextRequest) {
   const authResponse = requireAdminAuth(request);
   if (authResponse) return authResponse;
@@ -68,6 +78,7 @@ export async function POST(request: NextRequest) {
   const existing = await getModelAliasConfig(true);
   const next = mode === 'overwrite' ? { aliases: {}, hidden: [] as string[] } : { aliases: { ...existing.aliases }, hidden: [...existing.hidden] };
   const hidden = new Set(next.hidden);
+  const registeredModels = await getRegisteredModels();
   const seen = new Set<string>();
   const rows: ImportRow[] = [];
   const errors: Array<{ line: number; alias?: string; error: string }> = [];
@@ -88,6 +99,7 @@ export async function POST(request: NextRequest) {
     };
 
     if (!ALIAS_RE.test(alias) || !target) { fail('格式错误'); continue; }
+    if (!registeredModels.has(target.toLowerCase())) { fail('模型不存在'); continue; }
     if (seen.has(alias)) { fail('CSV 内重复'); continue; }
     seen.add(alias);
     if (mode === 'append' && existing.aliases[alias]) {
