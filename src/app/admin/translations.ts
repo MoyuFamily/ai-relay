@@ -99,7 +99,7 @@ export const TRANSLATIONS = {
     healthNoErrors: '暂无错误',
     healthLastChecked: '最后检查',
     requestLogsTitle: '🧾 Request Logs',
-    requestLogsDesc: '查看最近请求的 trace、模型、状态、延迟与脱敏诊断信息。日志仅存储在浏览器本地，条数可配置。',
+    requestLogsDesc: '查看最近请求的 trace、模型、状态、延迟与脱敏诊断信息。日志仅用于轻量排障：服务端只保留当前实例内存，浏览器本地保存副本，不跨 Vercel 实例持久化。',
     requestLogsDegraded: '',
     logsAll: '全部状态',
     logsSuccess: '成功',
@@ -107,6 +107,9 @@ export const TRANSLATIONS = {
     logsProviderFilter: '按服务商过滤，例如 openai',
     logsErrorDetail: '错误/诊断',
     logsEmpty: '暂无请求日志。',
+    logsStoredLocally: '当前浏览器本地副本，服务端仅当前实例内存。最多',
+    logsEntries: '条',
+    logsClear: '清空',
 
     // Today's Usage
     todaysUsage: '📈 今日消耗概览',
@@ -322,7 +325,7 @@ export const TRANSLATIONS = {
     healthNoErrors: 'No errors',
     healthLastChecked: 'Last checked',
     requestLogsTitle: '🧾 Request Logs',
-    requestLogsDesc: 'Inspect recent request traces, models, status, latency, and redacted diagnostics. Logs stored in browser only, count is configurable.',
+    requestLogsDesc: 'Inspect recent request traces, models, status, latency, and redacted diagnostics. Logs are lightweight diagnostics only: the server keeps current-instance memory, and this browser stores a local copy; they are not persisted across Vercel instances.',
     requestLogsDegraded: '',
     logsAll: 'All statuses',
     logsSuccess: 'Success',
@@ -330,6 +333,9 @@ export const TRANSLATIONS = {
     logsProviderFilter: 'Filter provider, e.g. openai',
     logsErrorDetail: 'Error / diagnostic',
     logsEmpty: 'No request logs yet.',
+    logsStoredLocally: 'Local copy in this browser; server memory is current-instance only. Max',
+    logsEntries: 'entries',
+    logsClear: 'Clear',
 
     // Today's Usage
     todaysUsage: "📈 Today's Usage",

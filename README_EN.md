@@ -248,6 +248,7 @@ Access at `/admin` with your `RELAY_ADMIN_KEY`:
 | **Custom Providers** | Add / edit / delete custom providers |
 | **Usage Stats** | Request counts + token usage trends |
 | **Key Pool Status** | Real-time sync of all key states |
+| **Request Logs** | Lightweight diagnostics cache: current server instance memory + this browser's local copy, not written to KV |
 | **Notification Settings** | Webhook config, alert thresholds, report schedule |
 
 > 💡 **Mobile Friendly** — Responsive design, manage relay strategies on the go.

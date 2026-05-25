@@ -16,8 +16,10 @@ export async function GET(request: NextRequest) {
   const authResponse = requireAdminAuth(request);
   if (authResponse) return authResponse;
 
-  const providers = await getAllProviders(true);
-  await initAllKeyPools(providers, true);
+  const url = new URL(request.url);
+  const forceRefresh = url.searchParams.get('refresh') === '1';
+  const providers = await getAllProviders(forceRefresh);
+  await initAllKeyPools(providers, forceRefresh);
   const keyStats = getKeyPoolStats();
   const limiterStats = getRateLimiterStats();
   const [errorStats, keyErrors] = await Promise.all([

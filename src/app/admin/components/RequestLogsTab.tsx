@@ -150,7 +150,7 @@ export default function RequestLogsTab({ t }: Props) {
           <h2 style={{ margin: 0, color: '#fff' }}>{t.requestLogsTitle}</h2>
           <p style={{ margin: '0.35rem 0 0', color: '#9ca3af' }}>{t.requestLogsDesc}</p>
           <p style={{ margin: '0.25rem 0 0', color: '#6b7280', fontSize: '0.78rem' }}>
-            {t.logsStoredLocally || 'Logs stored in browser memory only. Max'}: {maxEntries} {t.logsEntries || 'entries'}
+            {t.logsStoredLocally || 'Local copy in this browser; server memory is current-instance only. Max'}: {maxEntries} {t.logsEntries || 'entries'}
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>

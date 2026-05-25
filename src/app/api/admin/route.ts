@@ -28,9 +28,11 @@ export async function GET(request: NextRequest) {
   const authResponse = requireAdminAuth(request);
   if (authResponse) return authResponse;
 
-  const allProviders = await getAllProviders(true);
+  const url = new URL(request.url);
+  const forceRefresh = url.searchParams.get('refresh') === '1';
+  const allProviders = await getAllProviders(forceRefresh);
   // Eagerly init all provider pools so stats reflect all configured providers
-  await initAllKeyPools(allProviders, true);
+  await initAllKeyPools(allProviders, forceRefresh);
   const providerStats = getKeyPoolStats();
 
   // Fire all 4 KV queries in parallel instead of sequential awaits

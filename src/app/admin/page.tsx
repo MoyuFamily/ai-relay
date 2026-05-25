@@ -154,19 +154,19 @@ export default function AdminPage() {
     return json;
   };
 
-  const fetchSetup = async () => {
+  const fetchSetup = async (forceRefresh = false) => {
     setV21Loading(true);
     try {
-      setSetupData(await adminFetch('/api/admin/setup'));
+      setSetupData(await adminFetch(`/api/admin/setup${forceRefresh ? '?refresh=1' : ''}`));
     } finally {
       setV21Loading(false);
     }
   };
 
-  const fetchProviderHealth = async () => {
+  const fetchProviderHealth = async (forceRefresh = false) => {
     setV21Loading(true);
     try {
-      setProviderHealthData(await adminFetch('/api/admin/provider-health'));
+      setProviderHealthData(await adminFetch(`/api/admin/provider-health${forceRefresh ? '?refresh=1' : ''}`));
     } finally {
       setV21Loading(false);
     }
@@ -236,7 +236,7 @@ export default function AdminPage() {
               placeholder={t.enterAdminKey}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && fetchData()}
+              onKeyDown={(e) => e.key === 'Enter' && fetchData(true)}
               style={{
                 width: '100%', padding: '0.75rem 1rem', borderRadius: '8px',
                 border: '1px solid rgba(255, 255, 255, 0.08)', backgroundColor: 'rgba(0, 0, 0, 0.25)', color: '#e5e7eb',
@@ -246,7 +246,7 @@ export default function AdminPage() {
               onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.08)'}
             />
             <button
-              onClick={fetchData}
+              onClick={() => fetchData(true)}
               disabled={loading || !apiKey}
               style={{
                 width: '100%', padding: '0.75rem 1.5rem', borderRadius: '8px', border: 'none',
@@ -377,7 +377,7 @@ export default function AdminPage() {
             {lang === 'zh' ? 'English' : '中文'}
           </button>
           <button
-            onClick={fetchData}
+            onClick={() => fetchData(true)}
             disabled={loading}
             style={{
               padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -446,7 +446,7 @@ export default function AdminPage() {
             t={t}
             setupData={setupData}
             loading={v21Loading}
-            onRunChecks={fetchSetup}
+            onRunChecks={() => fetchSetup(true)}
           />
         )}
         {activeTab === 'overview' && (
@@ -502,7 +502,7 @@ export default function AdminPage() {
             t={t}
             data={providerHealthData}
             loading={v21Loading}
-            onRefresh={fetchProviderHealth}
+            onRefresh={() => fetchProviderHealth(true)}
           />
         )}
         {activeTab === 'logs' && (
@@ -516,7 +516,7 @@ export default function AdminPage() {
             lang={lang}
             t={t}
             providers={data?.providers || []}
-            onRefreshData={fetchData}
+            onRefreshData={() => fetchData(true)}
           />
         )}
         {activeTab === 'webhooks' && (
@@ -525,7 +525,7 @@ export default function AdminPage() {
             lang={lang}
             t={t}
             providers={data?.providers || []}
-            onRefreshData={fetchData}
+            onRefreshData={() => fetchData(true)}
           />
         )}
       </div>

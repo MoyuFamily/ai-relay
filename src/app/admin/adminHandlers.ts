@@ -54,11 +54,11 @@ export function useAdminHandlers(apiKey: string, t: any) {
     }
   }, [selectedProvider, activeFallbacks, data, selectedFallbackToAdd]);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/admin', {
+      const res = await fetch(`/api/admin${forceRefresh ? '?refresh=1' : ''}`, {
         headers: { Authorization: `Bearer ${apiKey}` },
         cache: 'no-store',
       });
@@ -145,7 +145,7 @@ export function useAdminHandlers(apiKey: string, t: any) {
       setNewKeyInput('');
       setConfigMessage({ text: t.msgKeyAdded, type: 'success' });
       await fetchProviderConfig(selectedProvider);
-      await fetchData();
+      await fetchData(true);
     } catch (e) {
       setConfigMessage({ text: e instanceof Error ? e.message : t.alertAddFailed, type: 'error' });
     } finally {
@@ -176,7 +176,7 @@ export function useAdminHandlers(apiKey: string, t: any) {
         await fetchProviderConfig(providerId);
       }
 
-      await fetchData();
+      await fetchData(true);
       setConfigMessage({ text: t.msgKeyDeleted, type: 'success' });
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : t.alertDeleteFailed;
@@ -312,7 +312,7 @@ export function useAdminHandlers(apiKey: string, t: any) {
         throw new Error(resData.error?.message || 'Failed to save quota limits');
       }
       alert(t.msgQuotaSaved);
-      await fetchData();
+      await fetchData(true);
     } catch (e) {
       alert(e instanceof Error ? e.message : t.alertSaveQuotaFailed);
     } finally {
@@ -335,7 +335,7 @@ export function useAdminHandlers(apiKey: string, t: any) {
         throw new Error(resData.error?.message || 'Failed to reset quota limits');
       }
       alert(t.msgQuotaReset);
-      await fetchData();
+      await fetchData(true);
     } catch (e) {
       alert(e instanceof Error ? e.message : t.alertResetQuotaFailed);
     } finally {
@@ -361,7 +361,7 @@ export function useAdminHandlers(apiKey: string, t: any) {
       alert(t.msgProviderSaved);
       setCustomProviderModalOpen(false);
       setEditingCustomProvider(null);
-      await fetchData();
+      await fetchData(true);
     } catch (e: any) {
       alert(e.message || t.alertSaveProviderFailed);
     } finally {
@@ -387,7 +387,7 @@ export function useAdminHandlers(apiKey: string, t: any) {
       }
       alert(t.msgProviderDeleted);
       setSelectedProvider(null);
-      await fetchData();
+      await fetchData(true);
     } catch (e: any) {
       alert(e.message || t.alertDeleteProviderFailed);
     } finally {
