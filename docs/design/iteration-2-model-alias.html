@@ -1,0 +1,617 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Relay 迭代二 — 模型别名 + CSV UI 设计稿</title>
+<style>
+/* ===== AI Relay dark glassmorphism tokens ===== */
+:root{
+  --bg:#09090b;--bg-radial:radial-gradient(circle at top,#1e293b,#09090b 58%);
+  --panel:rgba(30,41,59,.45);--panel2:rgba(15,23,42,.72);--panel3:rgba(2,6,23,.48);
+  --line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.15);--active:rgba(96,165,250,.45);
+  --text:#e5e7eb;--muted:#9ca3af;--faint:#64748b;--blue:#60a5fa;--violet:#8b5cf6;
+  --green:#10b981;--yellow:#f59e0b;--red:#ef4444;--cyan:#22d3ee;
+  --radius:16px;--radius-sm:10px;--shadow:0 24px 80px rgba(0,0,0,.38);
+  --grad:linear-gradient(135deg,#2563eb,#8b5cf6);--grad-soft:linear-gradient(135deg,rgba(37,99,235,.18),rgba(139,92,246,.16));
+}
+*{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg-radial);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans SC",sans-serif;line-height:1.55}.wrap{max-width:1120px;margin:0 auto;padding:28px 20px 72px}.glass,.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);backdrop-filter:blur(12px);box-shadow:var(--shadow)}.panel{padding:20px;margin-bottom:18px}.top{display:flex;justify-content:space-between;gap:18px;align-items:center;padding:18px 20px;margin-bottom:18px}.brand{display:flex;gap:14px;align-items:center}.mark{width:42px;height:42px;border-radius:14px;background:var(--grad);box-shadow:0 0 30px rgba(96,165,250,.35);display:grid;place-items:center;font-weight:900}.kicker{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--blue);font-weight:800}.top h1{font-size:23px;line-height:1.15;margin:3px 0 0}.sub,.muted{color:var(--muted)}.sub{font-size:13px;margin:4px 0 0}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 20px}.tab{height:40px;display:inline-flex;align-items:center;padding:0 14px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.035);color:var(--muted);font-size:14px}.tab.on{color:var(--blue);border-color:var(--active);background:var(--grad-soft)}.section-title{font-size:14px;font-weight:700;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin:34px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--line)}h2{margin:0 0 8px;font-size:20px}h3{margin:0 0 8px;font-size:15px}.hero{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}.metricRow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px}.metric{padding:13px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.035)}.metric b{display:block;font-size:22px}.metric span{color:var(--muted);font-size:12px}.btn{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.045);color:var(--text);padding:0 14px;display:inline-flex;align-items:center;justify-content:center;gap:7px;font:inherit;cursor:default}.btn.primary{border-color:rgba(96,165,250,.55);background:var(--grad-soft);color:#bfdbfe}.btn.danger{border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.12);color:#fecaca}.btn.ghost{min-height:32px;padding:0 9px;background:transparent}.pill{display:inline-flex;align-items:center;gap:7px;min-height:28px;padding:0 9px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.04);font-size:12px;color:var(--muted);white-space:nowrap}.dot{width:8px;height:8px;border-radius:99px;background:var(--blue);display:inline-block}.dot.green{background:var(--green)}.dot.yellow{background:var(--yellow)}.dot.red{background:var(--red)}.dot.cyan{background:var(--cyan)}.callout,.note{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.035);padding:13px;color:var(--muted);font-size:13px}.note strong{color:var(--text)}.grid{display:grid;gap:14px}.cols2{grid-template-columns:1fr 1fr}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}.actions{display:flex;gap:8px;flex-wrap:wrap}.input,.select{min-height:40px;border:1px solid var(--line);border-radius:10px;background:rgba(2,6,23,.42);color:var(--text);padding:0 11px;font:inherit;width:100%}.input.error{border-color:rgba(239,68,68,.65);box-shadow:0 0 0 3px rgba(239,68,68,.08)}.label{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:12px;margin-bottom:6px}.tag{border:1px solid rgba(96,165,250,.24);background:rgba(96,165,250,.1);color:#bfdbfe;border-radius:999px;padding:4px 8px;font-size:12px;display:inline-flex;gap:5px;align-items:center}.tags{display:flex;flex-wrap:wrap;gap:7px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px;color:#bfdbfe}
+/* ===== Alias table ===== */
+.alias-wrap{border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.alias-head{display:grid;grid-template-columns:1fr 1fr 110px 120px 90px;gap:10px;align-items:center;padding:12px 14px;background:rgba(255,255,255,.045);font-size:12px;color:var(--muted)}
+.alias-row{display:grid;grid-template-columns:1fr 1fr 110px 120px 90px;gap:10px;align-items:center;padding:13px 14px;border-top:1px solid var(--line);background:transparent}
+.alias-row:nth-child(even){background:rgba(255,255,255,.02)}
+.alias-row.hidden-row{opacity:.5}
+.alias-row.hidden-row .alias-name{text-decoration:line-through}
+.alias-row .actions{opacity:0;transition:opacity .15s}
+.alias-row:hover .actions{opacity:1}
+.alias-name{font-weight:600}
+.visibility-toggle{width:28px;height:28px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.04);display:inline-grid;place-items:center;cursor:pointer;color:var(--muted)}
+.visibility-toggle.on{color:var(--blue);border-color:var(--active);background:var(--grad-soft)}
+.add-bar{display:flex;align-items:center;gap:10px;padding:12px 14px;border-top:1px dashed rgba(255,255,255,.10);background:rgba(255,255,255,.025)}
+.add-bar .input{background:rgba(2,6,23,.50)}
+
+/* ===== Filters / segmented ===== */
+.segment{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.segment button{min-height:36px;padding:0 11px;border:0;background:transparent;color:var(--muted);font:inherit;cursor:pointer}
+.segment button.on{background:var(--grad-soft);color:var(--blue)}
+
+/* ===== CSV preview table ===== */
+.csv-preview{border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.csv-head{display:grid;grid-template-columns:90px 1fr 80px 1fr;gap:10px;padding:10px 12px;background:rgba(255,255,255,.045);font-size:12px;color:var(--muted)}
+.csv-row{display:grid;grid-template-columns:90px 1fr 80px 1fr;gap:10px;padding:10px 12px;border-top:1px solid var(--line)}
+.csv-row:nth-child(even){background:rgba(255,255,255,.02)}
+.csv-row.error-row{background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.25)}
+.csv-row.error-row .csv-cell{color:#fecaca}
+
+/* ===== Modal / Dialog ===== */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(2px);display:grid;place-items:center;z-index:50}
+.modal{width:min(560px,calc(100vw - 40px));background:var(--panel2);border:1px solid var(--line2);border-radius:16px;padding:20px;box-shadow:var(--shadow)}
+
+/* ===== Toast ===== */
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);min-width:320px;max-width:90vw;padding:12px 16px;border:1px solid var(--line);border-radius:12px;background:var(--panel2);box-shadow:0 12px 40px rgba(0,0,0,.35);display:flex;align-items:center;gap:10px;font-size:14px}
+
+/* ===== Phone frame ===== */
+.phone{width:340px;min-height:520px;border:2px solid var(--line);border-radius:32px;padding:16px;background:rgba(2,6,23,.72);margin:0 auto;box-shadow:0 14px 50px rgba(0,0,0,.35)}
+.phone-top{height:18px;border-radius:12px;background:rgba(255,255,255,.06);margin-bottom:12px;width:60%;margin-left:auto;margin-right:auto}
+.mobile-card{border:1px solid var(--line);border-radius:14px;padding:12px;background:rgba(255,255,255,.03);margin-bottom:10px}
+
+/* ===== Badges ===== */
+.badge-system{border:1px solid rgba(139,92,246,.35);background:rgba(139,92,246,.12);color:#c4b5fd;border-radius:999px;padding:3px 8px;font-size:11px}
+.badge-user{border:1px solid rgba(96,165,250,.25);background:rgba(96,165,250,.10);color:#bfdbfe;border-radius:999px;padding:3px 8px;font-size:11px}
+.badge-ok{border:1px solid rgba(16,185,129,.35);background:rgba(16,185,129,.12);color:#a7f3d0;border-radius:999px;padding:3px 8px;font-size:11px}
+.badge-err{border:1px solid rgba(239,68,68,.35);background:rgba(239,68,68,.10);color:#fecaca;border-radius:999px;padding:3px 8px;font-size:11px}
+
+/* ===== Footer ===== */
+.foot{margin-top:34px;text-align:center;color:var(--faint);font-size:12px;padding:20px 0 0;border-top:1px solid var(--line)}
+</style>
+</head>
+<body>
+<main class="wrap">
+
+<header class="top glass">
+  <div class="brand">
+    <div class="mark">AR</div>
+    <div>
+      <div class="kicker">AI Relay · Iteration 2</div>
+      <h1>模型别名 + CSV 导入/UI 设计稿</h1>
+      <p class="sub">可视化管理模型别名、批量导入/导出、隐藏低频模型</p>
+    </div>
+  </div>
+  <div class="actions">
+    <button class="btn">刷新缓存</button>
+    <button class="btn primary">+ 添加别名</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <span class="tab">Overview</span>
+  <span class="tab">供应商管理</span>
+  <span class="tab on">模型配置</span>
+  <span class="tab">Keys</span>
+  <span class="tab">Health</span>
+  <span class="tab">Logs</span>
+  <span class="tab">Webhooks</span>
+</nav>
+
+<h2 class="section-title">A. 页面总览：信息架构与设计意图</h2>
+<section class="hero">
+  <div class="panel">
+    <div class="kicker">Design intent</div>
+    <h2>把「代码里写死」变成「面板里可配」</h2>
+    <p class="muted">当前痛点是模型别名硬编码在源文件中，修改需要改代码、重新部署、无法批量管理。设计上让管理员 3 秒内看全所有别名，10 秒新增一条，一次导入搞定百条配置。</p>
+    <div class="metricRow">
+      <div class="metric"><b>3s</b><span>扫全量别名</span></div>
+      <div class="metric"><b>≤10s</b><span>新增一条别名</span></div>
+      <div class="metric"><b>200</b><span>单租户别名上限</span></div>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>页面信息架构</h3>
+    <p class="muted">「模型配置」作为顶级导航，内含三个子区域：别名管理（默认视图）、CSV 批量操作、模型可见性。不新增页面，不打散导航。</p>
+    <div style="height:12px"></div>
+    <div class="tags">
+      <span class="tag">别名表格</span>
+      <span class="tag">行内编辑</span>
+      <span class="tag">CSV 导入</span>
+      <span class="tag">CSV 导出</span>
+      <span class="tag">可见性开关</span>
+      <span class="tag">筛选器</span>
+    </div>
+    <div style="height:12px"></div>
+    <div class="callout">关键规则：隐藏 ≠ 禁用。隐藏模型不出现在 /v1/models 列表中，但实际调用不受影响。已有客户端使用隐藏模型名时不会中断。</div>
+  </div>
+</section>
+
+<h2 class="section-title">B. 模型别名表格 — 全量状态</h2>
+<section class="panel">
+  <div class="toolbar">
+    <div>
+      <h2 style="margin-bottom:4px">别名管理</h2>
+      <p class="muted">共 12 条（系统 5 + 自定义 7）· KV 缓存 5 分钟，上次刷新 2 分钟前</p>
+    </div>
+    <div class="actions">
+      <div class="segment" role="tablist" aria-label="可见性筛选">
+        <button class="on" aria-selected="true">全部</button>
+        <button>仅可见</button>
+        <button>仅隐藏</button>
+      </div>
+      <button class="btn">导出 CSV</button>
+      <button class="btn">导入 CSV</button>
+      <button class="btn primary">+ 添加别名</button>
+    </div>
+  </div>
+
+  <div class="alias-wrap">
+    <div class="alias-head">
+      <div>别名</div>
+      <div>目标模型</div>
+      <div>来源</div>
+      <div style="text-align:center">可见性</div>
+      <div style="text-align:right">操作</div>
+    </div>
+
+    <!-- 系统默认行 -->
+    <div class="alias-row">
+      <div class="alias-name"><code class="mono">gpt-4</code></div>
+      <div class="muted">gpt-4-turbo</div>
+      <div><span class="badge-system">系统默认</span></div>
+      <div style="text-align:center"><span class="visibility-toggle on" title="可见" aria-label="可见">👁</span></div>
+      <div class="actions" style="justify-content:flex-end"><button class="btn ghost">编辑</button><button class="btn ghost" style="color:var(--faint);cursor:default">删除</button></div>
+    </div>
+
+    <div class="alias-row">
+      <div class="alias-name"><code class="mono">gpt-3.5</code></div>
+      <div class="muted">gpt-3.5-turbo</div>
+      <div><span class="badge-system">系统默认</span></div>
+      <div style="text-align:center"><span class="visibility-toggle on" title="可见" aria-label="可见">👁</span></div>
+      <div class="actions" style="justify-content:flex-end"><button class="btn ghost">编辑</button><button class="btn ghost" style="color:var(--faint);cursor:default">删除</button></div>
+    </div>
+
+    <div class="alias-row">
+      <div class="alias-name"><code class="mono">claude-3</code></div>
+      <div class="muted">claude-3-5-sonnet-20241022</div>
+      <div><span class="badge-system">系统默认</span></div>
+      <div style="text-align:center"><span class="visibility-toggle on" title="可见" aria-label="可见">👁</span></div>
+      <div class="actions" style="justify-content:flex-end"><button class="btn ghost">编辑</button><button class="btn ghost" style="color:var(--faint);cursor:default">删除</button></div>
+    </div>
+
+    <!-- 用户自定义行 -->
+    <div class="alias-row">
+      <div class="alias-name"><code class="mono">fast</code></div>
+      <div class="muted">gpt-4o-mini</div>
+      <div><span class="badge-user">用户自定义</span></div>
+      <div style="text-align:center"><span class="visibility-toggle on" title="可见" aria-label="可见">👁</span></div>
+      <div class="actions" style="justify-content:flex-end"><button class="btn ghost">编辑</button><button class="btn ghost danger">删除</button></div>
+    </div>
+
+    <div class="alias-row">
+      <div class="alias-name"><code class="mono">smart</code></div>
+      <div class="muted">claude-3-5-sonnet-20241022</div>
+      <div><span class="badge-user">用户自定义</span></div>
+      <div style="text-align:center"><span class="visibility-toggle on" title="可见" aria-label="可见">👁</span></div>
+      <div class="actions" style="justify-content:flex-end"><button class="btn ghost">编辑</button><button class="btn ghost danger">删除</button></div>
+    </div>
+
+    <div class="alias-row">
+      <div class="alias-name"><code class="mono">deep</code></div>
+      <div class="muted">deepseek-r1</div>
+      <div><span class="badge-user">用户自定义</span></div>
+      <div style="text-align:center"><span class="visibility-toggle on" title="可见" aria-label="可见">👁</span></div>
+      <div class="actions" style="justify-content:flex-end"><button class="btn ghost">编辑</button><button class="btn ghost danger">删除</button></div>
+    </div>
+
+    <div class="alias-row">
+      <div class="alias-name"><code class="mono">mini</code></div>
+      <div class="muted">gemini-1.5-flash</div>
+      <div><span class="badge-user">用户自定义</span></div>
+      <div style="text-align:center"><span class="visibility-toggle on" title="可见" aria-label="可见">👁</span></div>
+      <div class="actions" style="justify-content:flex-end"><button class="btn ghost">编辑</button><button class="btn ghost danger">删除</button></div>
+    </div>
+
+    <!-- 隐藏行 -->
+    <div class="alias-row hidden-row">
+      <div class="alias-name"><code class="mono">legacy-model</code></div>
+      <div class="muted">davinci-002</div>
+      <div><span class="badge-user">用户自定义</span></div>
+      <div style="text-align:center"><span class="visibility-toggle" title="已隐藏" aria-label="已隐藏">–</span></div>
+      <div class="actions" style="justify-content:flex-end"><button class="btn ghost">编辑</button><button class="btn ghost danger">删除</button></div>
+    </div>
+
+    <div class="alias-row hidden-row">
+      <div class="alias-name"><code class="mono">old-instruct</code></div>
+      <div class="muted">gpt-3.5-turbo-instruct</div>
+      <div><span class="badge-user">用户自定义</span></div>
+      <div style="text-align:center"><span class="visibility-toggle" title="已隐藏" aria-label="已隐藏">–</span></div>
+      <div class="actions" style="justify-content:flex-end"><button class="btn ghost">编辑</button><button class="btn ghost danger">删除</button></div>
+    </div>
+
+    <!-- 新增行（尾部固定） -->
+    <div class="add-bar">
+      <input class="input" style="max-width:160px" placeholder="新别名（a-z 0-9 - _）" />
+      <input class="input" placeholder="目标模型（输入或从下拉选择）" />
+      <button class="btn primary" style="flex-shrink:0">保存</button>
+      <button class="btn" style="flex-shrink:0">取消</button>
+    </div>
+  </div>
+
+  <div style="height:14px"></div>
+  <div class="note"><strong>设计规则</strong>：宽松行高 48px、斑马纹使用 rgba 白色透明度，操作列默认透明，行悬停时淡入，避免视觉噪音。系统默认别名不可删除，删除按钮置灰。</div>
+</section>
+
+<h2 class="section-title">C. CSV 导入流程 — 预览 → 校验 → 确认</h2>
+<section class="panel">
+  <div class="toolbar">
+    <div>
+      <h2 style="margin-bottom:4px">导入 CSV</h2>
+      <p class="muted">格式：alias,target_model,hidden,note · 文件 ≤ 50KB / ≤ 200 行 · 编码 UTF-8</p>
+    </div>
+    <div class="actions">
+      <button class="btn">下载模板</button>
+      <button class="btn primary">选择文件</button>
+    </div>
+  </div>
+
+  <div style="height:8px"></div>
+
+  <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">
+    <div class="metric" style="flex:1;min-width:140px"><b style="color:var(--green)">15</b><span>新增</span></div>
+    <div class="metric" style="flex:1;min-width:140px"><b style="color:var(--blue)">3</b><span>更新</span></div>
+    <div class="metric" style="flex:1;min-width:140px"><b style="color:var(--muted)">2</b><span>跳过</span></div>
+    <div class="metric" style="flex:1;min-width:140px"><b style="color:var(--red)">1</b><span>错误</span></div>
+  </div>
+
+  <div class="csv-preview">
+    <div class="csv-head">
+      <div>alias</div>
+      <div>target_model</div>
+      <div>hidden</div>
+      <div>状态</div>
+    </div>
+    <div class="csv-row">
+      <div><code class="mono">fast</code></div>
+      <div class="muted">gpt-4o-mini</div>
+      <div>false</div>
+      <div><span class="badge-ok">更新</span></div>
+    </div>
+    <div class="csv-row">
+      <div><code class="mono">smart</code></div>
+      <div class="muted">claude-3-5-sonnet-20241022</div>
+      <div>false</div>
+      <div><span class="badge-ok">更新</span></div>
+    </div>
+    <div class="csv-row">
+      <div><code class="mono">vision</code></div>
+      <div class="muted">gpt-4o</div>
+      <div>false</div>
+      <div><span class="badge-ok">新增</span></div>
+    </div>
+    <div class="csv-row">
+      <div><code class="mono">audio</code></div>
+      <div class="muted">whisper-1</div>
+      <div>false</div>
+      <div><span class="badge-ok">新增</span></div>
+    </div>
+    <div class="csv-row">
+      <div><code class="mono">tts</code></div>
+      <div class="muted">tts-1-hd</div>
+      <div>false</div>
+      <div><span class="badge-ok">新增</span></div>
+    </div>
+    <div class="csv-row error-row">
+      <div><code class="mono">invalid model!!!</code></div>
+      <div class="muted">not-a-real-model-xyz</div>
+      <div>false</div>
+      <div><span class="badge-err">模型不存在</span></div>
+    </div>
+  </div>
+
+  <div style="height:14px"></div>
+
+  <div class="grid cols2">
+    <div class="note">
+      <strong>校验规则</strong><br>
+      ① alias 格式：仅 a-z 0-9 - _<br>
+      ② CSV 内重复：保留首行<br>
+      ③ 追加模式冲突：跳过并标注「已存在」<br>
+      ④ 超 200 行 / 超 50KB：拒绝导入<br>
+      ⑤ 非 UTF-8：尝试自动检测
+    </div>
+    <div>
+      <div style="margin-bottom:10px"><strong>导入模式</strong></div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap">
+        <label style="display:flex;align-items:center;gap:6px;padding:10px 14px;border:1px solid var(--active);border-radius:10px;background:var(--grad-soft);cursor:pointer">
+          <span style="width:14px;height:14px;border:2px solid var(--blue);border-radius:50%;background:var(--blue);box-shadow:inset 0 0 0 3px rgba(2,6,23,.8)"></span>
+          <span>追加（仅新增）</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:6px;padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.035);cursor:pointer">
+          <span style="width:14px;height:14px;border:2px solid var(--faint);border-radius:50%"></span>
+          <span>覆盖（全量替换）</span>
+        </label>
+      </div>
+      <p class="muted" style="margin-top:8px;font-size:12px">覆盖模式会替换所有用户自定义别名，系统默认别名始终保留。</p>
+    </div>
+  </div>
+
+  <div style="height:14px;display:flex;justify-content:flex-end;gap:10px">
+    <button class="btn">取消</button>
+    <button class="btn primary">确认导入</button>
+  </div>
+</section>
+
+<h2 class="section-title">D. CSV 导出</h2>
+<section class="grid cols2">
+  <div class="panel">
+    <h2>导出当前配置</h2>
+    <p class="muted">一键导出所有别名（系统 + 用户自定义）和隐藏标记为 CSV 文件，方便备份或迁移到新实例。</p>
+    <div style="height:12px"></div>
+    <div style="display:flex;gap:10px">
+      <button class="btn primary" style="flex:1">导出 CSV</button>
+      <button class="btn" style="flex:1">复制到剪贴板</button>
+    </div>
+    <div style="height:12px"></div>
+    <div class="note">文件名：<code class="mono">ai-relay-models-2026-05-26.csv</code><br>Round-trip 一致：导出的文件可以直接再次导入。</div>
+  </div>
+  <div class="panel">
+    <h2>导出预览</h2>
+    <pre class="mono" style="margin:0;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel3);white-space:pre;line-height:1.7;font-size:12px">alias,target_model,hidden,note
+gpt-4,gpt-4-turbo,false,系统默认
+gpt-3.5,gpt-3.5-turbo,false,系统默认
+claude-3,claude-3-5-sonnet-20241022,false,系统默认
+fast,gpt-4o-mini,false,团队约定
+smart,claude-3-5-sonnet-20241022,false,团队约定
+deep,deepseek-r1,false,团队约定
+mini,gemini-1.5-flash,false,团队约定
+legacy-model,davinci-002,true,已弃用</pre>
+  </div>
+</section>
+
+<h2 class="section-title">E. 行内编辑态 & 冲突错误</h2>
+<section class="grid cols2">
+  <div class="panel">
+    <h2>编辑别名</h2>
+    <p class="muted">行内编辑模式：双击行或点击「编辑」进入，目标模型输入框带自动补全下拉。保存前即时校验冲突。</p>
+    <div style="height:12px"></div>
+    <div class="alias-wrap">
+      <div class="alias-row" style="background:rgba(96,165,250,.06);border-color:var(--active)">
+        <div><input class="input" style="height:36px" value="fast" readonly /></div>
+        <div>
+          <input class="input" style="height:36px" value="gpt-4o" />
+          <div style="margin-top:4px;display:flex;flex-wrap:wrap;gap:4px">
+            <span class="tag" style="font-size:11px;cursor:pointer">gpt-4o</span>
+            <span class="tag" style="font-size:11px;cursor:pointer">gpt-4o-mini</span>
+            <span class="tag" style="font-size:11px;cursor:pointer">gpt-4-turbo</span>
+          </div>
+        </div>
+        <div><span class="badge-user">用户自定义</span></div>
+        <div style="text-align:center">–</div>
+        <div style="display:flex;gap:6px;justify-content:flex-end">
+          <button class="btn ghost">取消</button>
+          <button class="btn primary" style="min-height:32px;font-size:12px">保存</button>
+        </div>
+      </div>
+    </div>
+    <div style="height:12px"></div>
+    <div class="note"><strong>自动补全规则</strong>：输入时实时匹配已注册模型 ID，展示最近 5 条建议。Tab 键快速填入第一个建议。</div>
+  </div>
+
+  <div class="panel">
+    <h2>冲突错误态</h2>
+    <p class="muted">别名冲突时输入框即时变红，保存按钮置灰。不能保存冲突的别名。</p>
+    <div style="height:12px"></div>
+    <div class="alias-wrap">
+      <div class="alias-row" style="background:rgba(239,68,68,.06);border-color:rgba(239,68,68,.35)">
+        <div>
+          <input class="input error" style="height:36px" value="gpt-4" />
+          <div style="margin-top:4px;color:var(--red);font-size:12px">⚠ 别名已存在（系统默认，不可覆盖）</div>
+        </div>
+        <div><input class="input" style="height:36px" value="gpt-4o" /></div>
+        <div><span class="badge-user">用户自定义</span></div>
+        <div style="text-align:center">–</div>
+        <div style="display:flex;gap:6px;justify-content:flex-end">
+          <button class="btn ghost">取消</button>
+          <button class="btn" style="min-height:32px;font-size:12px;color:var(--faint);cursor:default">保存</button>
+        </div>
+      </div>
+    </div>
+    <div style="height:12px"></div>
+    <div class="note"><strong>冲突类型</strong><br>① 与系统默认冲突：输入框红 + 文字提示「系统默认别名不可覆盖」<br>② 与已有自定义冲突：输入框红 + 文字提示「别名已存在」<br>③ 格式非法：输入框红 + 文字提示「仅允许 a-z 0-9 - _」</div>
+  </div>
+</section>
+
+<h2 class="section-title">F. 删除二次确认弹窗</h2>
+<section class="panel" style="display:grid;place-items:center;min-height:420px;background:rgba(0,0,0,.35)">
+  <div class="modal" style="max-width:460px">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+      <div style="width:40px;height:40px;border-radius:10px;background:rgba(239,68,68,.18);display:grid;place-items:center;font-weight:800;color:var(--red)">✕</div>
+      <div>
+        <strong>确认删除别名</strong>
+        <div class="muted" style="font-size:12px">此操作不可撤销</div>
+      </div>
+    </div>
+    <div style="padding:12px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.035);margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:6px">
+        <code class="mono">fast</code>
+        <span style="color:var(--muted)">→</span>
+        <code class="mono">gpt-4o-mini</code>
+      </div>
+      <div class="muted" style="font-size:12px">来源：用户自定义 · 创建于 2026-05-20</div>
+    </div>
+    <div class="note" style="border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.08);margin-bottom:14px">
+      <strong style="color:var(--yellow)">注意</strong>：删除后，使用该别名的请求将 fallback 到硬编码默认映射。缓存最多 5 分钟后生效。
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn">取消</button>
+      <button class="btn danger">确认删除</button>
+    </div>
+  </div>
+</section>
+
+<h2 class="section-title">G. 模型隐藏 — 可见性切换</h2>
+<section class="grid cols2">
+  <div class="panel">
+    <h2>可见状态</h2>
+    <p class="muted">点击眼睛图标切换可见性。隐藏后行变半透明 + 删除线，不出现在 /v1/models 列表中。</p>
+    <div style="height:12px"></div>
+    <div class="alias-wrap">
+      <div class="alias-row">
+        <div class="alias-name"><code class="mono">fast</code></div>
+        <div class="muted">gpt-4o-mini</div>
+        <div><span class="badge-user">用户自定义</span></div>
+        <div style="text-align:center">
+          <span class="visibility-toggle on" title="可见" style="cursor:pointer">👁</span>
+        </div>
+        <div class="actions" style="justify-content:flex-end"><button class="btn ghost">编辑</button></div>
+      </div>
+      <div class="alias-row">
+        <div class="alias-name"><code class="mono">smart</code></div>
+        <div class="muted">claude-3-5-sonnet-20241022</div>
+        <div><span class="badge-user">用户自定义</span></div>
+        <div style="text-align:center">
+          <span class="visibility-toggle on" title="可见" style="cursor:pointer">👁</span>
+        </div>
+        <div class="actions" style="justify-content:flex-end"><button class="btn ghost">编辑</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>隐藏状态</h2>
+    <p class="muted">隐藏的模型行 opacity 0.5 + 文字删除线。隐藏 ≠ 禁用：直接调用模型名或通过别名调用时仍然正常工作。</p>
+    <div style="height:12px"></div>
+    <div class="alias-wrap">
+      <div class="alias-row hidden-row">
+        <div class="alias-name"><code class="mono">legacy-model</code></div>
+        <div class="muted">davinci-002</div>
+        <div><span class="badge-user">用户自定义</span></div>
+        <div style="text-align:center">
+          <span class="visibility-toggle" title="已隐藏" style="cursor:pointer">–</span>
+        </div>
+        <div class="actions" style="justify-content:flex-end"><button class="btn ghost">编辑</button></div>
+      </div>
+      <div class="alias-row hidden-row">
+        <div class="alias-name"><code class="mono">old-instruct</code></div>
+        <div class="muted">gpt-3.5-turbo-instruct</div>
+        <div><span class="badge-user">用户自定义</span></div>
+        <div style="text-align:center">
+          <span class="visibility-toggle" title="已隐藏" style="cursor:pointer">–</span>
+        </div>
+        <div class="actions" style="justify-content:flex-end"><button class="btn ghost">编辑</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>隐藏行为对照表</h2>
+  <div style="height:10px"></div>
+  <div class="alias-wrap">
+    <div class="alias-head" style="grid-template-columns:1.5fr 1fr 2fr">
+      <div>场景</div>
+      <div style="text-align:center">隐藏模型表现</div>
+      <div>说明</div>
+    </div>
+    <div class="alias-row" style="grid-template-columns:1.5fr 1fr 2fr">
+      <div><code class="mono">/v1/models</code> 列表</div>
+      <div style="text-align:center;color:var(--red)">不出现在列表中</div>
+      <div class="muted">客户端不可发现，但不阻断已有请求</div>
+    </div>
+    <div class="alias-row" style="grid-template-columns:1.5fr 1fr 2fr">
+      <div><code class="mono">/v1/chat/completions</code></div>
+      <div style="text-align:center;color:var(--green)">正常处理</div>
+      <div class="muted">隐藏 ≠ 禁用，已有客户端不受影响</div>
+    </div>
+    <div class="alias-row" style="grid-template-columns:1.5fr 1fr 2fr">
+      <div>别名指向隐藏模型</div>
+      <div style="text-align:center;color:var(--green)">别名正常解析</div>
+      <div class="muted">隐藏的是目标模型在列表中的展示，不影响别名解析链路</div>
+    </div>
+    <div class="alias-row" style="grid-template-columns:1.5fr 1fr 2fr">
+      <div>Admin 面板</div>
+      <div style="text-align:center;color:var(--yellow)">半透明 + 删除线</div>
+      <div class="muted">通过筛选器「仅隐藏」可集中查看和管理</div>
+    </div>
+  </div>
+</section>
+
+<h2 class="section-title">H. 移动端降级 & 空状态</h2>
+<section class="grid cols2">
+  <div class="panel">
+    <h2>移动端卡片降级</h2>
+    <p class="muted">手机端表格降级为卡片列表，操作按钮内联在卡片底部，CSV 入口保留但预览改为滚动容器。</p>
+    <div style="height:12px"></div>
+    <div class="phone">
+      <div class="phone-top"></div>
+      <div class="mobile-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div><b style="font-size:14px"><code class="mono">gpt-4</code></b> <span class="badge-system">系统</span></div>
+          <span class="visibility-toggle on" style="width:24px;height:24px;font-size:11px">👁</span>
+        </div>
+        <div class="muted" style="font-size:12px;margin-bottom:8px">→ gpt-4-turbo</div>
+        <div style="display:flex;gap:6px"><button class="btn ghost" style="font-size:12px">编辑</button></div>
+      </div>
+      <div class="mobile-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div><b style="font-size:14px"><code class="mono">fast</code></b> <span class="badge-user">自定义</span></div>
+          <span class="visibility-toggle on" style="width:24px;height:24px;font-size:11px">👁</span>
+        </div>
+        <div class="muted" style="font-size:12px;margin-bottom:8px">→ gpt-4o-mini</div>
+        <div style="display:flex;gap:6px"><button class="btn ghost" style="font-size:12px">编辑</button><button class="btn ghost danger" style="font-size:12px">删除</button></div>
+      </div>
+      <div class="mobile-card hidden-row">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div><b style="font-size:14px;text-decoration:line-through"><code class="mono">legacy-model</code></b></div>
+          <span class="visibility-toggle" style="width:24px;height:24px;font-size:11px">–</span>
+        </div>
+        <div class="muted" style="font-size:12px;margin-bottom:8px;text-decoration:line-through">→ davinci-002</div>
+        <div style="display:flex;gap:6px"><button class="btn ghost" style="font-size:12px">显示</button><button class="btn ghost danger" style="font-size:12px">删除</button></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn primary" style="flex:1;font-size:12px">+ 添加别名</button>
+        <button class="btn" style="flex:1;font-size:12px">导入 CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>空状态引导</h2>
+    <p class="muted">首次进入且无自定义别名时，展示引导卡片而不是空表格。降低首次操作的心理成本。</p>
+    <div style="height:12px"></div>
+    <div style="text-align:center;padding:28px 16px;border:1px dashed rgba(255,255,255,.12);border-radius:14px;background:rgba(255,255,255,.02)">
+      <div style="font-size:36px;margin-bottom:12px;opacity:.6">🏷</div>
+      <h3 style="margin-bottom:6px">还没有自定义别名</h3>
+      <p class="muted" style="margin-bottom:16px;font-size:13px">为常用模型创建简短别名，让 API 调用更简洁。</p>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button class="btn primary">+ 添加别名</button>
+        <button class="btn">导入 CSV</button>
+        <button class="btn">使用系统默认</button>
+      </div>
+    </div>
+    <div style="height:16px"></div>
+    <div class="note"><strong>设计备注</strong>：系统默认别名始终存在（硬编码 fallback），空状态仅针对用户自定义别名。卡片不隐藏表头筛选器，用户可以随时切换到「全部」视图看到系统别名。</div>
+  </div>
+</section>
+
+<h2 class="section-title">设计规范回顾</h2>
+<section class="panel">
+  <h2>视觉 Token 对照</h2>
+  <p class="muted" style="margin-bottom:14px">严格沿用迭代一 dark glassmorphism 体系，不新增品牌色；所有交互目标 ≥ 44px；表格行高 48px。</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
+    <div style="padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03)"><b>背景</b><div class="muted" style="margin-top:4px;font-size:12px">radial-gradient(circle at top, #1e293b, #09090b)</div></div>
+    <div style="padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03)"><b>面板</b><div class="muted" style="margin-top:4px;font-size:12px">rgba(30,41,59,0.45) + blur(12px)</div></div>
+    <div style="padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03)"><b>主按钮</b><div class="muted" style="margin-top:4px;font-size:12px">蓝紫渐变，44px 高度</div></div>
+    <div style="padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03)"><b>成功</b><div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block"></span><span class="muted" style="font-size:12px">#10b981</span></div></div>
+    <div style="padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03)"><b>警告</b><div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;display:inline-block"></span><span class="muted" style="font-size:12px">#f59e0b</span></div></div>
+    <div style="padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03)"><b>错误</b><div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block"></span><span class="muted" style="font-size:12px">#ef4444</span></div></div>
+    <div style="padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03)"><b>圆角</b><div class="muted" style="margin-top:4px;font-size:12px">12–16px 卡片，999px pill</div></div>
+    <div style="padding:12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03)"><b>边框</b><div class="muted" style="margin-top:4px;font-size:12px">rgba(255,255,255,0.08)</div></div>
+  </div>
+</section>
+
+<footer class="foot">
+  AI Relay 迭代二设计稿 · 模型别名管理 / CSV 批量导入导出 / 模型隐藏 · 由像素姐输出
+</footer>
+
+</main>
+</body>
+</html>
