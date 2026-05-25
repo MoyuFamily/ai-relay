@@ -189,7 +189,7 @@ async function tryProviderWithRetries(
 
     // Resolve target model and its alias for the current provider
     const targetModel = await resolveFallbackModel(body.model, provider.name);
-    const resolvedAlias = resolveModelAlias(targetModel);
+    const resolvedAlias = await resolveModelAlias(targetModel);
     // Map virtual model name to real upstream model ID (e.g. mimo-v2.5-pro-coding → mimo-v2.5-pro)
     const resolvedModel = resolveUpstreamModel(resolvedAlias, provider);
 

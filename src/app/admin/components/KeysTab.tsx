@@ -42,6 +42,7 @@ interface KeysTabProps {
   editingCustomProvider: any;
   setEditingCustomProvider: (val: any) => void;
   onSaveCustomProvider: (provider: any) => Promise<void>;
+  onTestCustomProvider: (provider: any, apiKeyValue: string, modelId?: string) => Promise<any>;
   onDeleteCustomProvider: (name: string) => Promise<void>;
 }
 
@@ -76,6 +77,7 @@ export default function KeysTab(props: KeysTabProps) {
     editingCustomProvider,
     setEditingCustomProvider,
     onSaveCustomProvider,
+    onTestCustomProvider,
     onDeleteCustomProvider,
   } = props;
 
@@ -178,6 +180,7 @@ export default function KeysTab(props: KeysTabProps) {
         editingCustomProvider={editingCustomProvider}
         setEditingCustomProvider={setEditingCustomProvider}
         onSaveCustomProvider={onSaveCustomProvider}
+        onTestCustomProvider={onTestCustomProvider}
       />
     </div>
   );

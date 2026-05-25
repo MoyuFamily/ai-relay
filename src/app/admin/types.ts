@@ -81,3 +81,21 @@ export interface WebhookSettings {
   reportTime: string;
   reportTimezone: string;
 }
+
+export interface PriorityRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  modelPattern: string;
+  providerOrder: string[];
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PriorityRuleConflict {
+  ruleIds: [string, string];
+  ruleNames: [string, string];
+  sampleModel: string;
+  message: string;
+}

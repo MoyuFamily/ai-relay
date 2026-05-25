@@ -356,20 +356,51 @@ export function useAdminHandlers(apiKey: string, t: any) {
     }
   }, [apiKey, t, fetchData]);
 
+  const handleTestCustomProvider = useCallback(async (provider: any, apiKeyValue: string, model?: string) => {
+    const res = await fetch(`/api/admin/providers/${provider.name}/keys/test`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ key: apiKeyValue, model, providerConfig: provider }),
+    });
+    const resData = await res.json();
+    if (!res.ok) {
+      throw new Error(resData.error?.message || t.alertVerificationRequestFailed);
+    }
+    return resData;
+  }, [apiKey, t]);
+
   const handleSaveCustomProvider = useCallback(async (provider: any) => {
     setOperationLoading(true);
     try {
+      const { apiKey: apiKeyValue, ...providerConfig } = provider;
       const res = await fetch('/api/admin/providers', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify(provider),
+        body: JSON.stringify(providerConfig),
       });
       const resData = await res.json();
       if (!res.ok) {
         throw new Error(resData.error?.message || 'Failed to save custom provider');
+      }
+      if (typeof apiKeyValue === 'string' && apiKeyValue.trim()) {
+        const keyRes = await fetch(`/api/admin/providers/${providerConfig.name}/keys`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({ key: apiKeyValue.trim() }),
+        });
+        const keyData = await keyRes.json();
+        if (!keyRes.ok) {
+          throw new Error(keyData.error?.message || 'Provider saved, but failed to save API key');
+        }
       }
       alert(t.msgProviderSaved);
       setCustomProviderModalOpen(false);
@@ -439,6 +470,7 @@ export function useAdminHandlers(apiKey: string, t: any) {
     handleResetFallbacks,
     handleSaveQuota,
     handleResetQuota,
+    handleTestCustomProvider,
     handleSaveCustomProvider,
     handleDeleteCustomProvider,
   };

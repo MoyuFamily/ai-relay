@@ -6,6 +6,8 @@
 
 import { withTimeout } from '@/lib/utils/timeout';
 import type { ProviderConfig } from '../providers/types';
+import type { PriorityRule } from './priority-rules-core';
+import { normalizePriorityRules } from './priority-rules-core';
 
 let _kv: any = null;
 
@@ -99,7 +101,10 @@ export function createMemoryMockKV() {
       const match = options?.match;
       let matched = keys;
       if (match) {
-        const regexStr = '^' + match.replace(/[-[\]{}()+?.,\\^$|#\s]/g, '\\$&').replace(/\\\*/g, '.*') + '$';
+        const regexStr = '^' + match
+          .split('*')
+          .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+          .join('.*') + '$';
         const regex = new RegExp(regexStr);
         matched = keys.filter((k) => regex.test(k));
       }
@@ -216,6 +221,8 @@ const PREFIX = {
   keys: 'admin:keys:',             // admin:keys:{provider} → JSON string[] (raw API keys)
   keyVersion: 'admin:keys:version:', // admin:keys:version:{provider} → monotonically increasing number
   quota: 'admin:quota',            // admin:quota → Hash { dailyLimit, monthlyLimit }
+  modelAliases: 'relay:models:aliases', // relay:models:aliases → JSON { aliases, hidden }
+  priorityRules: 'relay:priority:rules', // relay:priority:rules → JSON PriorityRule[]
 } as const;
 
 /**
@@ -238,6 +245,139 @@ function parseJsonOrArray(val: unknown): string[] | null {
     }
   }
   return null;
+}
+
+// ── Priority Rule Management ────────────────────────────────
+
+function parsePriorityRules(raw: unknown): PriorityRule[] {
+  if (!raw) return [];
+  const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  return normalizePriorityRules(parsed);
+}
+
+export async function getPriorityRules(forceRefresh = false): Promise<PriorityRule[]> {
+  const cacheKey = 'priorityRules';
+  const cached = forceRefresh ? { hit: false as const } : getCachedEntry<PriorityRule[]>(cacheKey);
+  if (cached.hit) return cached.data;
+
+  try {
+    const kv = await getKV();
+    if (kv) {
+      const raw = await withTimeout(
+        kv.get(PREFIX.priorityRules),
+        1000,
+        null,
+        'getPriorityRules'
+      );
+      const rules = parsePriorityRules(raw);
+      setCached(cacheKey, rules, CONFIG_CACHE_TTL_MS);
+      return rules;
+    }
+  } catch {
+    // fall through to empty rules so relay keeps working when KV is unavailable
+  }
+  setCached(cacheKey, [], CONFIG_CACHE_TTL_MS);
+  return [];
+}
+
+export async function savePriorityRules(rulesInput: unknown): Promise<PriorityRule[]> {
+  const rules = normalizePriorityRules(rulesInput);
+  const kv = await getKV();
+  if (!kv) {
+    throw new Error('KV storage not configured — cannot persist priority rules');
+  }
+  await kv.set(PREFIX.priorityRules, JSON.stringify(rules));
+  clearCache('priorityRules');
+  return rules;
+}
+
+
+// ── Model Alias + Visibility Management ─────────────────────
+
+export interface ModelAliasConfig {
+  aliases: Record<string, string>;
+  hidden: string[];
+}
+
+const MODEL_ALIAS_CACHE_TTL_MS = 5 * 60_000;
+
+function parseModelAliasConfig(raw: unknown): ModelAliasConfig {
+  if (!raw) return { aliases: {}, hidden: [] };
+  const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { aliases: {}, hidden: [] };
+  }
+  const obj = parsed as Record<string, unknown>;
+  const rawAliases = obj.aliases && typeof obj.aliases === 'object' && !Array.isArray(obj.aliases)
+    ? obj.aliases as Record<string, unknown>
+    : obj;
+  const aliases: Record<string, string> = {};
+  for (const [alias, target] of Object.entries(rawAliases)) {
+    if (alias === 'hidden' || alias === 'aliases') continue;
+    if (typeof target === 'string' && target.trim()) {
+      aliases[alias.toLowerCase()] = target.trim();
+    }
+  }
+  const hidden = Array.isArray(obj.hidden)
+    ? Array.from(new Set(obj.hidden.filter((item): item is string => {
+      return typeof item === 'string' && item.trim().length > 0;
+    }).map((item) => item.trim())))
+    : [];
+  return { aliases, hidden };
+}
+
+export async function getModelAliasConfig(forceRefresh = false): Promise<ModelAliasConfig> {
+  const cacheKey = 'modelAliases';
+  const cached = forceRefresh ? { hit: false as const } : getCachedEntry<ModelAliasConfig>(cacheKey);
+  if (cached.hit) return cached.data;
+
+  try {
+    const kv = await getKV();
+    if (kv) {
+      const raw = await withTimeout(
+        kv.get(PREFIX.modelAliases),
+        1000,
+        null,
+        'getModelAliasConfig'
+      );
+      const config = parseModelAliasConfig(raw);
+      setCached(cacheKey, config, MODEL_ALIAS_CACHE_TTL_MS);
+      return config;
+    }
+  } catch {
+    // fall through to empty config so relay keeps working when KV is unavailable
+  }
+  const empty = { aliases: {}, hidden: [] };
+  setCached(cacheKey, empty, MODEL_ALIAS_CACHE_TTL_MS);
+  return empty;
+}
+
+export async function saveModelAliasConfig(configInput: ModelAliasConfig): Promise<ModelAliasConfig> {
+  const aliases: Record<string, string> = {};
+  for (const [alias, target] of Object.entries(configInput.aliases || {})) {
+    if (typeof alias === 'string' && typeof target === 'string' && alias.trim() && target.trim()) {
+      aliases[alias.trim().toLowerCase()] = target.trim();
+    }
+  }
+  const hidden = Array.from(new Set((configInput.hidden || []).filter((item) => {
+    return typeof item === 'string' && item.trim().length > 0;
+  }).map((item) => item.trim())));
+  const config = { aliases, hidden };
+  const kv = await getKV();
+  if (!kv) {
+    throw new Error('KV storage not configured — cannot persist model aliases');
+  }
+  await kv.set(PREFIX.modelAliases, JSON.stringify(config));
+  clearCache('modelAliases');
+  return config;
+}
+
+export async function setModelHidden(model: string, hidden: boolean): Promise<ModelAliasConfig> {
+  const config = await getModelAliasConfig(true);
+  const current = new Set(config.hidden);
+  if (hidden) current.add(model);
+  else current.delete(model);
+  return saveModelAliasConfig({ aliases: config.aliases, hidden: Array.from(current) });
 }
 
 // ── Fallback Chain Management ────────────────────────────────

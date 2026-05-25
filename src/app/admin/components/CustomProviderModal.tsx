@@ -12,6 +12,7 @@ interface CustomProviderModalProps {
   editingCustomProvider: any;
   setEditingCustomProvider: (val: any) => void;
   onSaveCustomProvider: (provider: any) => Promise<void>;
+  onTestCustomProvider?: (provider: any, apiKeyValue: string, modelId?: string) => Promise<any>;
 }
 
 export default function CustomProviderModal({
@@ -23,6 +24,7 @@ export default function CustomProviderModal({
   editingCustomProvider,
   setEditingCustomProvider,
   onSaveCustomProvider,
+  onTestCustomProvider: _onTestCustomProvider,
 }: CustomProviderModalProps) {
   // Local states for custom provider form
   const [formId, setFormId] = useState('');

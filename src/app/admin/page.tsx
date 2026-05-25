@@ -9,6 +9,7 @@ import WebhooksTab from './components/WebhooksTab';
 import SetupTab from './components/SetupTab';
 import ProviderHealthTab from './components/ProviderHealthTab';
 import RequestLogsTab from './components/RequestLogsTab';
+import ModelAliasesTab from './components/ModelAliasesTab';
 import type { AdminData } from './types';
 import { TRANSLATIONS } from './translations';
 import { useAdminHandlers } from './adminHandlers';
@@ -16,7 +17,7 @@ import { useAdminHandlers } from './adminHandlers';
 export default function AdminPage() {
   const [apiKey, setApiKey] = useState('');
   const [lang, setLang] = useState<'zh' | 'en'>('zh');
-  const [activeTab, setActiveTab] = useState<'setup' | 'overview' | 'keys' | 'health' | 'logs' | 'tools' | 'webhooks'>('setup');
+  const [activeTab, setActiveTab] = useState<'setup' | 'overview' | 'keys' | 'models' | 'health' | 'logs' | 'tools' | 'webhooks'>('setup');
   const [setupData, setSetupData] = useState<any>(null);
   const [providerHealthData, setProviderHealthData] = useState<any>(null);
   const [v21Loading, setV21Loading] = useState(false);
@@ -47,6 +48,7 @@ export default function AdminPage() {
     handleResetFallbacks,
     handleSaveQuota,
     handleResetQuota,
+    handleTestCustomProvider,
     handleSaveCustomProvider,
     handleDeleteCustomProvider,
   } = useAdminHandlers(apiKey, t);
@@ -414,6 +416,12 @@ export default function AdminPage() {
           {t.tabKeys}
         </button>
         <button
+          className={`tab-btn ${activeTab === 'models' ? 'active' : ''}`}
+          onClick={() => setActiveTab('models')}
+        >
+          模型配置
+        </button>
+        <button
           className={`tab-btn ${activeTab === 'health' ? 'active' : ''}`}
           onClick={() => setActiveTab('health')}
         >
@@ -498,7 +506,15 @@ export default function AdminPage() {
             editingCustomProvider={editingCustomProvider}
             setEditingCustomProvider={setEditingCustomProvider}
             onSaveCustomProvider={handleSaveCustomProvider}
+            onTestCustomProvider={handleTestCustomProvider}
             onDeleteCustomProvider={handleDeleteCustomProvider}
+          />
+        )}
+        {activeTab === 'models' && (
+          <ModelAliasesTab
+            apiKey={apiKey}
+            providers={data?.providers || []}
+            onRefreshData={() => fetchData(true)}
           />
         )}
         {activeTab === 'health' && (

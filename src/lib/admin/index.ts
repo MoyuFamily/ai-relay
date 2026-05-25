@@ -19,6 +19,8 @@ export {
   updateWebhook,
   deleteWebhook,
   saveAlertThresholds,
+  getPriorityRules,
+  savePriorityRules,
   tryDecodeBase64,
 } from './admin-config';
 

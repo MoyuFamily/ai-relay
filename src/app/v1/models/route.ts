@@ -7,6 +7,7 @@
 
 import { NextRequest } from 'next/server';
 import { getAllProviders } from '@/lib/providers';
+import { getModelAliasConfig } from '@/lib/admin/admin-config';
 import { getKeyPoolStats, initAllKeyPools, validateAuth } from '@/lib/relay';
 import type { ModelInfo } from '@/lib/providers/types';
 
@@ -76,11 +77,14 @@ export async function GET(request: NextRequest) {
   }
 
   const allModels = await getAllModels();
+  const aliasConfig = await getModelAliasConfig();
+  const hiddenModels = new Set(aliasConfig.hidden);
+  const visibleModels = allModels.filter((model) => !hiddenModels.has(model.id));
 
   // OpenAI-compatible response format
   return Response.json({
     object: 'list',
-    data: allModels.map((model) => ({
+    data: visibleModels.map((model) => ({
       id: model.id,
       object: 'model',
       created: RELAY_CREATED,

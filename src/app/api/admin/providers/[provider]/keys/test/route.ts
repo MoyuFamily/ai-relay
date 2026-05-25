@@ -26,22 +26,22 @@ export async function POST(request: NextRequest, { params }: { params: Params })
   if (authErr) return authErr;
 
   const { provider: providerName } = await params;
-  const allProviders = await getAllProviders(true);
-  const provider = allProviders[providerName];
-  if (!provider) {
-    return Response.json(
-      { error: { message: `Unknown provider: ${providerName}`, code: 404 } },
-      { status: 404 }
-    );
-  }
-
-  let body: { key?: string; hash?: string; model?: string };
+  let body: { key?: string; hash?: string; model?: string; providerConfig?: any };
   try {
     body = await request.json();
   } catch {
     return Response.json(
       { error: { message: 'Invalid JSON body', code: 400 } },
       { status: 400 }
+    );
+  }
+
+  const allProviders = await getAllProviders(true);
+  const provider = allProviders[providerName] ?? body.providerConfig;
+  if (!provider || provider.name !== providerName) {
+    return Response.json(
+      { error: { message: `Unknown provider: ${providerName}`, code: 404 } },
+      { status: 404 }
     );
   }
 

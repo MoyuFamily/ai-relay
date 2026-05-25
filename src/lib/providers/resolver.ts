@@ -4,7 +4,8 @@
 
 import type { ProviderConfig } from './types';
 import { PROVIDERS } from './registry';
-import { getCustomProviders } from '../admin/admin-config';
+import { getCustomProviders, getModelAliasConfig, getPriorityRules } from '../admin/admin-config';
+import { findMatchingPriorityRule } from '../admin/priority-rules-core';
 
 /**
  * Model alias mapping — lets users request common names that get
@@ -25,8 +26,14 @@ const MODEL_ALIASES: Record<string, string> = {
  * Resolve a model alias to its actual model name.
  * Returns the original name if no alias exists.
  */
-export function resolveModelAlias(model: string): string {
-  return MODEL_ALIASES[model.toLowerCase()] || model;
+export async function resolveModelAlias(model: string, forceRefresh = false): Promise<string> {
+  const requested = model.toLowerCase();
+  try {
+    const config = await getModelAliasConfig(forceRefresh);
+    return config.aliases[requested] || MODEL_ALIASES[requested] || model;
+  } catch {
+    return MODEL_ALIASES[requested] || model;
+  }
 }
 
 /**
@@ -71,12 +78,22 @@ export function clearProvidersCache(): void {
  * Returns null if no provider matches.
  */
 export async function resolveProvider(model: string): Promise<ProviderConfig | null> {
-  const resolved = resolveModelAlias(model);
+  const resolved = await resolveModelAlias(model);
   const lowerModel = resolved.toLowerCase();
   let bestProvider: ProviderConfig | null = null;
   let longestPrefixLength = 0;
 
   const allProviders = await getAllProviders();
+  try {
+    const priorityRule = findMatchingPriorityRule(await getPriorityRules(), lowerModel);
+    if (priorityRule) {
+      const preferred = priorityRule.providerOrder.find((providerName) => allProviders[providerName]);
+      if (preferred) return allProviders[preferred];
+    }
+  } catch {
+    // Priority rules are an admin override. If KV/config is unavailable, fall back to legacy prefix matching.
+  }
+
   for (const provider of Object.values(allProviders)) {
     for (const prefix of provider.modelPrefixes) {
       if (lowerModel.startsWith(prefix)) {
