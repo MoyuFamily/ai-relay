@@ -369,5 +369,76 @@ Unknown ───→ Healthy ───→ Healthy ───→ Healthy
 
 ---
 
+## 10. 验收清单
+
+### 10.1 Cron 巡检验收
+
+| 检查项 | 通过标准 |
+|--------|----------|
+| Vercel Cron 配置 | `vercel.json` 中存在 `/api/cron/probe`，调度频率为每 30 分钟 |
+| Cron 鉴权 | Vercel Cron 请求可通过，普通未授权请求返回 401/403 |
+| 供应商覆盖 | 已启用且配置了 Key 的供应商全部进入巡检队列 |
+| Unknown 兜底 | 无可用 Key、配置缺失、首次无记录时展示 Unknown，不误报 Down |
+| Degraded 过渡 | 单次超时、单次 5xx、响应时间 >5s 或 429 展示 Degraded |
+| Down 判定 | 连续 2 次失败才展示 Down |
+| 历史保留 | `relay:health:log:{provider}:{timestamp}` 设置 7 天 TTL |
+| 请求链路影响 | 普通 `/v1/*` 转发请求不因巡检新增 KV 读写 |
+
+### 10.2 Admin 监控页验收
+
+| 检查项 | 通过标准 |
+|--------|----------|
+| 状态灯可读性 | Healthy / Degraded / Down / Unknown 同时具备颜色、图标、文字，不只依赖颜色 |
+| 最近状态 | 卡片展示最近巡检时间、响应时间、可用 Key 数 |
+| 趋势信息 | 卡片展示最近 7 天 sparkline 或等价趋势摘要 |
+| 日志展开 | 点击供应商卡片可查看巡检时间线，包含时间、状态、响应时间、错误摘要 |
+| 手动刷新 | 管理员可手动触发一次巡检，按钮有 loading 和失败反馈 |
+| 空状态 | 无供应商、无 Key、无历史数据时有明确引导文案 |
+
+### 10.3 用量报告验收
+
+| 检查项 | 通过标准 |
+|--------|----------|
+| 日报 Cron | `vercel.json` 中存在 `/api/cron/usage`，每日 00:05 UTC 触发 |
+| 日报存储 | 成功写入 `relay:report:daily:{date}`，TTL 30 天 |
+| 查询 API | `/api/admin/usage-report?from=&to=` 支持 7 天、30 天、自定义范围 |
+| 折线图 | 支持请求数、Token 总量、Prompt Token、Completion Token 指标切换 |
+| 供应商筛选 | 可按供应商过滤趋势，默认展示全部供应商 |
+| 数据缺口 | 某天无日报时图表不断线崩溃，展示 0 或缺口提示 |
+
+### 10.4 埋点与观测
+
+| 事件 | 字段 |
+|------|------|
+| `probe_cron_started` | provider_count, trigger_type |
+| `probe_provider_completed` | provider_id, status, response_time_ms, error_type |
+| `probe_status_changed` | provider_id, from_status, to_status |
+| `usage_report_generated` | date, total_requests, total_tokens, provider_count |
+| `monitor_page_viewed` | health_status_count, date_range |
+
+---
+
+## 11. 研发拆分建议
+
+### 后端任务
+1. 新增健康状态存储模块：封装 `last / log / consecutive` 三类 KV 读写。
+2. 新增 `/api/cron/probe`：完成 Cron 鉴权、供应商遍历、状态机判定、KV 写入。
+3. 新增 `/api/cron/usage`：聚合昨日用量并写入日报。
+4. 新增 `/api/admin/usage-report`：按日期范围读取日报并补齐缺口。
+5. 补充单元测试：覆盖四态状态机、连续失败计数、日报聚合边界。
+
+### 前端任务
+1. 新增监控与报告模块入口，承接健康状态与用量报告两个区域。
+2. 实现供应商健康卡片：状态灯、最新数据、7 天趋势、展开日志。
+3. 实现用量报告筛选：日期范围、指标切换、供应商筛选。
+4. 补齐加载态、错误态、空状态，保证首次使用不迷路。
+
+### 联调顺序
+1. 先用 mock KV 数据验证 Admin UI。
+2. 再接入 `/api/admin/usage-report` 与健康状态读取 API。
+3. 最后接入真实 Vercel Cron，在 Preview 环境手动触发验证。
+
+---
+
 *本文档由饼哥（产品总监）编写，基于圆桌讨论纪要 docs/internal/roundtable-ux-improvements.md*
 *讨论 ID: rt_262195df · 阶段四：巡检 + 仪表盘（4 人日）*
