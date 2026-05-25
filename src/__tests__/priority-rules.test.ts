@@ -54,6 +54,65 @@ describe('priority rules admin config', () => {
     expect(kv.get).toHaveBeenCalledWith('relay:priority:rules');
   });
 
+  it('normalizes PRD-shaped condition rules with priority/provider and caps conditions at 5', () => {
+    const [rule] = normalizePriorityRules([
+      {
+        id: 'r1',
+        priority: 9,
+        provider: 'openai',
+        conditions: [
+          { field: 'model_prefix', operator: 'starts_with', value: 'GPT-' },
+          { field: 'request_source', operator: 'equals', value: 'internal' },
+        ],
+        enabled: true,
+      },
+    ]);
+
+    expect(rule).toMatchObject({
+      id: 'r1',
+      priority: 1,
+      provider: 'openai',
+      conditions: [
+        { field: 'model_prefix', operator: 'starts_with', value: 'gpt-' },
+        { field: 'request_source', operator: 'equals', value: 'internal' },
+      ],
+      providerOrder: ['openai'],
+    });
+
+    expect(() => normalizePriorityRules([
+      {
+        id: 'too-many',
+        provider: 'openai',
+        enabled: true,
+        conditions: Array.from({ length: 6 }, (_, index) => ({ field: 'model_prefix', operator: 'starts_with', value: `m${index}` })),
+      },
+    ])).toThrow('Priority rule conditions are limited to 5');
+  });
+
+  it('matches PRD condition rules against request context and preserves priority order', () => {
+    const rules = normalizePriorityRules([
+      { id: 'r1', priority: 2, provider: 'deepseek', enabled: true, conditions: [{ field: 'model_prefix', operator: 'starts_with', value: 'gpt-' }] },
+      { id: 'r2', priority: 1, provider: 'openai', enabled: true, conditions: [{ field: 'model_exact', operator: 'equals', value: 'gpt-4o' }] },
+    ]);
+
+    expect(rules.map((rule) => rule.id)).toEqual(['r2', 'r1']);
+    expect(findMatchingPriorityRule(rules, 'gpt-4o')?.provider).toBe('openai');
+    expect(findMatchingPriorityRule(rules, 'gpt-4o-mini')?.provider).toBe('deepseek');
+  });
+
+  it('detects exact and subset conflicts for condition-based rules', () => {
+    const conflicts = detectPriorityRuleConflicts(normalizePriorityRules([
+      { id: 'a', provider: 'openai', enabled: true, conditions: [{ field: 'model_prefix', operator: 'starts_with', value: 'gpt-' }] },
+      { id: 'b', provider: 'deepseek', enabled: true, conditions: [{ field: 'model_prefix', operator: 'starts_with', value: 'gpt-' }] },
+      { id: 'c', provider: 'anthropic', enabled: true, conditions: [{ field: 'model_prefix', operator: 'starts_with', value: 'gpt-4' }] },
+    ]));
+
+    expect(conflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'duplicate', severity: 'error', ruleIds: ['a', 'b'] }),
+      expect.objectContaining({ type: 'overlap', severity: 'warning', ruleIds: ['a', 'c'], sampleModel: 'gpt-4' }),
+    ]));
+  });
+
   it('normalizes rules and rejects more than 20 rules', () => {
     const rules = Array.from({ length: 21 }, (_, i) => ({
       id: `r${i}`,
@@ -99,6 +158,56 @@ describe('priority rules admin config', () => {
     expect(findMatchingPriorityRule(normalizePriorityRules([
       { id: 'reasoning', name: 'Reasoning', enabled: true, modelPattern: 'o?-mini', providerOrder: ['openai'] },
     ]), 'o3-mini')?.id).toBe('reasoning');
+  });
+
+  it('normalizes PRD condition rules with provider and enforces max 5 conditions', () => {
+    const [rule] = normalizePriorityRules([
+      {
+        id: 'prd',
+        provider: 'openai',
+        conditions: [
+          { field: 'model_prefix', operator: 'starts_with', value: 'gpt-' },
+          { field: 'request_source', operator: 'equals', value: 'internal' },
+        ],
+        enabled: true,
+      },
+    ]);
+
+    expect(rule).toMatchObject({
+      id: 'prd',
+      provider: 'openai',
+      providerOrder: ['openai'],
+      modelPattern: 'gpt-*',
+      conditions: [
+        { field: 'model_prefix', operator: 'starts_with', value: 'gpt-' },
+        { field: 'request_source', operator: 'equals', value: 'internal' },
+      ],
+    });
+
+    expect(() => normalizePriorityRules([
+      {
+        id: 'too-many',
+        provider: 'openai',
+        conditions: Array.from({ length: 6 }, (_, i) => ({ field: 'header', operator: 'contains', value: `x-${i}` })),
+      },
+    ])).toThrow('Priority rule conditions are limited to 5');
+  });
+
+  it('matches all PRD conditions against model, source, and headers', () => {
+    const rules = normalizePriorityRules([
+      {
+        id: 'internal-gpt',
+        provider: 'openai',
+        conditions: [
+          { field: 'model_prefix', operator: 'starts_with', value: 'gpt-' },
+          { field: 'request_source', operator: 'equals', value: 'internal' },
+          { field: 'header', operator: 'contains', value: 'x-tenant: acme' },
+        ],
+      },
+    ]);
+
+    expect(findMatchingPriorityRule(rules, 'gpt-4o', { requestSource: 'internal', headers: { 'x-tenant': 'acme' } })?.id).toBe('internal-gpt');
+    expect(findMatchingPriorityRule(rules, 'gpt-4o', { requestSource: 'external', headers: { 'x-tenant': 'acme' } })).toBeNull();
   });
 
   it('blocks saving duplicate priority rules but allows warning-only overlaps', async () => {

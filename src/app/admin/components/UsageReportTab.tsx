@@ -12,7 +12,7 @@ import {
 } from 'recharts';
 
 type Metric = 'requests' | 'totalTokens' | 'promptTokens' | 'completionTokens';
-type Preset = '7d' | '30d';
+type Preset = '7d' | '30d' | 'custom';
 
 interface TrendPoint {
   date: string;
@@ -47,16 +47,22 @@ function formatDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-function rangeForPreset(preset: Preset): { from: string; to: string } {
+function rangeForPreset(preset: Preset, customRange: { from: string; to: string }): { from: string; to: string } {
+  if (preset === 'custom' && customRange.from && customRange.to) return customRange;
   const to = new Date();
   const from = new Date(to);
   from.setUTCDate(to.getUTCDate() - (preset === '30d' ? 29 : 6));
   return { from: formatDate(from), to: formatDate(to) };
 }
 
+function defaultCustomRange(): { from: string; to: string } {
+  return rangeForPreset('7d', { from: '', to: '' });
+}
+
 export default function UsageReportTab({ apiKey, lang }: Props) {
   const isEn = lang === 'en';
   const [preset, setPreset] = useState<Preset>('7d');
+  const [customRange, setCustomRange] = useState(defaultCustomRange);
   const [metric, setMetric] = useState<Metric>('totalTokens');
   const [data, setData] = useState<UsageReportResponse | null>(null);
   const [selectedProviders, setSelectedProviders] = useState<string[]>([]);
@@ -75,10 +81,13 @@ export default function UsageReportTab({ apiKey, lang }: Props) {
     completionTokens: isEn ? 'Completion Tokens' : '输出 Token',
     providers: isEn ? 'Providers' : '供应商筛选',
     allProviders: isEn ? 'All providers' : '全部供应商',
+    customRange: isEn ? 'Custom' : '自定义',
+    from: isEn ? 'From' : '开始日期',
+    to: isEn ? 'To' : '结束日期',
   };
 
   const fetchReport = useCallback(async () => {
-    const range = rangeForPreset(preset);
+    const range = rangeForPreset(preset, customRange);
     setLoading(true);
     setError(null);
     try {
@@ -94,7 +103,7 @@ export default function UsageReportTab({ apiKey, lang }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [apiKey, preset]);
+  }, [apiKey, preset, customRange]);
 
   useEffect(() => {
     fetchReport();
@@ -130,6 +139,11 @@ export default function UsageReportTab({ apiKey, lang }: Props) {
       : [...current, provider]);
   };
 
+  const selectPreset = (nextPreset: Preset) => {
+    setPreset(nextPreset);
+    if (nextPreset !== 'custom') setCustomRange(rangeForPreset(nextPreset, customRange));
+  };
+
   return (
     <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -142,12 +156,39 @@ export default function UsageReportTab({ apiKey, lang }: Props) {
 
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
         {(['7d', '30d'] as const).map((item) => (
-          <button key={item} className={`tab-btn ${preset === item ? 'active' : ''}`} onClick={() => setPreset(item)}>{item}</button>
+          <button key={item} className={`tab-btn ${preset === item ? 'active' : ''}`} onClick={() => selectPreset(item)}>{item}</button>
         ))}
+        <button className={`tab-btn ${preset === 'custom' ? 'active' : ''}`} onClick={() => selectPreset('custom')}>{labels.customRange}</button>
         {(['requests', 'totalTokens', 'promptTokens', 'completionTokens'] as const).map((item) => (
           <button key={item} className={`tab-btn ${metric === item ? 'active' : ''}`} onClick={() => setMetric(item)}>{labels[item]}</button>
         ))}
       </div>
+
+      {preset === 'custom' && (
+        <div className="stat-card" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#9ca3af', fontSize: '0.85rem' }}>
+            {labels.from}
+            <input
+              type="date"
+              value={customRange.from}
+              max={customRange.to}
+              onChange={(event) => setCustomRange((current) => ({ ...current, from: event.target.value }))}
+              style={{ colorScheme: 'dark' }}
+            />
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#9ca3af', fontSize: '0.85rem' }}>
+            {labels.to}
+            <input
+              type="date"
+              value={customRange.to}
+              min={customRange.from}
+              max={formatDate(new Date())}
+              onChange={(event) => setCustomRange((current) => ({ ...current, to: event.target.value }))}
+              style={{ colorScheme: 'dark' }}
+            />
+          </label>
+        </div>
+      )}
 
       {providerIds.length > 0 && (
         <div className="stat-card" style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
