@@ -1,5 +1,7 @@
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import {
+import PriorityRulesTab, {
   createBlankPriorityRule,
   getRuleConflictState,
   movePriorityRule,
@@ -36,5 +38,29 @@ describe('iteration three priority rules UI helpers', () => {
     expect(getRuleConflictState('a', conflicts)).toMatchObject({ severity: 'error', count: 2 });
     expect(getRuleConflictState('b', conflicts)).toMatchObject({ severity: 'warning', count: 1 });
     expect(getRuleConflictState('x', conflicts)).toMatchObject({ severity: null, count: 0 });
+  });
+
+  it('derives realtime conflicts from local draft rules before save', () => {
+    const html = renderToStaticMarkup(
+      <PriorityRulesTab
+        rules={[
+          { id: 'a', name: 'GPT OpenAI', enabled: true, modelPattern: 'gpt-*', providerOrder: ['openai'] },
+          { id: 'b', name: 'GPT DeepSeek', enabled: true, modelPattern: 'gpt-*', providerOrder: ['deepseek'] },
+        ]}
+        providers={[
+          { id: 'openai', name: 'OpenAI', keyCount: 1, availableKeys: 1, configured: true, modelPrefixes: ['gpt-'] },
+          { id: 'deepseek', name: 'DeepSeek', keyCount: 1, availableKeys: 1, configured: true, modelPrefixes: ['deepseek-'] },
+        ]}
+        conflicts={[]}
+        loading={false}
+        message=""
+        onSaveRules={() => undefined}
+      />
+    );
+
+    expect(html).toContain('冲突 1');
+    expect(html).toContain('duplicate');
+    expect(html).toContain('规则重复');
+    expect(html).toContain('disabled=""');
   });
 });

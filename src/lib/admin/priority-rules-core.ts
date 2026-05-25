@@ -103,9 +103,7 @@ function classifyConflict(a: PriorityRule, b: PriorityRule, sample: string): Pic
     };
   }
 
-  const aSpecificity = patternSpecificity(a.modelPattern);
-  const bSpecificity = patternSpecificity(b.modelPattern);
-  const type: PriorityRuleConflict['type'] = aSpecificity !== bSpecificity ? 'shadow' : 'overlap';
+  const type: PriorityRuleConflict['type'] = sameProviderOrder(a, b) ? 'shadow' : 'overlap';
   const shadowText = type === 'shadow' ? `${b.name} 可能被 ${a.name} 覆盖，` : '';
   return {
     type,
@@ -146,6 +144,25 @@ export function detectPriorityRuleConflicts(rules: PriorityRule[]): PriorityRule
     }
   }
   return conflicts;
+}
+
+export function hasBlockingPriorityRuleConflicts(conflicts: PriorityRuleConflict[]): boolean {
+  return conflicts.some((conflict) => conflict.severity === 'error');
+}
+
+export function reorderPriorityRules(rules: PriorityRule[], orderedIds: string[]): PriorityRule[] {
+  if (orderedIds.length !== rules.length) {
+    throw new Error('orderedIds must include every priority rule id');
+  }
+  const byId = new Map(rules.map((rule) => [rule.id, rule]));
+  const seen = new Set<string>();
+  return orderedIds.map((id) => {
+    const rule = byId.get(id);
+    if (!rule) throw new Error(`Unknown priority rule id: ${id}`);
+    if (seen.has(id)) throw new Error(`Duplicate priority rule id in orderedIds: ${id}`);
+    seen.add(id);
+    return rule;
+  });
 }
 
 export function findMatchingPriorityRule(rules: PriorityRule[], model: string): PriorityRule | null {

@@ -6,7 +6,7 @@ import {
   getPriorityRules,
   savePriorityRules,
 } from '../lib/admin/admin-config';
-import { detectPriorityRuleConflicts, findMatchingPriorityRule, normalizePriorityRules } from '../lib/admin/priority-rules-core';
+import { detectPriorityRuleConflicts, findMatchingPriorityRule, hasBlockingPriorityRuleConflicts, normalizePriorityRules } from '../lib/admin/priority-rules-core';
 import { GET, PUT, POST, DELETE } from '../app/api/admin/priority-rules/route';
 
 function installMockKV() {
@@ -75,7 +75,7 @@ describe('priority rules admin config', () => {
     ]);
 
     expect(conflicts).toEqual(expect.arrayContaining([
-      expect.objectContaining({ type: 'shadow', severity: 'warning', ruleIds: ['a', 'b'], sampleModel: 'gpt-4o' }),
+      expect.objectContaining({ type: 'overlap', severity: 'warning', ruleIds: ['a', 'b'], sampleModel: 'gpt-4o' }),
       expect.objectContaining({ type: 'duplicate', severity: 'error', ruleIds: ['c', 'd'], sampleModel: 'o1-4o' }),
     ]));
   });
@@ -99,6 +99,46 @@ describe('priority rules admin config', () => {
     expect(findMatchingPriorityRule(normalizePriorityRules([
       { id: 'reasoning', name: 'Reasoning', enabled: true, modelPattern: 'o?-mini', providerOrder: ['openai'] },
     ]), 'o3-mini')?.id).toBe('reasoning');
+  });
+
+  it('blocks saving duplicate priority rules but allows warning-only overlaps', async () => {
+    const duplicateRules = [
+      { id: 'a', name: 'GPT OpenAI', enabled: true, modelPattern: 'gpt-*', providerOrder: ['openai'] },
+      { id: 'b', name: 'GPT DeepSeek', enabled: true, modelPattern: 'gpt-*', providerOrder: ['deepseek'] },
+    ];
+
+    expect(hasBlockingPriorityRuleConflicts(detectPriorityRuleConflicts(duplicateRules))).toBe(true);
+    let res = await PUT(req('PUT', { rules: duplicateRules }));
+    expect(res.status).toBe(409);
+    await expect(res.json()).resolves.toMatchObject({ error: { message: expect.stringContaining('Priority rule conflict') } });
+
+    const overlapRules = [
+      { id: 'a', name: 'GPT wildcard', enabled: true, modelPattern: 'gpt-*', providerOrder: ['openai'] },
+      { id: 'b', name: 'GPT-4o exact', enabled: true, modelPattern: 'gpt-4o', providerOrder: ['deepseek'] },
+    ];
+    expect(hasBlockingPriorityRuleConflicts(detectPriorityRuleConflicts(overlapRules))).toBe(false);
+    res = await PUT(req('PUT', { rules: overlapRules }));
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ success: true, conflicts: [expect.objectContaining({ type: 'overlap' })] });
+  });
+
+  it('reorders priority rules through orderedIds without mutating rule contents', async () => {
+    await savePriorityRules([
+      { id: 'a', name: 'A', enabled: true, modelPattern: 'a-*', providerOrder: ['openai'] },
+      { id: 'b', name: 'B', enabled: true, modelPattern: 'b-*', providerOrder: ['deepseek'] },
+      { id: 'c', name: 'C', enabled: true, modelPattern: 'c-*', providerOrder: ['anthropic'] },
+    ]);
+
+    const res = await PUT(req('PUT', { orderedIds: ['c', 'a', 'b'] }));
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      success: true,
+      rules: [
+        expect.objectContaining({ id: 'c', name: 'C' }),
+        expect.objectContaining({ id: 'a', name: 'A' }),
+        expect.objectContaining({ id: 'b', name: 'B' }),
+      ],
+    });
   });
 
   it('exposes CRUD API for priority rules', async () => {

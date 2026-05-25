@@ -11,16 +11,20 @@ import ProviderHealthTab from './components/ProviderHealthTab';
 import UsageReportTab from './components/UsageReportTab';
 import RequestLogsTab from './components/RequestLogsTab';
 import ModelAliasesTab from './components/ModelAliasesTab';
-import type { AdminData } from './types';
+import PriorityRulesTab from './components/PriorityRulesTab';
+import type { AdminData, PriorityRule, PriorityRuleConflict } from './types';
 import { TRANSLATIONS } from './translations';
 import { useAdminHandlers } from './adminHandlers';
 
 export default function AdminPage() {
   const [apiKey, setApiKey] = useState('');
   const [lang, setLang] = useState<'zh' | 'en'>('zh');
-  const [activeTab, setActiveTab] = useState<'setup' | 'overview' | 'keys' | 'models' | 'health' | 'usage' | 'logs' | 'tools' | 'webhooks'>('setup');
+  const [activeTab, setActiveTab] = useState<'setup' | 'overview' | 'keys' | 'models' | 'priority' | 'health' | 'usage' | 'logs' | 'tools' | 'webhooks'>('setup');
   const [setupData, setSetupData] = useState<any>(null);
   const [providerHealthData, setProviderHealthData] = useState<any>(null);
+  const [priorityRules, setPriorityRules] = useState<PriorityRule[]>([]);
+  const [priorityConflicts, setPriorityConflicts] = useState<PriorityRuleConflict[]>([]);
+  const [priorityMessage, setPriorityMessage] = useState('');
   const [v21Loading, setV21Loading] = useState(false);
 
   const t = TRANSLATIONS[lang];
@@ -178,10 +182,60 @@ export default function AdminPage() {
     }
   };
 
+  const fetchPriorityRules = async (forceRefresh = false) => {
+    setV21Loading(true);
+    try {
+      const json = await adminFetch(`/api/admin/priority-rules${forceRefresh ? '?refresh=1' : ''}`);
+      setPriorityRules(json.rules || []);
+      setPriorityConflicts(json.conflicts || []);
+    } finally {
+      setV21Loading(false);
+    }
+  };
+
+  const savePriorityRulesFromTab = async (rules: PriorityRule[]) => {
+    setV21Loading(true);
+    setPriorityMessage('');
+    try {
+      const res = await fetch('/api/admin/priority-rules', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rules }),
+      });
+      const json = await res.json();
+      setPriorityConflicts(json.conflicts || []);
+      if (!res.ok) throw new Error(json.error?.message || 'Failed to save priority rules');
+      setPriorityRules(json.rules || []);
+      setPriorityMessage('优先级规则已保存');
+      await fetchData(true);
+    } catch (err) {
+      setPriorityMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setV21Loading(false);
+    }
+  };
+
+  const reorderPriorityRulesFromTab = async (rules: PriorityRule[]) => {
+    setPriorityRules(rules);
+    try {
+      const res = await fetch('/api/admin/priority-rules', {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderedIds: rules.map((rule) => rule.id) }),
+      });
+      const json = await res.json();
+      setPriorityConflicts(json.conflicts || []);
+      if (res.ok) setPriorityRules(json.rules || rules);
+    } catch (err) {
+      setPriorityMessage(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   useEffect(() => {
     if (!authenticated) return;
     if (activeTab === 'setup') fetchSetup().catch((e) => setError(e instanceof Error ? e.message : String(e)));
     if (activeTab === 'health') fetchProviderHealth().catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    if (activeTab === 'priority') fetchPriorityRules().catch((e) => setError(e instanceof Error ? e.message : String(e)));
     // logs tab manages its own data fetching + localStorage
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authenticated, activeTab]);
@@ -426,6 +480,12 @@ export default function AdminPage() {
           模型配置
         </button>
         <button
+          className={`tab-btn ${activeTab === 'priority' ? 'active' : ''}`}
+          onClick={() => setActiveTab('priority')}
+        >
+          ⚡ 优先级规则
+        </button>
+        <button
           className={`tab-btn ${activeTab === 'health' ? 'active' : ''}`}
           onClick={() => setActiveTab('health')}
         >
@@ -525,6 +585,19 @@ export default function AdminPage() {
             apiKey={apiKey}
             providers={data?.providers || []}
             onRefreshData={() => fetchData(true)}
+          />
+        )}
+        {activeTab === 'priority' && (
+          <PriorityRulesTab
+            rules={priorityRules}
+            providers={data?.providers || []}
+            conflicts={priorityConflicts}
+            loading={v21Loading}
+            message={priorityMessage}
+            onReorderRules={reorderPriorityRulesFromTab}
+            onSaveRules={savePriorityRulesFromTab}
+            onAddRule={() => setPriorityMessage('')}
+            onDeleteRule={() => setPriorityMessage('')}
           />
         )}
         {activeTab === 'health' && (
