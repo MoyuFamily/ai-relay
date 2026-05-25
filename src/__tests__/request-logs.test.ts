@@ -20,6 +20,7 @@ describe('request log observability', () => {
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('KV_REST_API_URL', '');
     vi.stubEnv('KV_REST_API_TOKEN', '');
+    vi.stubEnv('ENABLE_REQUEST_LOGS', 'true');
 
     await recordRequestLog({
       traceId: 'trace_success',
