@@ -2,6 +2,15 @@
 
 import React, { useState, useEffect } from 'react';
 import type { AdminData } from '../types';
+import StepperIndicator from './StepperIndicator';
+import {
+  PROVIDER_TEMPLATES,
+  applyProviderTemplate,
+  buildDraftProviderFromForm,
+  validateApiKeyInput,
+  validateDraftProvider,
+  type ProviderTemplate,
+} from './provider-templates';
 
 interface CustomProviderModalProps {
   data: AdminData;
@@ -24,7 +33,7 @@ export default function CustomProviderModal({
   editingCustomProvider,
   setEditingCustomProvider,
   onSaveCustomProvider,
-  onTestCustomProvider: _onTestCustomProvider,
+  onTestCustomProvider,
 }: CustomProviderModalProps) {
   // Local states for custom provider form
   const [formId, setFormId] = useState('');
@@ -33,23 +42,51 @@ export default function CustomProviderModal({
   const [formHeaderFormat, setFormHeaderFormat] = useState<'openai' | 'anthropic' | 'azure'>('openai');
   const [formModelPrefixes, setFormModelPrefixes] = useState('');
   const [formModels, setFormModels] = useState<any[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('openai');
+  const [apiKeyValue, setApiKeyValue] = useState('');
+  const [testModelId, setTestModelId] = useState('');
+  const [testState, setTestState] = useState<{ status: 'idle' | 'testing' | 'success' | 'error'; message: string }>({
+    status: 'idle',
+    message: '',
+  });
+
+  const applyTemplateToForm = (template: ProviderTemplate) => {
+    setSelectedTemplateId(template.id);
+    const form = applyProviderTemplate(template);
+    setFormId(form.id);
+    setFormDisplayName(form.displayName);
+    setFormBaseUrl(form.baseUrl);
+    setFormHeaderFormat(form.headerFormat);
+    setFormModelPrefixes(form.modelPrefixes.join(', '));
+    setTestModelId(form.modelPrefixes[0] ? `${form.modelPrefixes[0]}demo` : '');
+    setTestState({ status: 'idle', message: '' });
+  };
 
   // Sync edit mode fields
   useEffect(() => {
     if (editingCustomProvider) {
-      setFormId(editingCustomProvider.id);
-      setFormDisplayName(editingCustomProvider.name || '');
+      setSelectedTemplateId('custom');
+      setApiKeyValue('');
+      setTestState({ status: 'idle', message: '' });
+      setFormId(editingCustomProvider.id || editingCustomProvider.name || '');
+      setFormDisplayName(editingCustomProvider.displayName || editingCustomProvider.name || '');
       setFormBaseUrl(editingCustomProvider.baseUrl || '');
       setFormHeaderFormat(editingCustomProvider.headerFormat || 'openai');
       setFormModelPrefixes((editingCustomProvider.modelPrefixes || []).join(', '));
       setFormModels(editingCustomProvider.models || []);
     } else {
-      setFormId('');
-      setFormDisplayName('');
-      setFormBaseUrl('');
-      setFormHeaderFormat('openai');
-      setFormModelPrefixes('');
+      const defaultTemplate = PROVIDER_TEMPLATES[0];
+      setSelectedTemplateId(defaultTemplate.id);
+      const form = applyProviderTemplate(defaultTemplate);
+      setFormId(form.id);
+      setFormDisplayName(form.displayName);
+      setFormBaseUrl(form.baseUrl);
+      setFormHeaderFormat(form.headerFormat);
+      setFormModelPrefixes(form.modelPrefixes.join(', '));
       setFormModels([]);
+      setApiKeyValue('');
+      setTestModelId(form.modelPrefixes[0] ? `${form.modelPrefixes[0]}demo` : '');
+      setTestState({ status: 'idle', message: '' });
     }
   }, [editingCustomProvider, customProviderModalOpen]);
 
@@ -98,6 +135,45 @@ export default function CustomProviderModal({
     });
   });
 
+  const draftProvider = buildDraftProviderFromForm({
+    id: formId,
+    displayName: formDisplayName,
+    baseUrl: formBaseUrl,
+    headerFormat: formHeaderFormat,
+    modelPrefixesText: formModelPrefixes,
+    models: formModels,
+  });
+  const providerValidation = validateDraftProvider(draftProvider);
+  const apiKeyValidation = validateApiKeyInput(apiKeyValue);
+  const currentStep = editingCustomProvider ? 1 : apiKeyValue.trim() ? 2 : 0;
+  const helperText = {
+    chooseTemplate: lang === 'zh' ? '选择模板' : 'Choose template',
+    configureKey: lang === 'zh' ? '配置密钥' : 'Configure key',
+    testAndSave: lang === 'zh' ? '测试保存' : 'Test & save',
+    apiKey: 'API Key',
+    connectivityTest: lang === 'zh' ? '连通性测试' : 'Connectivity test',
+    customTemplate: lang === 'zh' ? '自定义 / Custom' : 'Custom',
+  };
+
+  const handleRunConnectivityTest = async () => {
+    if (!onTestCustomProvider) return;
+    if (providerValidation) {
+      setTestState({ status: 'error', message: providerValidation });
+      return;
+    }
+    if (apiKeyValidation) {
+      setTestState({ status: 'error', message: apiKeyValidation });
+      return;
+    }
+    setTestState({ status: 'testing', message: lang === 'zh' ? '测试中...' : 'Testing...' });
+    try {
+      await onTestCustomProvider(draftProvider, apiKeyValue.trim(), testModelId.trim() || undefined);
+      setTestState({ status: 'success', message: lang === 'zh' ? '连通性测试通过' : 'Connectivity test passed' });
+    } catch (error: any) {
+      setTestState({ status: 'error', message: error?.message || (lang === 'zh' ? '连通性测试失败' : 'Connectivity test failed') });
+    }
+  };
+
   if (!customProviderModalOpen) return null;
 
   return (
@@ -129,6 +205,115 @@ export default function CustomProviderModal({
         <h2 style={{ fontSize: '1.25rem', margin: 0, color: '#fff', fontWeight: 600 }}>
           {editingCustomProvider ? t.editCustomProvider : t.addCustomProvider}
         </h2>
+
+        <StepperIndicator
+          steps={[helperText.chooseTemplate, helperText.configureKey, helperText.testAndSave]}
+          currentStep={currentStep}
+        />
+
+        {!editingCustomProvider && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '0.75rem' }}>
+            {PROVIDER_TEMPLATES.map((template) => {
+              const selected = selectedTemplateId === template.id;
+              return (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => applyTemplateToForm(template)}
+                  style={{
+                    textAlign: 'left',
+                    padding: '0.75rem',
+                    borderRadius: '10px',
+                    border: selected ? '1px solid rgba(96, 165, 250, 0.75)' : '1px solid rgba(255,255,255,0.08)',
+                    background: selected ? 'rgba(37, 99, 235, 0.18)' : 'rgba(15, 23, 42, 0.62)',
+                    color: '#fff',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ fontWeight: 800, fontSize: '0.88rem', marginBottom: '0.3rem' }}>{template.label}</div>
+                  <div style={{ color: '#9ca3af', fontSize: '0.74rem', lineHeight: 1.35 }}>{template.description}</div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+          gap: '0.75rem',
+          padding: '0.85rem',
+          borderRadius: '10px',
+          backgroundColor: 'rgba(15, 23, 42, 0.45)',
+          border: '1px solid rgba(255,255,255,0.07)',
+        }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: '#9ca3af', marginBottom: '0.3rem' }}>
+              {helperText.apiKey}
+            </label>
+            <input
+              type="password"
+              placeholder="sk-..."
+              value={apiKeyValue}
+              onChange={(e) => setApiKeyValue(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.55rem 0.75rem',
+                borderRadius: '6px',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                color: '#fff',
+                fontSize: '0.9rem',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.8rem', color: '#9ca3af', marginBottom: '0.3rem' }}>
+              Model ID
+            </label>
+            <input
+              type="text"
+              placeholder="gpt-4o-mini"
+              value={testModelId}
+              onChange={(e) => setTestModelId(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.55rem 0.75rem',
+                borderRadius: '6px',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                backgroundColor: 'rgba(0, 0, 0, 0.25)',
+                color: '#fff',
+                fontSize: '0.9rem',
+                boxSizing: 'border-box',
+              }}
+            />
+          </div>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={handleRunConnectivityTest}
+              disabled={!onTestCustomProvider || testState.status === 'testing'}
+              style={{
+                padding: '0.45rem 0.9rem',
+                borderRadius: '6px',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                backgroundColor: 'rgba(16, 185, 129, 0.12)',
+                color: '#6ee7b7',
+                cursor: testState.status === 'testing' ? 'wait' : 'pointer',
+                fontWeight: 700,
+                fontSize: '0.84rem',
+              }}
+            >
+              {helperText.connectivityTest}
+            </button>
+            {testState.message && (
+              <span style={{ color: testState.status === 'error' ? '#fca5a5' : testState.status === 'success' ? '#86efac' : '#bfdbfe', fontSize: '0.82rem' }}>
+                {testState.message}
+              </span>
+            )}
+          </div>
+        </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           <div>
