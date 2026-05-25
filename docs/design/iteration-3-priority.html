@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AI Relay 迭代三 — 优先级规则编辑器 UI 设计稿</title>
+<style>
+/* ===== Design Tokens (沿用 dark glassmorphism) ===== */
+:root {
+  --bg: #09090b;
+  --bg-radial: radial-gradient(circle at top, #1e293b, #09090b);
+  --panel: rgba(30,41,59,.45);
+  --panel-hover: rgba(30,41,59,.6);
+  --line: rgba(255,255,255,.08);
+  --line-active: rgba(96,165,250,.45);
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --blue: #60a5fa;
+  --green: #10b981;
+  --yellow: #f59e0b;
+  --yellow-bg: rgba(245,158,11,.08);
+  --red: #ef4444;
+  --red-bg: rgba(239,68,68,.08);
+  --violet: #8b5cf6;
+  --gradient-primary: linear-gradient(135deg, #2563eb, var(--violet));
+  --gradient-active: linear-gradient(135deg, rgba(59,130,246,.16), rgba(139,92,246,.16));
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+  --shadow-panel: 0 4px 30px rgba(0,0,0,.35);
+  --blur: blur(12px);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg-radial);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ===== Layout ===== */
+.wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px; }
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 36px 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.section-title:first-child { margin-top: 0; }
+
+/* ===== Glass Panel ===== */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  backdrop-filter: var(--blur);
+  box-shadow: var(--shadow-panel);
+  padding: 20px;
+  margin-bottom: 16px;
+  transition: border-color .2s;
+}
+
+/* ===== Header ===== */
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 22px;
+  margin-bottom: 20px;
+}
+.brand { display: flex; align-items: center; gap: 14px; }
+.logo {
+  width: 42px; height: 42px; border-radius: 12px;
+  background: linear-gradient(135deg, #00f2fe, var(--violet));
+  box-shadow: 0 0 24px rgba(96,165,250,.35);
+}
+.brand h1 { font-size: 22px; font-weight: 700; }
+.brand .muted { font-size: 13px; color: var(--muted); }
+
+/* ===== Tabs ===== */
+.tabs {
+  display: flex; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 20px; padding: 0 4px;
+}
+.tab {
+  padding: 10px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,.03);
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.tab.active {
+  color: var(--blue);
+  border-color: var(--line-active);
+  background: var(--gradient-active);
+}
+
+/* ===== Buttons ===== */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 40px; padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,.04);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.btn:hover { background: rgba(255,255,255,.08); }
+.btn-primary {
+  background: var(--gradient-primary);
+  border: none;
+  color: #fff;
+  font-weight: 600;
+}
+.btn-primary:hover { opacity: .9; }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+.btn-danger {
+  border-color: rgba(239,68,68,.4);
+  color: var(--red);
+}
+.btn-danger:hover { background: var(--red-bg); }
+.btn-sm { min-height: 32px; padding: 0 12px; font-size: 13px; }
+.btn-icon {
+  min-height: 32px; width: 32px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all .15s;
+}
+.btn-icon:hover { color: var(--text); background: rgba(255,255,255,.06); }
+
+/* ===== Pill ===== */
+.pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  border-radius: var(--radius-pill);
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background: rgba(255,255,255,.04);
+}
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.dot-green { background: var(--green); }
+.dot-yellow { background: var(--yellow); }
+.dot-red { background: var(--red); }
+.dot-blue { background: var(--blue); }
+
+/* ===== Form Controls ===== */
+.input, .select {
+  height: 36px;
+  padding: 0 12px;
+  background: rgba(0,0,0,.25);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color .15s;
+}
+.input:focus, .select:focus { border-color: var(--blue); }
+.input::placeholder { color: rgba(156,163,175,.5); }
+.select { cursor: pointer; appearance: none; padding-right: 28px; }
+.label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  margin-bottom: 6px;
+  display: block;
+}
+
+/* ===== Utility ===== */
+.muted { color: var(--muted); font-size: 13px; }
+.flex { display: flex; }
+.flex-between { display: flex; justify-content: space-between; align-items: center; }
+.gap-8 { gap: 8px; }
+.gap-12 { gap: 12px; }
+.gap-16 { gap: 16px; }
+.mt-12 { margin-top: 12px; }
+.mt-16 { margin-top: 16px; }
+.mb-8 { margin-bottom: 8px; }
+.mb-16 { margin-bottom: 16px; }
+.text-sm { font-size: 13px; }
+.text-xs { font-size: 12px; }
+.font-mono { font-family: ui-monospace, Menlo, monospace; }
+.text-yellow { color: var(--yellow); }
+.text-red { color: var(--red); }
+.text-green { color: var(--green); }
+.hidden { display: none; }
+
+/* ===== Responsive ===== */
+@media (max-width: 640px) {
+  .wrap { padding: 16px 12px; }
+  .header { flex-direction: column; align-items: flex-start; }
+  .tabs { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
+  .tab { white-space: nowrap; flex-shrink: 0; }
+  .desktop-only { display: none !important; }
+  .mobile-only { display: block !important; }
+}
+@media (min-width: 641px) {
+  .mobile-only { display: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ============================================================ -->
+<!-- Header                                                       -->
+<!-- ============================================================ -->
+<section class="panel header">
+  <div class="brand">
+    <div class="logo"></div>
+    <div>
+      <h1>AI Relay Admin</h1>
+      <div class="muted">Iteration 3 · Priority Rules Editor</div>
+    </div>
+  </div>
+  <div class="flex gap-8">
+    <button class="btn">🔄 刷新</button>
+    <button class="btn">🌐 EN</button>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- Tab Bar                                                      -->
+<!-- ============================================================ -->
+<nav class="tabs">
+  <span class="tab">📊 概览</span>
+  <span class="tab">🚀 快速开始</span>
+  <span class="tab">🔑 密钥</span>
+  <span class="tab">🟢 健康</span>
+  <span class="tab">🧾 日志</span>
+  <span class="tab active">🔀 优先级规则</span>
+  <span class="tab">🛡️ 工具</span>
+  <span class="tab">🔔 Webhooks</span>
+</nav>
+
+<!-- ============================================================ -->
+<!-- Section 1: Priority Rules Editor (正常状态)                    -->
+<!-- ============================================================ -->
+<div class="section-title">① 优先级规则编辑器 — 正常状态</div>
+
+<section class="panel">
+  <div class="flex-between mb-16">
+    <div>
+      <h2 style="font-size:18px">🔀 优先级规则</h2>
+      <div class="muted">拖拽 ≡ 调整优先级顺序，数字越小优先级越高</div>
+    </div>
+    <button class="btn btn-primary">＋ 新建规则</button>
+  </div>
+
+  <!-- Rule Card 1 — Normal -->
+  <div style="border:2px solid rgba(255,255,255,.08);border-radius:var(--radius-md);padding:16px 18px;margin-bottom:12px;background:rgba(0,0,0,.15);transition:border-color .2s">
+    <div class="flex-between">
+      <div class="flex gap-12" style="align-items:flex-start">
+        <!-- Drag handle -->
+        <div style="cursor:grab;color:var(--muted);font-size:18px;line-height:1;padding-top:2px" title="拖拽排序">≡</div>
+        <div>
+          <div style="font-weight:600;font-size:15px">GPT 全系列走 OpenAI</div>
+          <div class="text-sm muted mt-12">
+            <span class="pill" style="font-size:11px;padding:3px 8px">条件</span>
+            <code class="font-mono" style="color:var(--blue);margin-left:6px">model</code>
+            <code class="font-mono" style="color:var(--yellow);margin-left:4px">prefix</code>
+            <code class="font-mono" style="color:var(--text);margin-left:4px">"gpt-"</code>
+          </div>
+          <div class="text-sm muted" style="margin-top:4px">
+            <span class="pill" style="font-size:11px;padding:3px 8px">目标</span>
+            <span style="color:var(--green);margin-left:6px">OpenAI</span>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-8" style="align-items:center">
+        <span class="pill"><span class="dot dot-green"></span> 正常</span>
+        <span style="font-size:28px;font-weight:700;color:var(--muted);opacity:.5;min-width:32px;text-align:right">1</span>
+        <button class="btn-icon" title="编辑">✏️</button>
+        <button class="btn-icon" title="禁用">⏸️</button>
+        <button class="btn-icon" title="删除">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rule Card 2 — Normal -->
+  <div style="border:2px solid rgba(255,255,255,.08);border-radius:var(--radius-md);padding:16px 18px;margin-bottom:12px;background:rgba(0,0,0,.15)">
+    <div class="flex-between">
+      <div class="flex gap-12" style="align-items:flex-start">
+        <div style="cursor:grab;color:var(--muted);font-size:18px;line-height:1;padding-top:2px">≡</div>
+        <div>
+          <div style="font-weight:600;font-size:15px">Claude 全系列走 Anthropic</div>
+          <div class="text-sm muted mt-12">
+            <span class="pill" style="font-size:11px;padding:3px 8px">条件</span>
+            <code class="font-mono" style="color:var(--blue)">model</code>
+            <code class="font-mono" style="color:var(--yellow);margin-left:4px">prefix</code>
+            <code class="font-mono" style="color:var(--text);margin-left:4px">"claude-"</code>
+          </div>
+          <div class="text-sm muted" style="margin-top:4px">
+            <span class="pill" style="font-size:11px;padding:3px 8px">目标</span>
+            <span style="color:var(--green);margin-left:6px">Anthropic</span>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-8" style="align-items:center">
+        <span class="pill"><span class="dot dot-green"></span> 正常</span>
+        <span style="font-size:28px;font-weight:700;color:var(--muted);opacity:.5;min-width:32px;text-align:right">2</span>
+        <button class="btn-icon" title="编辑">✏️</button>
+        <button class="btn-icon" title="禁用">⏸️</button>
+        <button class="btn-icon" title="删除">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rule Card 3 — Normal -->
+  <div style="border:2px solid rgba(255,255,255,.08);border-radius:var(--radius-md);padding:16px 18px;margin-bottom:12px;background:rgba(0,0,0,.15)">
+    <div class="flex-between">
+      <div class="flex gap-12" style="align-items:flex-start">
+        <div style="cursor:grab;color:var(--muted);font-size:18px;line-height:1;padding-top:2px">≡</div>
+        <div>
+          <div style="font-weight:600;font-size:15px">DeepSeek 走国内中转</div>
+          <div class="text-sm muted mt-12">
+            <span class="pill" style="font-size:11px;padding:3px 8px">条件</span>
+            <code class="font-mono" style="color:var(--blue)">model</code>
+            <code class="font-mono" style="color:var(--yellow);margin-left:4px">prefix</code>
+            <code class="font-mono" style="color:var(--text);margin-left:4px">"deepseek-"</code>
+          </div>
+          <div class="text-sm muted" style="margin-top:4px">
+            <span class="pill" style="font-size:11px;padding:3px 8px">目标</span>
+            <span style="color:var(--green);margin-left:6px">DeepSeek</span>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-8" style="align-items:center">
+        <span class="pill"><span class="dot dot-green"></span> 正常</span>
+        <span style="font-size:28px;font-weight:700;color:var(--muted);opacity:.5;min-width:32px;text-align:right">3</span>
+        <button class="btn-icon" title="编辑">✏️</button>
+        <button class="btn-icon" title="禁用">⏸️</button>
+        <button class="btn-icon" title="删除">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer stats -->
+  <div class="flex-between" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--line)">
+    <div class="muted">已用 <strong style="color:var(--text)">3</strong> / 20 条 · 稳态 KV <strong style="color:var(--green)">+0</strong></div>
+    <div class="flex gap-8">
+      <button class="btn btn-sm">📤 导出 JSON</button>
+      <button class="btn btn-sm">📥 导入 JSON</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- Section 2: Conflict Warning (overlap)                        -->
+<!-- ============================================================ -->
+<div class="section-title">② 冲突状态 — 警告（条件交集 overlap）</div>
+
+<section class="panel">
+  <div class="flex-between mb-16">
+    <div>
+      <h2 style="font-size:18px">🔀 优先级规则</h2>
+      <div class="muted">⚠️ 存在 1 个条件交集冲突，可保存但建议调整</div>
+    </div>
+    <button class="btn btn-primary">＋ 新建规则</button>
+  </div>
+
+  <!-- Rule Card 1 — Warning (overlap) -->
+  <div style="border:2px solid var(--yellow);border-radius:var(--radius-md);padding:16px 18px;margin-bottom:12px;background:rgba(245,158,11,.04);transition:border-color .2s">
+    <div class="flex-between">
+      <div class="flex gap-12" style="align-items:flex-start">
+        <div style="cursor:grab;color:var(--muted);font-size:18px;line-height:1;padding-top:2px">≡</div>
+        <div>
+          <div style="font-weight:600;font-size:15px">GPT 全系列走 OpenAI</div>
+          <div class="text-sm muted mt-12">
+            <span class="pill" style="font-size:11px;padding:3px 8px">条件</span>
+            <code class="font-mono" style="color:var(--blue);margin-left:6px">model</code>
+            <code class="font-mono" style="color:var(--yellow);margin-left:4px">prefix</code>
+            <code class="font-mono" style="color:var(--text);margin-left:4px">"gpt-"</code>
+          </div>
+          <div class="text-sm muted" style="margin-top:4px">
+            <span class="pill" style="font-size:11px;padding:3px 8px">目标</span>
+            <span style="color:var(--green);margin-left:6px">OpenAI</span>
+          </div>
+          <!-- Conflict inline message -->
+          <div style="margin-top:10px;padding:10px 14px;border-radius:var(--radius-sm);background:var(--yellow-bg);border-left:3px solid var(--yellow)">
+            <div style="font-size:13px;color:var(--yellow);font-weight:600">⚠️ 与「GPT-4o 走 DeepSeek」条件存在交集</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">
+              <code class="font-mono">gpt-4o</code>, <code class="font-mono">gpt-4o-mini</code> 将按本规则的优先级执行
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-8" style="align-items:center">
+        <span class="pill" style="background:var(--yellow-bg)"><span class="dot dot-yellow"></span> <span class="text-yellow">⚠️ 冲突</span></span>
+        <span style="font-size:28px;font-weight:700;color:var(--muted);opacity:.5;min-width:32px;text-align:right">1</span>
+        <button class="btn-icon" title="编辑">✏️</button>
+        <button class="btn-icon" title="禁用">⏸️</button>
+        <button class="btn-icon" title="删除">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rule Card 2 — Also conflicting -->
+  <div style="border:2px solid var(--yellow);border-radius:var(--radius-md);padding:16px 18px;margin-bottom:12px;background:rgba(245,158,11,.04)">
+    <div class="flex-between">
+      <div class="flex gap-12" style="align-items:flex-start">
+        <div style="cursor:grab;color:var(--muted);font-size:18px;line-height:1;padding-top:2px">≡</div>
+        <div>
+          <div style="font-weight:600;font-size:15px">GPT-4o 走 DeepSeek</div>
+          <div class="text-sm muted mt-12">
+            <span class="pill" style="font-size:11px;padding:3px 8px">条件</span>
+            <code class="font-mono" style="color:var(--blue);margin-left:6px">model</code>
+            <code class="font-mono" style="color:var(--yellow);margin-left:4px">prefix</code>
+            <code class="font-mono" style="color:var(--text);margin-left:4px">"gpt-4o"</code>
+          </div>
+          <div class="text-sm muted" style="margin-top:4px">
+            <span class="pill" style="font-size:11px;padding:3px 8px">目标</span>
+            <span style="color:var(--green);margin-left:6px">DeepSeek</span>
+          </div>
+          <div style="margin-top:10px;padding:10px 14px;border-radius:var(--radius-sm);background:var(--yellow-bg);border-left:3px solid var(--yellow)">
+            <div style="font-size:13px;color:var(--yellow);font-weight:600">⚠️ 与「GPT 全系列走 OpenAI」条件存在交集</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">
+              <code class="font-mono">gpt-4o</code>, <code class="font-mono">gpt-4o-mini</code> 将按规则 1 的优先级执行，本规则不会生效
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-8" style="align-items:center">
+        <span class="pill" style="background:var(--yellow-bg)"><span class="dot dot-yellow"></span> <span class="text-yellow">⚠️ 冲突</span></span>
+        <span style="font-size:28px;font-weight:700;color:var(--muted);opacity:.5;min-width:32px;text-align:right">2</span>
+        <button class="btn-icon" title="编辑">✏️</button>
+        <button class="btn-icon" title="禁用">⏸️</button>
+        <button class="btn-icon" title="删除">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Save bar with warning -->
+  <div style="margin-top:16px;padding:14px 18px;border-radius:var(--radius-md);background:var(--yellow-bg);border:1px solid rgba(245,158,11,.25);display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <div style="font-size:14px;font-weight:600;color:var(--yellow)">⚠️ 检测到 1 个条件交集冲突</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">冲突的规则可保存，系统会按优先级顺序（数字越小越优先）执行路由</div>
+    </div>
+    <div class="flex gap-8">
+      <button class="btn btn-sm">取消</button>
+      <button class="btn btn-primary btn-sm">仍然保存</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- Section 3: Conflict Error (duplicate) + Shadow               -->
+<!-- ============================================================ -->
+<div class="section-title">③ 冲突状态 — 错误（完全重复）与影子覆盖</div>
+
+<section class="panel">
+  <div class="flex-between mb-16">
+    <div>
+      <h2 style="font-size:18px">🔀 优先级规则</h2>
+      <div class="muted">🔴 存在 1 个重复冲突，必须修复后才能保存</div>
+    </div>
+    <button class="btn btn-primary" disabled>＋ 新建规则</button>
+  </div>
+
+  <!-- Rule Card — Error (duplicate) -->
+  <div style="border:2px solid var(--red);border-radius:var(--radius-md);padding:16px 18px;margin-bottom:12px;background:var(--red-bg);transition:border-color .2s">
+    <div class="flex-between">
+      <div class="flex gap-12" style="align-items:flex-start">
+        <div style="cursor:grab;color:var(--muted);font-size:18px;line-height:1;padding-top:2px">≡</div>
+        <div>
+          <div style="font-weight:600;font-size:15px">GPT 全系列走 OpenAI</div>
+          <div class="text-sm muted mt-12">
+            <span class="pill" style="font-size:11px;padding:3px 8px">条件</span>
+            <code class="font-mono" style="color:var(--blue);margin-left:6px">model</code>
+            <code class="font-mono" style="color:var(--yellow);margin-left:4px">prefix</code>
+            <code class="font-mono" style="color:var(--text);margin-left:4px">"gpt-"</code>
+          </div>
+          <div class="text-sm muted" style="margin-top:4px">
+            <span class="pill" style="font-size:11px;padding:3px 8px">目标</span>
+            <span style="color:var(--green);margin-left:6px">OpenAI</span>
+          </div>
+          <!-- Duplicate error inline -->
+          <div style="margin-top:10px;padding:10px 14px;border-radius:var(--radius-sm);background:rgba(239,68,68,.1);border-left:3px solid var(--red)">
+            <div style="font-size:13px;color:var(--red);font-weight:600">❌ 规则重复：已存在完全相同条件的规则</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">请修改条件或删除其中一条规则</div>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-8" style="align-items:center">
+        <span class="pill" style="background:rgba(239,68,68,.1)"><span class="dot dot-red"></span> <span class="text-red">❌ 重复</span></span>
+        <span style="font-size:28px;font-weight:700;color:var(--muted);opacity:.5;min-width:32px;text-align:right">1</span>
+        <button class="btn-icon" title="编辑">✏️</button>
+        <button class="btn-icon" title="禁用">⏸️</button>
+        <button class="btn-icon" title="删除">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Shadow conflict example -->
+  <div style="border:2px solid rgba(139,92,246,.4);border-radius:var(--radius-md);padding:16px 18px;margin-bottom:12px;background:rgba(139,92,246,.04)">
+    <div class="flex-between">
+      <div class="flex gap-12" style="align-items:flex-start">
+        <div style="cursor:grab;color:var(--muted);font-size:18px;line-height:1;padding-top:2px">≡</div>
+        <div>
+          <div style="font-weight:600;font-size:15px">Claude 3 系列走 Anthropic</div>
+          <div class="text-sm muted mt-12">
+            <span class="pill" style="font-size:11px;padding:3px 8px">条件</span>
+            <code class="font-mono" style="color:var(--blue);margin-left:6px">model</code>
+            <code class="font-mono" style="color:var(--yellow);margin-left:4px">prefix</code>
+            <code class="font-mono" style="color:var(--text);margin-left:4px">"claude-3"</code>
+          </div>
+          <div class="text-sm muted" style="margin-top:4px">
+            <span class="pill" style="font-size:11px;padding:3px 8px">目标</span>
+            <span style="color:var(--green);margin-left:6px">Anthropic</span>
+          </div>
+          <!-- Shadow warning inline -->
+          <div style="margin-top:10px;padding:10px 14px;border-radius:var(--radius-sm);background:rgba(139,92,246,.08);border-left:3px solid rgba(139,92,246,.5)">
+            <div style="font-size:13px;color:var(--violet);font-weight:600">👻 规则被「Claude 全系列走 Anthropic」完全覆盖</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">本规则永远不会生效，建议删除或修改条件</div>
+          </div>
+        </div>
+      </div>
+      <div class="flex gap-8" style="align-items:center">
+        <span class="pill" style="background:rgba(139,92,246,.08)"><span class="dot" style="background:var(--violet)"></span> <span style="color:var(--violet)">👻 影子</span></span>
+        <span style="font-size:28px;font-weight:700;color:var(--muted);opacity:.5;min-width:32px;text-align:right">2</span>
+        <button class="btn-icon" title="编辑">✏️</button>
+        <button class="btn-icon" title="禁用">⏸️</button>
+        <button class="btn-icon" title="删除">✕</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Save bar with error -->
+  <div style="margin-top:16px;padding:14px 18px;border-radius:var(--radius-md);background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.25);display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <div style="font-size:14px;font-weight:600;color:var(--red)">❌ 存在 1 个重复冲突，无法保存</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">请先修改或删除重复规则后重试</div>
+    </div>
+    <div class="flex gap-8">
+      <button class="btn btn-danger btn-sm">取消修改</button>
+      <button class="btn btn-primary btn-sm" disabled>保存规则</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- Section 4: Condition Editor UI                               -->
+<!-- ============================================================ -->
+<div class="section-title">④ 条件编辑器 — 内联编辑</div>
+
+<section class="panel">
+  <div class="flex-between mb-16">
+    <div>
+      <h2 style="font-size:18px">🔀 编辑规则</h2>
+      <div class="muted">配置匹配条件和目标供应商</div>
+    </div>
+    <div class="flex gap-8">
+      <button class="btn btn-sm">取消</button>
+      <button class="btn btn-primary btn-sm">保存规则</button>
+    </div>
+  </div>
+
+  <!-- Rule name -->
+  <div class="mb-16">
+    <label class="label">规则名称</label>
+    <input class="input" style="width:100%" value="GPT 全系列走 OpenAI" />
+  </div>
+
+  <!-- Conditions -->
+  <div class="mb-16">
+    <label class="label">匹配条件（AND 关系）</label>
+    <div style="background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:var(--radius-md);padding:14px">
+      <!-- Condition row 1 -->
+      <div class="flex gap-8" style="align-items:center;margin-bottom:10px">
+        <select class="select" style="width:100px"><option selected>model</option><option>provider</option></select>
+        <select class="select" style="width:100px"><option selected>prefix</option><option>exact</option><option>glob</option></select>
+        <input class="input" style="flex:1" value="gpt-" placeholder="输入匹配值" />
+        <button class="btn-icon" title="删除条件">✕</button>
+      </div>
+      <!-- Condition row 2 -->
+      <div class="flex gap-8" style="align-items:center;margin-bottom:10px">
+        <select class="select" style="width:100px"><option selected>model</option><option>provider</option></select>
+        <select class="select" style="width:100px"><option>prefix</option><option selected>glob</option><option>exact</option></select>
+        <input class="input" style="flex:1" value="o?-mini" placeholder="输入匹配值" />
+        <button class="btn-icon" title="删除条件">✕</button>
+      </div>
+      <button class="btn btn-sm" style="width:100%;justify-content:center;margin-top:4px">＋ 添加条件</button>
+      <div class="muted text-xs" style="margin-top:8px">条件关系：所有条件都必须匹配（AND）</div>
+    </div>
+  </div>
+
+  <!-- Target provider -->
+  <div class="mb-16">
+    <label class="label">目标供应商</label>
+    <select class="select" style="width:100%">
+      <option selected>openai</option>
+      <option>anthropic</option>
+      <option>deepseek</option>
+      <option>custom-provider</option>
+    </select>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- Section 5: Empty State                                       -->
+<!-- ============================================================ -->
+<div class="section-title">⑤ 空状态</div>
+
+<section class="panel" style="text-align:center;padding:48px 20px">
+  <div style="font-size:48px;margin-bottom:16px">🔀</div>
+  <h2 style="font-size:18px;margin-bottom:8px">暂无优先级规则</h2>
+  <div class="muted" style="max-width:400px;margin:0 auto 20px">
+    创建优先级规则来控制不同模型的供应商路由顺序。规则按优先级顺序执行，第一条命中的规则决定请求的目标供应商。
+  </div>
+  <button class="btn btn-primary">＋ 创建第一条规则</button>
+  <div class="muted text-xs" style="margin-top:16px">最多 20 条 · 稳态 KV +0</div>
+</section>
+
+<!-- ============================================================ -->
+<!-- Section 6: New Rule Modal                                    -->
+<!-- ============================================================ -->
+<div class="section-title">⑥ 新建规则弹窗</div>
+
+<section class="panel" style="padding:0;overflow:hidden">
+  <!-- Modal overlay simulation -->
+  <div style="background:rgba(0,0,0,.5);padding:32px 20px;display:flex;justify-content:center">
+    <div style="background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:0 20px 60px rgba(0,0,0,.5);width:100%;max-width:520px;backdrop-filter:var(--blur)">
+      <!-- Modal header -->
+      <div style="padding:20px 24px 0;display:flex;justify-content:space-between;align-items:center">
+        <h2 style="font-size:18px">＋ 新建优先级规则</h2>
+        <button class="btn-icon" title="关闭">✕</button>
+      </div>
+
+      <!-- Modal body -->
+      <div style="padding:16px 24px">
+        <div class="mb-16">
+          <label class="label">规则名称</label>
+          <input class="input" style="width:100%" placeholder="如：GPT-4o 走 OpenAI" />
+        </div>
+
+        <div class="mb-16">
+          <label class="label">匹配条件（AND 关系）</label>
+          <div style="background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:var(--radius-md);padding:12px">
+            <div class="flex gap-8" style="align-items:center">
+              <select class="select" style="width:90px"><option selected>model</option><option>provider</option></select>
+              <select class="select" style="width:90px"><option selected>prefix</option><option>exact</option><option>glob</option></select>
+              <input class="input" style="flex:1" placeholder="如：gpt-4o" />
+            </div>
+            <div class="muted text-xs" style="margin-top:8px">可添加多个条件，所有条件必须同时匹配</div>
+          </div>
+        </div>
+
+        <div class="mb-16">
+          <label class="label">目标供应商</label>
+          <select class="select" style="width:100%"><option selected disabled>选择供应商…</option><option>openai</option><option>anthropic</option><option>deepseek</option></select>
+        </div>
+
+        <div class="mb-8">
+          <label class="label">启用状态</label>
+          <div class="flex gap-8" style="align-items:center">
+            <div style="width:36px;height:20px;border-radius:999px;background:var(--green);position:relative;cursor:pointer">
+              <div style="width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;right:2px;box-shadow:0 1px 3px rgba(0,0,0,.3)"></div>
+            </div>
+            <span class="muted">创建后立即启用</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal footer -->
+      <div style="padding:16px 24px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-sm">取消</button>
+        <button class="btn btn-primary btn-sm">创建规则</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- Section 7: Mobile Reorder (arrow buttons)                    -->
+<!-- ============================================================ -->
+<div class="section-title">⑦ 移动端适配 — 箭头排序替代拖拽</div>
+
+<section class="panel">
+  <div class="flex-between mb-16">
+    <div>
+      <h2 style="font-size:18px">🔀 优先级规则</h2>
+      <div class="muted">点击箭头调整优先级顺序</div>
+    </div>
+    <button class="btn btn-primary btn-sm">＋ 新建</button>
+  </div>
+
+  <!-- Mobile card with arrow buttons -->
+  <div style="border:2px solid rgba(255,255,255,.08);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:10px;background:rgba(0,0,0,.15)">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;align-items:center;gap:10px">
+        <!-- Arrow buttons instead of drag handle -->
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <button class="btn-icon" style="min-height:24px;width:24px;font-size:10px" title="上移">▲</button>
+          <button class="btn-icon" style="min-height:24px;width:24px;font-size:10px;opacity:.3" title="已到顶" disabled>▼</button>
+        </div>
+        <div>
+          <div style="font-weight:600;font-size:14px">GPT 全系列走 OpenAI</div>
+          <div class="text-xs muted" style="margin-top:4px">
+            <code class="font-mono" style="color:var(--blue)">model</code>
+            <code class="font-mono" style="color:var(--yellow);margin-left:3px">prefix</code>
+            <code class="font-mono" style="color:var(--text);margin-left:3px">"gpt-"</code>
+            → <span style="color:var(--green)">OpenAI</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="pill" style="font-size:11px"><span class="dot dot-green"></span></span>
+        <span style="font-size:20px;font-weight:700;color:var(--muted);opacity:.4">1</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="border:2px solid rgba(255,255,255,.08);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:10px;background:rgba(0,0,0,.15)">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <button class="btn-icon" style="min-height:24px;width:24px;font-size:10px">▲</button>
+          <button class="btn-icon" style="min-height:24px;width:24px;font-size:10px">▼</button>
+        </div>
+        <div>
+          <div style="font-weight:600;font-size:14px">Claude 全系列走 Anthropic</div>
+          <div class="text-xs muted" style="margin-top:4px">
+            <code class="font-mono" style="color:var(--blue)">model</code>
+            <code class="font-mono" style="color:var(--yellow);margin-left:3px">prefix</code>
+            <code class="font-mono" style="color:var(--text);margin-left:3px">"claude-"</code>
+            → <span style="color:var(--green)">Anthropic</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="pill" style="font-size:11px"><span class="dot dot-green"></span></span>
+        <span style="font-size:20px;font-weight:700;color:var(--muted);opacity:.4">2</span>
+      </div>
+    </div>
+  </div>
+
+  <div style="border:2px solid rgba(255,255,255,.08);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:10px;background:rgba(0,0,0,.15)">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="display:flex;flex-direction:column;gap:2px">
+          <button class="btn-icon" style="min-height:24px;width:24px;font-size:10px">▲</button>
+          <button class="btn-icon" style="min-height:24px;width:24px;font-size:10px;opacity:.3" disabled>▼</button>
+        </div>
+        <div>
+          <div style="font-weight:600;font-size:14px">DeepSeek 走国内中转</div>
+          <div class="text-xs muted" style="margin-top:4px">
+            <code class="font-mono" style="color:var(--blue)">model</code>
+            <code class="font-mono" style="color:var(--yellow);margin-left:3px">prefix</code>
+            <code class="font-mono" style="color:var(--text);margin-left:3px">"deepseek-"</code>
+            → <span style="color:var(--green)">DeepSeek</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="pill" style="font-size:11px"><span class="dot dot-green"></span></span>
+        <span style="font-size:20px;font-weight:700;color:var(--muted);opacity:.4">3</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile conflict toast -->
+  <div style="margin-top:12px;padding:12px 16px;border-radius:var(--radius-md);background:var(--yellow-bg);border:1px solid rgba(245,158,11,.25)">
+    <div style="font-size:13px;color:var(--yellow);font-weight:600">⚠️ Toast 提示：条件存在交集</div>
+    <div class="text-xs muted" style="margin-top:2px">「GPT 全系列」和「GPT-4o 走 DeepSeek」的条件存在交集</div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- Section 8: Component Reference — Conflict Badge              -->
+<!-- ============================================================ -->
+<div class="section-title">⑧ 组件参考 — 冲突徽标规格</div>
+
+<section class="panel">
+  <h2 style="font-size:16px;margin-bottom:16px">冲突状态色板与组件规格</h2>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+    <!-- Normal -->
+    <div style="border:2px solid rgba(255,255,255,.08);border-radius:var(--radius-md);padding:14px;background:rgba(0,0,0,.15)">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">正常 — 边框 + 状态</div>
+      <span class="pill"><span class="dot dot-green"></span> 正常</span>
+      <div class="muted text-xs" style="margin-top:8px">border: rgba(255,255,255,.08)<br/>dot: #10b981</div>
+    </div>
+    <!-- Warning -->
+    <div style="border:2px solid var(--yellow);border-radius:var(--radius-md);padding:14px;background:rgba(245,158,11,.04)">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">警告 — 条件交集 / 影子覆盖</div>
+      <span class="pill" style="background:var(--yellow-bg)"><span class="dot dot-yellow"></span> <span class="text-yellow">⚠️ 冲突</span></span>
+      <div class="muted text-xs" style="margin-top:8px">border: #f59e0b (amber-500)<br/>background: rgba(245,158,11,.08)</div>
+    </div>
+    <!-- Error -->
+    <div style="border:2px solid var(--red);border-radius:var(--radius-md);padding:14px;background:var(--red-bg)">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">错误 — 完全重复</div>
+      <span class="pill" style="background:rgba(239,68,68,.1)"><span class="dot dot-red"></span> <span class="text-red">❌ 重复</span></span>
+      <div class="muted text-xs" style="margin-top:8px">border: #ef4444 (red-500)<br/>background: rgba(239,68,68,.08)</div>
+    </div>
+    <!-- Shadow -->
+    <div style="border:2px solid rgba(139,92,246,.4);border-radius:var(--radius-md);padding:14px;background:rgba(139,92,246,.04)">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">影子 — 完全覆盖</div>
+      <span class="pill" style="background:rgba(139,92,246,.08)"><span class="dot" style="background:var(--violet)"></span> <span style="color:var(--violet)">👻 影子</span></span>
+      <div class="muted text-xs" style="margin-top:8px">border: rgba(139,92,246,.4)<br/>background: rgba(139,92,246,.08)</div>
+    </div>
+  </div>
+</section>
+
+</div><!-- /.wrap -->
+</body>
+</html>
