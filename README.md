@@ -51,6 +51,7 @@
 - [通知与告警](#-通知与告警)
 - [使用场景](#-使用场景)
 - [贡献指南](#-贡献指南)
+- [更新日志](#-更新日志)
 - [许可证](#-许可证)
 
 ## ✨ 特性
@@ -323,6 +324,11 @@ Client → Edge Runtime (全球分发, <50ms 延迟)
 - [Vercel](https://vercel.com) — Edge Runtime + KV 存储
 - [OpenAI](https://platform.openai.com) — OpenAI 兼容 API 标准
 - [Linux Do](https://linux.do/) — 温暖的开发者社区，AI Relay 的灵感来源
+
+## 📝 更新日志
+
+项目版本变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+
 ## 📄 许可证
 
 本项目基于 MIT 许可证 — 详见 [LICENSE](LICENSE) 文件。
