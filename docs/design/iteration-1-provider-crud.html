@@ -1,334 +1,1159 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AI Relay 迭代一 — 供应商管理 UI 设计稿</title>
 <style>
-:root{--bg:#09090b;--panel:rgba(30,41,59,.45);--panel2:rgba(15,23,42,.72);--line:rgba(255,255,255,.08);--line2:rgba(255,255,255,.15);--text:#e5e7eb;--muted:#9ca3af;--faint:#64748b;--blue:#60a5fa;--violet:#8b5cf6;--green:#10b981;--yellow:#f59e0b;--red:#ef4444;--radius:16px;--shadow:0 24px 80px rgba(0,0,0,.38)}
-*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at top,#1e293b,#09090b 58%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans SC",sans-serif;line-height:1.55}.wrap{max-width:1120px;margin:0 auto;padding:28px 20px 72px}.glass{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);backdrop-filter:blur(12px);box-shadow:var(--shadow)}.top{display:flex;justify-content:space-between;gap:18px;align-items:center;padding:18px 20px;margin-bottom:18px}.brand{display:flex;gap:14px;align-items:center}.mark{width:42px;height:42px;border-radius:14px;background:linear-gradient(135deg,#2563eb,#8b5cf6);box-shadow:0 0 30px rgba(96,165,250,.35);display:grid;place-items:center;font-weight:900}.kicker{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--blue);font-weight:800}.top h1{font-size:23px;line-height:1.15;margin:3px 0 0}.sub{color:var(--muted);font-size:13px}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 20px}.tab{height:40px;display:inline-flex;align-items:center;padding:0 14px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.035);color:var(--muted);font-size:14px}.tab.on{color:var(--blue);border-color:rgba(96,165,250,.45);background:linear-gradient(135deg,rgba(37,99,235,.18),rgba(139,92,246,.16))}.hero{display:grid;grid-template-columns:1.05fr .95fr;gap:16px;margin-bottom:18px}.panel{padding:20px}.panel h2{margin:0 0 8px;font-size:20px}.panel h3{margin:0 0 8px;font-size:15px}.metricRow{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px}.metric{padding:13px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.035)}.metric b{display:block;font-size:22px}.metric span{color:var(--muted);font-size:12px}.btn{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.045);color:var(--text);padding:0 15px;display:inline-flex;align-items:center;justify-content:center;gap:8px;font-size:14px}.btn.primary{border:0;background:linear-gradient(135deg,#2563eb,#8b5cf6);box-shadow:0 12px 28px rgba(59,130,246,.25)}.btn.danger{border-color:rgba(239,68,68,.35);color:#fecaca}.section{margin:30px 0 12px;color:var(--muted);font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;border-bottom:1px solid var(--line);padding-bottom:8px}.grid{display:grid;gap:14px}.cards{grid-template-columns:repeat(4,1fr)}.card{position:relative;padding:16px;border:1px solid var(--line);border-radius:16px;background:rgba(15,23,42,.54)}.card.selected{border-color:rgba(96,165,250,.66);box-shadow:0 0 0 1px rgba(96,165,250,.18),0 0 30px rgba(96,165,250,.16)}.icon{width:42px;height:42px;border-radius:13px;display:grid;place-items:center;margin-bottom:12px;background:rgba(255,255,255,.06);border:1px solid var(--line2);font-weight:900}.badge,.pill{display:inline-flex;align-items:center;gap:7px;border-radius:999px;border:1px solid var(--line);background:rgba(255,255,255,.04);padding:4px 9px;color:var(--muted);font-size:12px}.dot{width:7px;height:7px;border-radius:50%;background:var(--faint)}.ok{background:var(--green)}.warn{background:var(--yellow)}.bad{background:var(--red)}.muted{color:var(--muted)}
-.stepper{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:16px 0}.step{position:relative;padding:14px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.035)}.step:before{content:attr(data-n);width:26px;height:26px;border-radius:50%;display:inline-grid;place-items:center;margin-right:8px;background:rgba(96,165,250,.15);color:var(--blue);font-weight:800}.step.done:before{content:"✓";background:rgba(16,185,129,.16);color:var(--green)}.step.active{border-color:rgba(96,165,250,.55);background:linear-gradient(135deg,rgba(37,99,235,.16),rgba(139,92,246,.12))}.form{display:grid;gap:12px}.field label{display:block;color:var(--muted);font-size:12px;margin-bottom:6px}.input{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(2,6,23,.42);color:var(--text);padding:0 12px;font-family:inherit;width:100%}.tags{display:flex;flex-wrap:wrap;gap:7px}.tag{border:1px solid rgba(96,165,250,.24);background:rgba(96,165,250,.1);color:#bfdbfe;border-radius:999px;padding:4px 8px;font-size:12px}.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}.result{padding:15px;border-radius:15px;border:1px solid var(--line);background:rgba(255,255,255,.035)}.result.success{border-color:rgba(16,185,129,.35);background:linear-gradient(135deg,rgba(16,185,129,.12),rgba(15,23,42,.45))}.result.error{border-color:rgba(239,68,68,.35);background:linear-gradient(135deg,rgba(239,68,68,.11),rgba(15,23,42,.45))}.table{overflow:hidden;border:1px solid var(--line);border-radius:16px}.row{display:grid;grid-template-columns:1.25fr .9fr .9fr .9fr 1.2fr;gap:10px;align-items:center;padding:13px 14px;border-bottom:1px solid var(--line);background:rgba(15,23,42,.38)}.row.head{color:var(--muted);font-size:12px;background:rgba(255,255,255,.045)}.row:last-child{border-bottom:0}.provider{display:flex;align-items:center;gap:10px}.mini{width:30px;height:30px;border-radius:9px;background:rgba(255,255,255,.06);border:1px solid var(--line);display:grid;place-items:center;font-size:13px;font-weight:900}.actions{display:flex;gap:7px;justify-content:flex-end}.ghost{height:32px;min-height:32px;padding:0 10px;font-size:12px}.stateGroup{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.note{border-left:2px solid var(--blue);padding:12px 14px;border-radius:12px;background:rgba(96,165,250,.08);color:#cbd5e1;font-size:13px}.phone{max-width:330px;margin:auto;border:1px solid var(--line2);border-radius:30px;background:rgba(2,6,23,.7);padding:14px;box-shadow:0 20px 70px rgba(0,0,0,.35)}.phoneTop{height:18px;width:86px;border-radius:999px;background:#020617;margin:0 auto 14px}.mobileCard{padding:13px;border:1px solid var(--line);border-radius:15px;background:rgba(255,255,255,.035);margin-bottom:10px}.foot{margin-top:30px;color:var(--muted);font-size:12px;text-align:center}@media(max-width:860px){.hero,.split{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}.row{grid-template-columns:1fr;gap:8px}.row.head{display:none}.actions{justify-content:flex-start}.stateGroup,.metricRow,.stepper{grid-template-columns:1fr}}@media(max-width:560px){.wrap{padding:18px 14px 54px}.top{align-items:flex-start;flex-direction:column}.cards{grid-template-columns:1fr}.panel{padding:16px}.tabs{overflow:auto;flex-wrap:nowrap}.tab{white-space:nowrap}}
+  :root {
+    --bg-main: #09090b;
+    --bg-radial: radial-gradient(circle at top, #1e293b, #09090b);
+    --panel-bg: rgba(30, 41, 59, 0.45);
+    --panel-blur: blur(12px);
+    --border-subtle: rgba(255,255,255,0.08);
+    --border-hover: rgba(255,255,255,0.15);
+    --border-active: #60a5fa;
+    --text-primary: #e5e7eb;
+    --text-secondary: #9ca3af;
+    --text-muted: #6b7280;
+    --success: #10b981;
+    --success-bg: rgba(16,185,129,0.1);
+    --warning: #f59e0b;
+    --warning-bg: rgba(245,158,11,0.1);
+    --error: #ef4444;
+    --error-bg: rgba(239,68,68,0.1);
+    --accent: #60a5fa;
+    --accent-purple: #a78bfa;
+    --gradient-btn: linear-gradient(135deg, #6366f1, #8b5cf6, #a78bfa);
+    --gradient-btn-hover: linear-gradient(135deg, #818cf8, #a78bfa, #c4b5fd);
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-pill: 999px;
+    --max-w: 1000px;
+    --min-h-btn: 44px;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg-radial);
+    background-attachment: fixed;
+    color: var(--text-primary);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+  .design-header {
+    text-align: center;
+    padding: 40px 24px 16px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .design-header h1 {
+    font-size: 24px;
+    font-weight: 600;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .design-header p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-top: 8px;
+  }
+  .design-header .meta {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .design-header .meta span {
+    padding: 2px 10px;
+    background: var(--panel-bg);
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--border-subtle);
+  }
+
+  /* Tab Navigation */
+  .tab-nav {
+    display: flex;
+    gap: 4px;
+    padding: 16px 24px;
+    max-width: var(--max-w);
+    margin: 0 auto;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tab-btn {
+    padding: 10px 20px;
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-pill);
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.2s;
+    min-height: 40px;
+    font-family: inherit;
+  }
+  .tab-btn:hover {
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+  }
+  .tab-btn.active {
+    background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.2));
+    border-color: var(--accent);
+    color: var(--accent);
+    box-shadow: 0 0 12px rgba(96,165,250,0.15);
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Glass Panel */
+  .glass-panel {
+    background: var(--panel-bg);
+    backdrop-filter: var(--panel-blur);
+    -webkit-backdrop-filter: var(--panel-blur);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    max-width: var(--max-w);
+    margin: 0 auto 24px;
+  }
+  .panel-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .panel-desc {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+  }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: var(--min-h-btn);
+    padding: 0 24px;
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+    font-family: inherit;
+  }
+  .btn-primary {
+    background: var(--gradient-btn);
+    color: #fff;
+    box-shadow: 0 2px 12px rgba(99,102,241,0.3);
+  }
+  .btn-primary:hover {
+    background: var(--gradient-btn-hover);
+    box-shadow: 0 4px 20px rgba(99,102,241,0.4);
+    transform: translateY(-1px);
+  }
+  .btn-secondary {
+    background: var(--panel-bg);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+    backdrop-filter: blur(8px);
+  }
+  .btn-secondary:hover {
+    border-color: var(--border-hover);
+    background: rgba(30,41,59,0.6);
+  }
+  .btn-danger {
+    background: transparent;
+    border: 1px solid var(--error);
+    color: var(--error);
+  }
+  .btn-danger:hover {
+    background: var(--error-bg);
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 0 12px;
+    min-height: 36px;
+  }
+  .btn-ghost:hover { color: var(--text-primary); }
+  .btn-sm { min-height: 36px; padding: 0 16px; font-size: 13px; }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  /* Stepper */
+  .stepper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 32px;
+    padding: 0 16px;
+  }
+  .stepper-step {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    transition: all 0.2s;
+  }
+  .stepper-step:hover { background: rgba(255,255,255,0.03); }
+  .stepper-num {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    border: 2px solid var(--border-subtle);
+    color: var(--text-muted);
+    transition: all 0.3s;
+    flex-shrink: 0;
+  }
+  .stepper-step.active .stepper-num {
+    border-color: var(--accent);
+    background: linear-gradient(135deg, rgba(99,102,241,0.3), rgba(139,92,246,0.3));
+    color: var(--accent);
+    box-shadow: 0 0 12px rgba(96,165,250,0.2);
+  }
+  .stepper-step.done .stepper-num {
+    border-color: var(--success);
+    background: var(--success);
+    color: #fff;
+  }
+  .stepper-step.done .stepper-num::after { content: '✓'; }
+  .stepper-step.done .stepper-num span { display: none; }
+  .stepper-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .stepper-step.active .stepper-label { color: var(--text-primary); }
+  .stepper-step.done .stepper-label { color: var(--success); }
+  .stepper-line {
+    width: 48px;
+    height: 2px;
+    background: var(--border-subtle);
+    margin: 0 4px;
+    border-radius: 1px;
+    flex-shrink: 0;
+  }
+  .stepper-line.done { background: var(--success); }
+
+  /* Status Pill */
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: var(--radius-pill);
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .status-healthy { background: var(--success-bg); color: var(--success); }
+  .status-healthy .status-dot { background: var(--success); }
+  .status-degraded { background: var(--warning-bg); color: var(--warning); }
+  .status-degraded .status-dot { background: var(--warning); }
+  .status-down { background: var(--error-bg); color: var(--error); }
+  .status-down .status-dot { background: var(--error); }
+  .status-unknown { background: rgba(107,114,128,0.1); color: var(--text-muted); }
+  .status-unknown .status-dot { background: var(--text-muted); }
+  .status-loading .status-dot {
+    background: var(--accent);
+    animation: pulse-ring 1.2s infinite;
+  }
+  @keyframes pulse-ring {
+    0%,100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.3); }
+  }
+
+  /* Input */
+  .input-group { margin-bottom: 16px; }
+  .input-group label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    font-weight: 500;
+  }
+  .input-field {
+    width: 100%;
+    min-height: var(--min-h-btn);
+    padding: 0 14px;
+    background: rgba(0,0,0,0.2);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    transition: border-color 0.2s;
+    outline: none;
+  }
+  .input-field:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(96,165,250,0.1);
+  }
+  .input-field::placeholder { color: var(--text-muted); }
+  .input-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .input-error {
+    font-size: 12px;
+    color: var(--error);
+    margin-top: 4px;
+  }
+
+  /* Tag */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    background: rgba(96,165,250,0.1);
+    border: 1px solid rgba(96,165,250,0.2);
+    border-radius: var(--radius-pill);
+    font-size: 11px;
+    color: var(--accent);
+    font-family: 'SF Mono', monospace;
+  }
+  .tag-removable::after {
+    content: '×';
+    margin-left: 2px;
+    cursor: pointer;
+    opacity: 0.6;
+  }
+  .tag-removable:hover::after { opacity: 1; }
+
+  /* Capability Badge */
+  .cap-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .cap-badge.supported {
+    background: var(--success-bg);
+    color: var(--success);
+    border: 1px solid rgba(16,185,129,0.2);
+  }
+  .cap-badge.unsupported {
+    background: rgba(107,114,128,0.1);
+    color: var(--text-muted);
+    border: 1px solid var(--border-subtle);
+  }
+
+  /* Spinner */
+  .spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-subtle);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    top: 24px;
+    right: 24px;
+    padding: 12px 20px;
+    border-radius: var(--radius-md);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    z-index: 100;
+    animation: slide-in 0.3s ease;
+    backdrop-filter: blur(12px);
+  }
+  .toast-success { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); color: var(--success); }
+  .toast-error { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: var(--error); }
+  @keyframes slide-in { from { transform: translateX(100px); opacity:0; } to { transform: translateX(0); opacity:1; } }
+
+  /* Responsive */
+  @media (max-width: 640px) {
+    .stepper { flex-wrap: wrap; gap: 8px; }
+    .stepper-line { display: none; }
+    .glass-panel { padding: 16px; }
+    .tab-nav { padding: 12px 16px; }
+  }
 </style>
 </head>
 <body>
-<main class="wrap">
-  <header class="top glass">
-    <div class="brand"><div class="mark">AR</div><div><div class="kicker">AI Relay · Iteration 1</div><h1>供应商管理 UI 设计稿</h1><p class="sub">模板化创建 + 三步 Stepper + 连通性测试 + 状态化供应商列表</p></div></div>
-    <button class="btn primary">添加供应商</button>
-  </header>
-  <nav class="tabs" aria-label="Admin tabs">
-    <span class="tab">Overview</span><span class="tab on">供应商管理</span><span class="tab">Keys</span><span class="tab">Health</span><span class="tab">Logs</span><span class="tab">Webhooks</span>
-  </nav>
-
-<h2 class="section-title">A. 创建流程：三步 Stepper</h2>
-<section class="panel">
-  <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap">
-    <div><h2>添加 Provider Key</h2><p class="muted">线性完成“选模板 → 配密钥 → 测试保存”，不让用户在散落字段里迷路。</p></div>
-    <span class="pill"><i class="dot green"></i> Step 3 of 3 · Ready to save</span>
+<!-- Design Header -->
+<div class="design-header">
+  <h1>AI Relay · 迭代一 供应商管理 UI</h1>
+  <p>供应商 CRUD + 模板化创建 · Stepper 三步引导</p>
+  <div class="meta">
+    <span>设计师：像素姐</span>
+    <span>日期：2026-05-26</span>
+    <span>版本：v1.0</span>
   </div>
-  <div class="stepper" aria-label="Provider creation steps">
-    <div class="step done"><span class="step-num">✓</span><div><strong>选择模板</strong><p class="muted">OpenAI selected</p></div></div>
-    <div class="step done"><span class="step-num">✓</span><div><strong>配置密钥</strong><p class="muted">Key + Base URL</p></div></div>
-    <div class="step active"><span class="step-num">3</span><div><strong>测试保存</strong><p class="muted">Connectivity result</p></div></div>
-  </div>
-  <div class="callout">设计备注：桌面使用完整横向步骤条；手机端降级为“Step 2 of 3 + 进度条”。已完成步骤用绿色勾，当前步骤使用蓝紫高亮，避免和错误状态混淆。</div>
-</section>
+</div>
 
-<h2 class="section-title">B. Step 1：模板选择卡片</h2>
-<section class="panel">
-  <div style="display:flex;justify-content:space-between;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
-    <div><h2>选择供应商模板</h2><p class="muted">预置模板自动填充 baseUrl、headerFormat、modelPrefixes；自定义卡片保留完整手动配置能力。</p></div>
-    <input class="input" style="max-width:260px" value="Search templates..." aria-label="Search templates" />
-  </div>
-  <div class="template-grid">
-    <article class="template-card selected"><div class="template-head"><div class="icon">OA</div><span class="pill"><i class="dot green"></i> Ready</span></div><h3>OpenAI</h3><p class="muted">GPT / o-series / embeddings / audio</p><div class="tag-row"><span class="tag">7 prefixes</span><span class="tag">Bearer</span></div></article>
-    <article class="template-card"><div class="icon">AN</div><h3>Anthropic</h3><p class="muted">Claude models with x-api-key header</p><div class="tag-row"><span class="tag">claude-</span><span class="tag">x-api-key</span></div></article>
-    <article class="template-card"><div class="icon">GM</div><h3>Google Gemini</h3><p class="muted">Gemini relay via OpenAI-compatible shape</p><div class="tag-row"><span class="tag">gemini-</span><span class="tag">Bearer</span></div></article>
-    <article class="template-card"><div class="icon">AZ</div><h3>Azure OpenAI</h3><p class="muted">需要填写 deployment base URL</p><div class="tag-row"><span class="tag">api-key</span><span class="tag">custom URL</span></div></article>
-    <article class="template-card"><div class="icon">MS</div><h3>Mistral</h3><p class="muted">Mistral / Codestral 快速接入</p><div class="tag-row"><span class="tag">mistral-</span><span class="tag">codestral-</span></div></article>
-    <article class="template-card"><div class="icon">GQ</div><h3>Groq</h3><p class="muted">低延迟推理供应商</p><div class="tag-row"><span class="tag">llama-</span><span class="tag">mixtral-</span></div></article>
-    <article class="template-card"><div class="icon">DS</div><h3>DeepSeek</h3><p class="muted">DeepSeek chat / coder 模型</p><div class="tag-row"><span class="tag">deepseek-</span><span class="tag">Bearer</span></div></article>
-    <article class="template-card custom"><div class="icon">＋</div><h3>自定义</h3><p class="muted">手动配置任意兼容供应商</p><div class="tag-row"><span class="tag">manual</span><span class="tag">advanced</span></div></article>
-  </div>
-</section>
-  <section class="hero">
-    <div class="panel glass">
-      <div class="kicker">Design intent</div>
-      <h2>让新增 Provider 像填写一张可靠的登机牌</h2>
-      <p class="muted">当前痛点是 baseUrl、headerFormat、modelPrefixes 需要手动理解。设计上把“判断与记忆”收进模板卡，把用户的注意力留给 API Key 与测试结果。细节决定品质感。</p>
-      <div class="metricRow">
-        <div class="metric"><b>≤3min</b><span>新供应商配置目标</span></div>
-        <div class="metric"><b>8</b><span>模板：7 预置 + 自定义</span></div>
-        <div class="metric"><b>4</b><span>列表核心状态</span></div>
-      </div>
-    </div>
-    <div class="panel glass">
-      <h3>页面信息架构</h3>
-      <div class="note">供应商管理页默认展示列表；点击“添加供应商”进入右侧/页内 Wizard。空状态直接展示模板入口，避免用户先理解空表格。</div>
-      <div style="height:12px"></div>
-      <div class="tags"><span class="tag">模板选择</span><span class="tag">密钥配置</span><span class="tag">测试保存</span><span class="tag">状态灯</span><span class="tag">编辑/删除</span></div>
-    </div>
-  </section>
+<!-- Tab Navigation -->
+<div class="tab-nav" id="tabNav">
+  <button class="tab-btn active" onclick="switchTab('step1')">① 选择模板</button>
+  <button class="tab-btn" onclick="switchTab('step2')">② 配置密钥</button>
+  <button class="tab-btn" onclick="switchTab('step3')">③ 测试结果</button>
+  <button class="tab-btn" onclick="switchTab('list')">供应商列表</button>
+  <button class="tab-btn" onclick="switchTab('mobile')">移动端适配</button>
+</div>
 
-  <div class="section">01 · 模板选择卡片</div>
-  <section class="panel glass">
-    <div class="split" style="align-items:end;margin-bottom:14px">
-      <div><h2>选择供应商模板</h2><p class="muted">每张卡只回答三个问题：它是谁、适合什么、会自动填什么。用户的眼睛是最诚实的，所以选中态要清楚但不喧宾夺主。</p></div>
-      <input class="input" value="搜索 provider / openai / 国内供应商" aria-label="搜索模板" />
-    </div>
-    <div class="grid cards">
-      <article class="card selected"><div class="icon">O</div><h3>OpenAI</h3><p class="muted">默认首选，支持 GPT / o 系列 / embedding。</p><span class="badge"><span class="dot ok"></span>推荐</span></article>
-      <article class="card"><div class="icon">A</div><h3>Anthropic</h3><p class="muted">Claude 模型，使用 x-api-key 认证格式。</p><span class="badge">claude-</span></article>
-      <article class="card"><div class="icon">G</div><h3>Google Gemini</h3><p class="muted">Gemini 模型，OpenAI 兼容中继路径。</p><span class="badge">gemini-</span></article>
-      <article class="card"><div class="icon">Az</div><h3>Azure OpenAI</h3><p class="muted">企业部署，需要填写部署域名与前缀。</p><span class="badge"><span class="dot warn"></span>需配置</span></article>
-      <article class="card"><div class="icon">M</div><h3>Mistral</h3><p class="muted">Mistral / Codestral，适合轻量欧洲节点。</p><span class="badge">openai header</span></article>
-      <article class="card"><div class="icon">Gr</div><h3>Groq</h3><p class="muted">高速推理场景，常用于低延迟 fallback。</p><span class="badge">fast inference</span></article>
-      <article class="card"><div class="icon">D</div><h3>DeepSeek</h3><p class="muted">DeepSeek 系列模型，兼容 OpenAI 格式。</p><span class="badge">deepseek-</span></article>
-      <article class="card" style="border-style:dashed"><div class="icon">＋</div><h3>自定义</h3><p class="muted">手动填写 baseUrl、header 与模型前缀。</p><span class="badge">advanced</span></article>
-    </div>
-  </section>
-
-  <div class="section">02 · 三步 Stepper 引导流程</div>
-  <section class="panel glass">
+<!-- ========== STEP 1: 选择模板 ========== -->
+<div class="tab-panel active" id="tab-step1">
+  <div class="glass-panel">
+    <!-- Stepper -->
     <div class="stepper">
-      <div class="step done" data-n="1"><b>选择模板</b><p class="muted">OpenAI 已选中</p></div>
-      <div class="step active" data-n="2"><b>配置密钥</b><p class="muted">填写 Key，可覆盖 Base URL</p></div>
-      <div class="step" data-n="3"><b>测试保存</b><p class="muted">先验证，再写入 KV</p></div>
+      <div class="stepper-step active">
+        <div class="stepper-num"><span>1</span></div>
+        <div class="stepper-label">选择模板</div>
+      </div>
+      <div class="stepper-line"></div>
+      <div class="stepper-step">
+        <div class="stepper-num"><span>2</span></div>
+        <div class="stepper-label">配置密钥</div>
+      </div>
+      <div class="stepper-line"></div>
+      <div class="stepper-step">
+        <div class="stepper-num"><span>3</span></div>
+        <div class="stepper-label">测试保存</div>
+      </div>
     </div>
-    <div class="split">
-      <div class="form">
-        <div class="field"><label>Provider display name</label><input class="input" value="OpenAI Production" /></div>
-        <div class="field"><label>API Key</label><input class="input" type="password" value="sk-••••••••••••••••••••••••••••" /></div>
-        <div class="field"><label>Base URL</label><input class="input" value="https://api.openai.com/v1" /></div>
-        <div class="field"><label>Model prefixes</label><div class="tags"><span class="tag">gpt-</span><span class="tag">o1-</span><span class="tag">o3-</span><span class="tag">text-embedding-</span></div></div>
-        <div><button class="btn">上一步</button> <button class="btn primary">测试连接</button></div>
-      </div>
-      <aside class="card">
-        <h3>配置提醒</h3>
-        <p class="muted">预置模板字段默认可编辑，用于代理地址、企业网关或私有兼容端点。高级选项默认折叠，避免新用户被 headerFormat 和 prefix 概念打断。</p>
-        <div style="height:12px"></div>
-        <div class="note">API Key 输入框默认 password；列表与测试错误中只展示脱敏摘要，不回显完整密钥。</div>
-      </aside>
+
+    <div class="panel-title">选择供应商模板</div>
+    <div class="panel-desc">选择一个模板快速开始，或使用自定义模板手动配置</div>
+
+    <!-- Search -->
+    <div style="margin-bottom:20px;">
+      <input type="text" class="input-field" placeholder="🔍 搜索模板..." style="max-width:320px;">
     </div>
-  </section>
 
-<h2 class="section-title">C. Step 2：配置密钥与高级选项</h2>
-<section class="grid cols2">
-  <div class="panel">
-    <h2>配置 OpenAI</h2>
-    <div class="field"><div class="label"><span>Display Name</span><span class="muted">必填</span></div><input class="input" value="OpenAI Production" /></div>
-    <div class="field"><div class="label"><span>API Key</span><button class="btn ghost" style="min-height:28px;padding:0 8px">显示</button></div><input class="input" type="password" value="sk-proj-••••••••••••••••" /><p class="hint">校验：非空、长度 ≥ 20、不含空格；错误文案不展示完整 Key。</p></div>
-    <div class="field"><div class="label"><span>Base URL</span><span class="pill">来自模板，可编辑</span></div><input class="input" value="https://api.openai.com/v1" /></div>
-    <div class="field"><div class="label"><span>Model Prefixes</span><span class="muted">Tag input</span></div><textarea class="input textarea">gpt-, o1-, o3-, dall-e-, whisper-, tts-, text-embedding-</textarea></div>
-    <details style="margin-top:12px"><summary class="muted">高级选项：Header Format / Fallback / 多 Key</summary><div class="field"><input class="input" value="Header Format: openai (Authorization: Bearer)" /></div></details>
-    <div style="display:flex;justify-content:space-between;gap:10px;margin-top:16px"><button class="btn">← 上一步</button><button class="btn primary">测试连接 →</button></div>
-  </div>
-  <div class="panel">
-    <h2>字段映射预览</h2>
-    <div class="metric-row" style="grid-template-columns:1fr 1.4fr"><span class="muted">envKeyField</span><code class="mono">OPENAI_KEYS</code></div>
-    <div class="metric-row" style="grid-template-columns:1fr 1.4fr"><span class="muted">headerFormat</span><code class="mono">openai</code></div>
-    <div class="metric-row" style="grid-template-columns:1fr 1.4fr"><span class="muted">test strategy</span><code class="mono">GET /v1/models</code></div>
-    <div class="metric-row" style="grid-template-columns:1fr 1.4fr"><span class="muted">timeout</span><code class="mono">10s · no auto retry</code></div>
-    <div class="callout" style="margin-top:16px">交互原则：用户先看到“最少必填项”，高级字段默认折叠；预置模板允许覆盖 Base URL，以兼容代理地址。</div>
-  </div>
-</section>
+    <!-- Template Grid -->
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:12px; margin-bottom:20px;">
 
-<h2 class="section-title">D. Step 3：连通性测试结果卡片</h2>
-<section class="grid cols2">
-  <div class="result-card success">
-    <span class="pill"><i class="dot green"></i> Connection successful</span>
-    <h2 style="margin-top:12px">OpenAI 可用</h2>
-    <p class="muted">测试请求成功返回模型列表，配置可保存。</p>
-    <div class="metric-row" style="grid-template-columns:1fr 1fr"><span>Latency</span><strong>842 ms</strong></div>
-    <div class="metric-row" style="grid-template-columns:1fr 1fr"><span>Available Models</span><strong>18 models</strong></div>
-    <div class="tag-row"><span class="tag">Stream</span><span class="tag">Vision</span><span class="tag">Tools</span><span class="tag">Embeddings</span></div>
-    <div style="display:flex;gap:10px;margin-top:16px"><button class="btn">返回修改</button><button class="btn primary">保存供应商</button></div>
-  </div>
-  <div class="result-card error">
-    <span class="pill"><i class="dot red"></i> Connection failed</span>
-    <h2 style="margin-top:12px">认证失败</h2>
-    <p class="muted">上游返回 401。请检查 API Key 是否正确，错误信息已脱敏。</p>
-    <div class="metric-row" style="grid-template-columns:1fr 1fr"><span>Error Type</span><strong>auth</strong></div>
-    <div class="metric-row" style="grid-template-columns:1fr 1fr"><span>HTTP Status</span><strong>401</strong></div>
-    <code class="mono" style="display:block;margin-top:12px;color:#fecaca">Invalid API key: sk-***9a2</code>
-    <div style="display:flex;gap:10px;margin-top:16px"><button class="btn">返回修改</button><button class="btn danger">重试</button></div>
-  </div>
-</section>
-
-  <div class="section">03 · 连通性测试结果卡片</div>
-  <section class="panel glass">
-    <h2>Step 3 — 测试保存</h2>
-    <p class="muted" style="margin-bottom:14px">测试连接后展示结果卡：成功绿色、失败红色。延迟、可用模型、能力标签一目了然，降低"配完才发现不通"的焦虑。</p>
-    <div class="stateGroup">
-      <div class="result success">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div style="font-size:20px;font-weight:800">✅ 连接成功</div>
-          <span class="pill"><span class="dot ok"></span>OpenAI</span>
+      <!-- OpenAI Card (Selected) -->
+      <div style="background:var(--panel-bg); border:2px solid var(--accent); border-radius:var(--radius-md); padding:16px; cursor:pointer; box-shadow:0 0 16px rgba(96,165,250,0.15); transition:all 0.2s;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center;font-size:18px;">🟢</div>
+          <div>
+            <div style="font-weight:600;font-size:14px;">OpenAI</div>
+            <div style="font-size:11px;color:var(--text-muted);">GPT / o-series / DALL·E</div>
+          </div>
         </div>
-        <div style="height:8px"></div>
-        <div style="display:flex;gap:16px;flex-wrap:wrap">
-          <div><span class="muted">延迟</span><br /><b style="font-size:18px">142 ms</b></div>
-          <div><span class="muted">模型</span><br /><b style="font-size:18px">17</b></div>
-          <div><span class="muted">认证</span><br /><b style="font-size:18px">Bearer ✓</b></div>
-        </div>
-        <div style="height:10px"></div>
-        <div class="tags"><span class="tag">stream</span><span class="tag">vision</span><span class="tag">tools</span></div>
-        <div style="height:10px"></div>
-        <div style="font-size:13px;color:var(--muted)">可用模型：gpt-4o, gpt-4o-mini, o1, o3-mini, gpt-4-turbo, dall-e-3, whisper-1, tts-1, text-embedding-3-large ...</div>
-        <div style="height:12px"></div>
-        <button class="btn primary" style="width:100%">保存供应商</button>
-      </div>
-      <div class="result error">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div style="font-size:20px;font-weight:800">❌ 连接失败</div>
-          <span class="pill"><span class="dot bad"></span>Anthropic</span>
-        </div>
-        <div style="height:8px"></div>
-        <div style="display:flex;gap:16px;flex-wrap:wrap">
-          <div><span class="muted">错误类型</span><br /><b style="font-size:18px;color:#fecaca">认证失败</b></div>
-          <div><span class="muted">HTTP</span><br /><b style="font-size:18px;color:#fecaca">401</b></div>
-        </div>
-        <div style="height:10px"></div>
-        <div class="note" style="border-color:var(--red);background:rgba(239,68,68,.1)">API Key 无效或已过期，请检查前缀是否以 sk-ant- 开头，或在 Anthropic Console 轮换密钥。</div>
-        <div style="height:12px"></div>
-        <div style="display:flex;gap:10px">
-          <button class="btn" style="flex:1">返回修改</button>
-          <button class="btn" style="flex:1">重试</button>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">GPT-4o、o1、o3、DALL·E、Whisper、TTS、Embeddings</div>
+        <div style="display:flex;gap:6px;margin-top:10px;">
+          <span class="tag">gpt-</span>
+          <span class="tag">o1-</span>
+          <span class="tag">o3-</span>
         </div>
       </div>
-      <div class="result" style="display:grid;place-items:center;text-align:center">
+
+      <!-- Anthropic Card -->
+      <div style="background:var(--panel-bg); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px; cursor:pointer; transition:all 0.2s;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(168,85,247,0.15);display:flex;align-items:center;justify-content:center;font-size:18px;">🟤</div>
+          <div>
+            <div style="font-weight:600;font-size:14px;">Anthropic</div>
+            <div style="font-size:11px;color:var(--text-muted);">Claude 系列</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">Claude 3.5 Sonnet、Claude 3 Opus/Haiku</div>
+        <div style="display:flex;gap:6px;margin-top:10px;">
+          <span class="tag">claude-</span>
+        </div>
+      </div>
+
+      <!-- Google Card -->
+      <div style="background:var(--panel-bg); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px; cursor:pointer; transition:all 0.2s;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(59,130,246,0.15);display:flex;align-items:center;justify-content:center;font-size:18px;">🔵</div>
+          <div>
+            <div style="font-weight:600;font-size:14px;">Google Gemini</div>
+            <div style="font-size:11px;color:var(--text-muted);">Gemini 系列</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">Gemini 2.0 Flash、Gemini 1.5 Pro/Flash</div>
+        <div style="display:flex;gap:6px;margin-top:10px;">
+          <span class="tag">gemini-</span>
+        </div>
+      </div>
+
+      <!-- DeepSeek Card -->
+      <div style="background:var(--panel-bg); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px; cursor:pointer; transition:all 0.2s;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(6,182,212,0.15);display:flex;align-items:center;justify-content:center;font-size:18px;">🩵</div>
+          <div>
+            <div style="font-weight:600;font-size:14px;">DeepSeek</div>
+            <div style="font-size:11px;color:var(--text-muted);">深度求索</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">DeepSeek V3、DeepSeek Coder、DeepSeek R1</div>
+        <div style="display:flex;gap:6px;margin-top:10px;">
+          <span class="tag">deepseek-</span>
+        </div>
+      </div>
+
+      <!-- Groq Card -->
+      <div style="background:var(--panel-bg); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px; cursor:pointer; transition:all 0.2s;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(249,115,22,0.15);display:flex;align-items:center;justify-content:center;font-size:18px;">🟠</div>
+          <div>
+            <div style="font-weight:600;font-size:14px;">Groq</div>
+            <div style="font-size:11px;color:var(--text-muted);">超快推理</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">Llama 3、Mixtral、Gemma（LPU 加速）</div>
+        <div style="display:flex;gap:6px;margin-top:10px;">
+          <span class="tag">llama-</span>
+          <span class="tag">mixtral-</span>
+        </div>
+      </div>
+
+      <!-- Mistral Card -->
+      <div style="background:var(--panel-bg); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px; cursor:pointer; transition:all 0.2s;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(236,72,153,0.15);display:flex;align-items:center;justify-content:center;font-size:18px;">💜</div>
+          <div>
+            <div style="font-weight:600;font-size:14px;">Mistral</div>
+            <div style="font-size:11px;color:var(--text-muted);">欧洲开源</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">Mistral Large、Codestral、Mixtral</div>
+        <div style="display:flex;gap:6px;margin-top:10px;">
+          <span class="tag">mistral-</span>
+          <span class="tag">codestral-</span>
+        </div>
+      </div>
+
+      <!-- Azure Card -->
+      <div style="background:var(--panel-bg); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:16px; cursor:pointer; transition:all 0.2s;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(59,130,246,0.15);display:flex;align-items:center;justify-content:center;font-size:18px;">☁️</div>
+          <div>
+            <div style="font-weight:600;font-size:14px;">Azure OpenAI</div>
+            <div style="font-size:11px;color:var(--text-muted);">企业部署</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--text-secondary);line-height:1.5;">Azure 托管的 OpenAI 模型，需自定义 endpoint</div>
+        <div style="display:flex;gap:6px;margin-top:10px;">
+          <span class="tag" style="color:var(--text-muted);border-color:var(--border-subtle);background:rgba(107,114,128,0.1);">用户自填</span>
+        </div>
+      </div>
+
+      <!-- Custom Card (Dashed) -->
+      <div style="background:transparent; border:2px dashed var(--border-subtle); border-radius:var(--radius-md); padding:16px; cursor:pointer; transition:all 0.2s; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; min-height:160px;">
+        <div style="font-size:28px; margin-bottom:8px; opacity:0.6;">➕</div>
+        <div style="font-weight:600;font-size:14px;">自定义供应商</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">手动配置任意兼容供应商</div>
+      </div>
+    </div>
+
+    <!-- Footer Actions -->
+    <div style="display:flex;justify-content:flex-end;gap:12px;padding-top:16px;border-top:1px solid var(--border-subtle);">
+      <button class="btn btn-secondary" disabled>← 上一步</button>
+      <button class="btn btn-primary">下一步 →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== STEP 2: 配置密钥 ========== -->
+<div class="tab-panel" id="tab-step2">
+  <div class="glass-panel">
+    <!-- Stepper (Step 2 Active) -->
+    <div class="stepper">
+      <div class="stepper-step done">
+        <div class="stepper-num"><span>1</span></div>
+        <div class="stepper-label">选择模板</div>
+      </div>
+      <div class="stepper-line done"></div>
+      <div class="stepper-step active">
+        <div class="stepper-num"><span>2</span></div>
+        <div class="stepper-label">配置密钥</div>
+      </div>
+      <div class="stepper-line"></div>
+      <div class="stepper-step">
+        <div class="stepper-num"><span>3</span></div>
+        <div class="stepper-label">测试保存</div>
+      </div>
+    </div>
+
+    <div class="panel-title">配置 OpenAI 密钥</div>
+    <div class="panel-desc">填入 API Key 并确认连接参数。模板已自动填充常用字段。</div>
+
+    <!-- Selected Template Badge -->
+    <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--success-bg);border:1px solid rgba(16,185,129,0.2);border-radius:var(--radius-md);margin-bottom:24px;">
+      <span style="font-size:20px;">🟢</span>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--success);">OpenAI · 已选择模板</div>
+        <div style="font-size:12px;color:var(--text-secondary);">gpt-*, o1-*, o3-*, dall-e-*, whisper-*, tts-*, text-embedding-*</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto;">更换模板</button>
+    </div>
+
+    <!-- Form -->
+    <div style="max-width:600px;">
+      <!-- API Key -->
+      <div class="input-group">
+        <label>API Key <span style="color:var(--error);">*</span></label>
+        <div style="position:relative;">
+          <input type="password" class="input-field" placeholder="sk-..." value="sk-proj-abc123************xyz" style="padding-right:80px;">
+          <button class="btn btn-ghost btn-sm" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);">👁 显示</button>
+        </div>
+        <div class="input-hint">Key 长度 ≥ 20 字符，不含空格</div>
+      </div>
+
+      <!-- Base URL -->
+      <div class="input-group">
+        <label>Base URL</label>
+        <input type="url" class="input-field" value="https://api.openai.com/v1" placeholder="https://api.openai.com/v1">
+        <div class="input-hint">预置模板已自动填写，可修改为代理地址</div>
+      </div>
+
+      <!-- Header Format -->
+      <div class="input-group">
+        <label>认证格式 (Header Format)</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <div style="padding:8px 16px;background:linear-gradient(135deg,rgba(99,102,241,0.2),rgba(139,92,246,0.2));border:1px solid var(--accent);border-radius:var(--radius-md);font-size:13px;color:var(--accent);cursor:pointer;">Authorization: Bearer</div>
+          <div style="padding:8px 16px;background:var(--panel-bg);border:1px solid var(--border-subtle);border-radius:var(--radius-md);font-size:13px;color:var(--text-secondary);cursor:pointer;">x-api-key</div>
+          <div style="padding:8px 16px;background:var(--panel-bg);border:1px solid var(--border-subtle);border-radius:var(--radius-md);font-size:13px;color:var(--text-secondary);cursor:pointer;">api-key</div>
+        </div>
+      </div>
+
+      <!-- Model Prefixes -->
+      <div class="input-group">
+        <label>模型前缀 (Model Prefixes)</label>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;padding:10px 14px;background:rgba(0,0,0,0.2);border:1px solid var(--border-subtle);border-radius:var(--radius-md);min-height:var(--min-h-btn);align-items:center;">
+          <span class="tag tag-removable">gpt-</span>
+          <span class="tag tag-removable">o1-</span>
+          <span class="tag tag-removable">o3-</span>
+          <span class="tag tag-removable">dall-e-</span>
+          <span class="tag tag-removable">whisper-</span>
+          <span class="tag tag-removable">tts-</span>
+          <span class="tag tag-removable">text-embedding-</span>
+          <input type="text" style="border:none;background:none;outline:none;color:var(--text-primary);font-size:13px;flex:1;min-width:80px;" placeholder="输入前缀并回车...">
+        </div>
+        <div class="input-hint">至少需要一个前缀，用于模型路由匹配</div>
+      </div>
+
+      <!-- Display Name -->
+      <div class="input-group">
+        <label>显示名称</label>
+        <input type="text" class="input-field" value="OpenAI" placeholder="给这个供应商起个名字...">
+      </div>
+
+      <!-- Advanced (Collapsed) -->
+      <details style="margin-bottom:16px;">
+        <summary style="font-size:13px;color:var(--text-secondary);cursor:pointer;padding:8px 0;user-select:none;">▸ 高级选项</summary>
+        <div style="padding:12px 0;">
+          <div class="input-group">
+            <label>Fallback 供应商链</label>
+            <input type="text" class="input-field" placeholder="anthropic, deepseek （逗号分隔，按优先级排序）" disabled>
+            <div class="input-hint" style="color:var(--warning);">迭代三开放配置</div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- Footer Actions -->
+    <div style="display:flex;justify-content:space-between;gap:12px;padding-top:16px;border-top:1px solid var(--border-subtle);">
+      <button class="btn btn-secondary">← 上一步</button>
+      <button class="btn btn-primary">🔗 测试连接</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========== STEP 3: 测试结果 ========== -->
+<div class="tab-panel" id="tab-step3">
+  <div class="glass-panel">
+    <!-- Stepper (Step 3 Active) -->
+    <div class="stepper">
+      <div class="stepper-step done">
+        <div class="stepper-num"><span>1</span></div>
+        <div class="stepper-label">选择模板</div>
+      </div>
+      <div class="stepper-line done"></div>
+      <div class="stepper-step done">
+        <div class="stepper-num"><span>2</span></div>
+        <div class="stepper-label">配置密钥</div>
+      </div>
+      <div class="stepper-line done"></div>
+      <div class="stepper-step active">
+        <div class="stepper-num"><span>3</span></div>
+        <div class="stepper-label">测试保存</div>
+      </div>
+    </div>
+
+    <div class="panel-title">连通性测试</div>
+    <div class="panel-desc">正在测试 OpenAI API Key 的可用性...</div>
+
+    <!-- === Success Result Card === -->
+    <div style="background:var(--success-bg);border:1px solid rgba(16,185,129,0.25);border-radius:var(--radius-lg);padding:24px;margin-bottom:20px;">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+        <div style="width:44px;height:44px;border-radius:50%;background:var(--success);display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;box-shadow:0 0 16px rgba(16,185,129,0.3);">✓</div>
         <div>
-          <div style="font-size:20px;font-weight:800">⏳ 正在测试</div>
-          <div style="height:8px"></div>
-          <div class="muted">正在连接 google-gemini...</div>
-          <div style="height:10px"></div>
-          <div style="width:42px;height:42px;border:3px solid var(--line);border-top-color:var(--blue);border-radius:50%;margin:0 auto;animation:spin 1s linear infinite"></div>
+          <div style="font-size:16px;font-weight:600;color:var(--success);">连接成功</div>
+          <div style="font-size:13px;color:var(--text-secondary);">OpenAI · api.openai.com</div>
+        </div>
+        <div style="margin-left:auto;text-align:right;">
+          <div style="font-size:24px;font-weight:700;color:var(--success);font-family:monospace;">187ms</div>
+          <div style="font-size:11px;color:var(--text-muted);">延迟 / Latency</div>
+        </div>
+      </div>
+
+      <!-- Capabilities -->
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+        <span class="cap-badge supported">✓ Stream</span>
+        <span class="cap-badge supported">✓ Vision</span>
+        <span class="cap-badge supported">✓ Tools</span>
+      </div>
+
+      <!-- Available Models -->
+      <div style="margin-bottom:8px;">
+        <div style="font-size:13px;font-weight:500;color:var(--text-secondary);margin-bottom:8px;">可用模型 (12)</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          <span class="tag">gpt-4o</span>
+          <span class="tag">gpt-4o-mini</span>
+          <span class="tag">gpt-4-turbo</span>
+          <span class="tag">o1</span>
+          <span class="tag">o1-mini</span>
+          <span class="tag">o3</span>
+          <span class="tag">o3-mini</span>
+          <span class="tag">dall-e-3</span>
+          <span class="tag">whisper-1</span>
+          <span class="tag">tts-1</span>
+          <span class="tag">text-embedding-3-large</span>
+          <span class="tag">text-embedding-3-small</span>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px;">展开全部 ▾</button>
+      </div>
+    </div>
+
+    <!-- === Failure Result Card === -->
+    <div style="background:var(--error-bg);border:1px solid rgba(239,68,68,0.25);border-radius:var(--radius-lg);padding:24px;margin-bottom:20px;">
+      <!-- Header -->
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+        <div style="width:44px;height:44px;border-radius:50%;background:var(--error);display:flex;align-items:center;justify-content:center;font-size:22px;color:#fff;box-shadow:0 0 16px rgba(239,68,68,0.3);">✕</div>
+        <div>
+          <div style="font-size:16px;font-weight:600;color:var(--error);">连接失败</div>
+          <div style="font-size:13px;color:var(--text-secondary);">OpenAI · api.openai.com</div>
+        </div>
+      </div>
+
+      <!-- Error Details -->
+      <div style="background:rgba(0,0,0,0.2);border-radius:var(--radius-md);padding:14px;margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="font-size:12px;padding:2px 8px;background:var(--error-bg);color:var(--error);border-radius:var(--radius-pill);font-weight:500;">认证失败</span>
+          <span style="font-size:12px;color:var(--text-muted);font-family:monospace;">HTTP 401</span>
+        </div>
+        <div style="font-size:13px;color:var(--text-secondary);line-height:1.6;">
+          Invalid API key provided. Please check your API key and try again.
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">
+          ⚠ 错误信息已脱敏，不包含完整的 Authorization header
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div style="display:flex;gap:12px;">
+        <button class="btn btn-secondary">← 返回修改</button>
+        <button class="btn btn-primary">🔄 重试</button>
+      </div>
+    </div>
+
+    <!-- === Timeout Scenario Note === -->
+    <div style="background:var(--warning-bg);border:1px solid rgba(245,158,11,0.25);border-radius:var(--radius-md);padding:16px;margin-bottom:20px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span style="font-size:18px;">⏱</span>
+        <div>
+          <div style="font-size:13px;font-weight:500;color:var(--warning);">连接超时场景</div>
+          <div style="font-size:12px;color:var(--text-secondary);">超过 10 秒无响应时展示超时提示，提供「重试」按钮，不阻断保存流程</div>
         </div>
       </div>
     </div>
-  </section>
 
-  <div class="section">04 · 供应商列表页</div>
-  <section class="panel glass">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-      <div><h2>供应商列表</h2><p class="muted">默认正常状态降序；健康列使用状态灯，不需要读文字也能一眼判断。</p></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn">全部</button>
-        <button class="btn">正常</button>
-        <button class="btn">异常</button>
-        <button class="btn primary">添加供应商</button>
-      </div>
+    <!-- Footer Actions (for success case) -->
+    <div style="display:flex;justify-content:space-between;gap:12px;padding-top:16px;border-top:1px solid var(--border-subtle);">
+      <button class="btn btn-secondary">← 上一步</button>
+      <button class="btn btn-primary">💾 保存供应商</button>
     </div>
-    <div style="height:14px"></div>
-    <div class="table">
-      <div class="row head"><div>供应商</div><div>状态</div><div>Keys</div><div>Header</div><div style="text-align:right">操作</div></div>
-      <div class="row"><div class="provider"><div class="mini">O</div><div><b>OpenAI</b><br/><span class="muted">gpt-, o1-, o3-, dall-e-</span></div></div><div><span class="pill"><span class="dot ok"></span>正常</span></div><div>3/4</div><div>openai</div><div class="actions"><button class="btn ghost">测试</button><button class="btn ghost">编辑</button><button class="btn ghost danger">删除</button></div></div>
-      <div class="row"><div class="provider"><div class="mini">A</div><div><b>Anthropic</b><br/><span class="muted">claude-</span></div></div><div><span class="pill"><span class="dot ok"></span>正常</span></div><div>2/2</div><div>anthropic</div><div class="actions"><button class="btn ghost">测试</button><button class="btn ghost">编辑</button><button class="btn ghost danger">删除</button></div></div>
-      <div class="row"><div class="provider"><div class="mini">G</div><div><b>Google Gemini</b><br/><span class="muted">gemini-</span></div></div><div><span class="pill"><span class="dot warn"></span>波动</span></div><div>1/1</div><div>openai</div><div class="actions"><button class="btn ghost">测试</button><button class="btn ghost">编辑</button><button class="btn ghost danger">删除</button></div></div>
-      <div class="row"><div class="provider"><div class="mini">D</div><div><b>DeepSeek</b><br/><span class="muted">deepseek-</span></div></div><div><span class="pill"><span class="dot bad"></span>断开</span></div><div>0/1</div><div>openai</div><div class="actions"><button class="btn ghost">测试</button><button class="btn ghost">编辑</button><button class="btn ghost danger">删除</button></div></div>
-    </div>
-    <div style="height:14px"></div>
-    <div class="note">状态灯规则：● 正常 = 最近测试通过且成功率 ≥95%；⚠️ 波动 = 成功率 <95% 或高延迟；✕ 断开 = 最近测试失败或连续失败。</div>
-  </section>
+  </div>
 
-  <div class="section">05 · 编辑 & 删除交互</div>
-  <section class="panel glass">
-    <div class="split">
+  <!-- Toast Demo -->
+  <div style="max-width:var(--max-w);margin:0 auto 24px;">
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">Toast 提示示例（保存成功后）:</div>
+    <div class="toast toast-success">✓ 供应商 OpenAI 已保存成功</div>
+    <div style="margin-top:52px;">
+      <div class="toast toast-error" style="position:relative;top:auto;right:auto;animation:none;">✕ 保存失败：存储服务不可用，请稍后重试</div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== 供应商列表 ========== -->
+<div class="tab-panel" id="tab-list">
+  <div class="glass-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
       <div>
-        <h2>编辑供应商</h2>
-        <p class="muted">编辑模式复用 Wizard 第 2 步的表单，预填现有配置。测试连接始终可用，避免改完盲存。</p>
-        <div style="height:10px"></div>
-        <div class="form">
-          <div class="field"><label>Provider display name</label><input class="input" value="OpenAI Production" /></div>
-          <div class="field"><label>API Key <span style="color:var(--blue);cursor:pointer">(显示)</span></label><input class="input" value="sk-proj-abc...wxyz" /></div>
-          <div class="field"><label>Base URL</label><input class="input" value="https://api.openai.com/v1" /></div>
-          <div class="field"><label>Model prefixes</label><div class="tags"><span class="tag">gpt- <span style="cursor:pointer">×</span></span><span class="tag">o1- <span style="cursor:pointer">×</span></span><span class="tag">o3-</span></div></div>
-          <div style="display:flex;gap:10px">
-            <button class="btn primary" style="flex:1">测试连接</button>
-            <button class="btn" style="flex:1">保存更改</button>
+        <div class="panel-title" style="margin-bottom:0;">供应商管理</div>
+        <div class="panel-desc" style="margin-bottom:0;">管理所有 API 供应商和 Key 配置</div>
+      </div>
+      <button class="btn btn-primary">＋ 添加供应商</button>
+    </div>
+
+    <!-- Stats Bar -->
+    <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--success-bg);border-radius:var(--radius-pill);font-size:12px;">
+        <span class="status-dot" style="background:var(--success);"></span>
+        <span style="color:var(--success);font-weight:500;">4 正常</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--warning-bg);border-radius:var(--radius-pill);font-size:12px;">
+        <span class="status-dot" style="background:var(--warning);"></span>
+        <span style="color:var(--warning);font-weight:500;">1 波动</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 14px;background:var(--error-bg);border-radius:var(--radius-pill);font-size:12px;">
+        <span class="status-dot" style="background:var(--error);"></span>
+        <span style="color:var(--error);font-weight:500;">1 不可用</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;padding:6px 14px;background:rgba(107,114,128,0.1);border-radius:var(--radius-pill);font-size:12px;">
+        <span class="status-dot" style="background:var(--text-muted);"></span>
+        <span style="color:var(--text-muted);font-weight:500;">1 未检查</span>
+      </div>
+    </div>
+
+    <!-- Provider Table -->
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border-subtle);">
+            <th style="text-align:left;padding:12px 12px;color:var(--text-muted);font-weight:500;font-size:12px;">Provider</th>
+            <th style="text-align:left;padding:12px 8px;color:var(--text-muted);font-weight:500;font-size:12px;width:120px;">Status</th>
+            <th style="text-align:center;padding:12px 8px;color:var(--text-muted);font-weight:500;font-size:12px;width:70px;">Keys</th>
+            <th style="text-align:center;padding:12px 8px;color:var(--text-muted);font-weight:500;font-size:12px;width:80px;">Available</th>
+            <th style="text-align:left;padding:12px 12px;color:var(--text-muted);font-weight:500;font-size:12px;">Model Prefixes</th>
+            <th style="text-align:right;padding:12px 12px;color:var(--text-muted);font-weight:500;font-size:12px;width:180px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Row 1: OpenAI — Healthy -->
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+            <td style="padding:14px 12px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:6px;background:rgba(16,185,129,0.15);display:flex;align-items:center;justify-content:center;font-size:14px;">🟢</div>
+                <div>
+                  <div style="font-weight:600;">OpenAI</div>
+                  <span style="font-size:11px;padding:1px 6px;background:rgba(96,165,250,0.1);color:var(--accent);border-radius:var(--radius-pill);">built-in</span>
+                </div>
+              </div>
+            </td>
+            <td style="padding:14px 8px;">
+              <span class="status-pill status-healthy"><span class="status-dot"></span>正常</span>
+            </td>
+            <td style="padding:14px 8px;text-align:center;font-family:monospace;">3</td>
+            <td style="padding:14px 8px;text-align:center;"><span style="color:var(--success);font-weight:600;">3</span></td>
+            <td style="padding:14px 12px;">
+              <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                <span class="tag" style="font-size:10px;padding:1px 5px;">gpt-</span>
+                <span class="tag" style="font-size:10px;padding:1px 5px;">o1-</span>
+                <span class="tag" style="font-size:10px;padding:1px 5px;">o3-</span>
+                <span style="font-size:10px;color:var(--text-muted);">+4</span>
+              </div>
+            </td>
+            <td style="padding:14px 12px;text-align:right;">
+              <div style="display:flex;gap:6px;justify-content:flex-end;">
+                <button class="btn btn-ghost btn-sm">✏️ 编辑</button>
+                <button class="btn btn-ghost btn-sm">🔍 测试</button>
+                <button class="btn btn-danger btn-sm">🗑</button>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Row 2: Anthropic — Healthy -->
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+            <td style="padding:14px 12px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:6px;background:rgba(168,85,247,0.15);display:flex;align-items:center;justify-content:center;font-size:14px;">🟤</div>
+                <div>
+                  <div style="font-weight:600;">Anthropic</div>
+                  <span style="font-size:11px;padding:1px 6px;background:rgba(96,165,250,0.1);color:var(--accent);border-radius:var(--radius-pill);">built-in</span>
+                </div>
+              </div>
+            </td>
+            <td style="padding:14px 8px;">
+              <span class="status-pill status-healthy"><span class="status-dot"></span>正常</span>
+            </td>
+            <td style="padding:14px 8px;text-align:center;font-family:monospace;">2</td>
+            <td style="padding:14px 8px;text-align:center;"><span style="color:var(--success);font-weight:600;">2</span></td>
+            <td style="padding:14px 12px;">
+              <span class="tag" style="font-size:10px;padding:1px 5px;">claude-</span>
+            </td>
+            <td style="padding:14px 12px;text-align:right;">
+              <div style="display:flex;gap:6px;justify-content:flex-end;">
+                <button class="btn btn-ghost btn-sm">✏️ 编辑</button>
+                <button class="btn btn-ghost btn-sm">🔍 测试</button>
+                <button class="btn btn-danger btn-sm">🗑</button>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Row 3: DeepSeek — Degraded -->
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.04);border-left:2px solid var(--warning);">
+            <td style="padding:14px 12px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:6px;background:rgba(6,182,212,0.15);display:flex;align-items:center;justify-content:center;font-size:14px;">🩵</div>
+                <div>
+                  <div style="font-weight:600;">DeepSeek</div>
+                  <span style="font-size:11px;padding:1px 6px;background:rgba(96,165,250,0.1);color:var(--accent);border-radius:var(--radius-pill);">built-in</span>
+                </div>
+              </div>
+            </td>
+            <td style="padding:14px 8px;">
+              <span class="status-pill status-degraded"><span class="status-dot"></span>波动</span>
+            </td>
+            <td style="padding:14px 8px;text-align:center;font-family:monospace;">2</td>
+            <td style="padding:14px 8px;text-align:center;"><span style="color:var(--warning);font-weight:600;">1</span></td>
+            <td style="padding:14px 12px;">
+              <span class="tag" style="font-size:10px;padding:1px 5px;">deepseek-</span>
+            </td>
+            <td style="padding:14px 12px;text-align:right;">
+              <div style="display:flex;gap:6px;justify-content:flex-end;">
+                <button class="btn btn-ghost btn-sm">✏️ 编辑</button>
+                <button class="btn btn-ghost btn-sm">🔍 测试</button>
+                <button class="btn btn-danger btn-sm">🗑</button>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Row 4: Groq — Down -->
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.04);border-left:2px solid var(--error);">
+            <td style="padding:14px 12px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:6px;background:rgba(249,115,22,0.15);display:flex;align-items:center;justify-content:center;font-size:14px;">🟠</div>
+                <div>
+                  <div style="font-weight:600;">Groq</div>
+                  <span style="font-size:11px;padding:1px 6px;background:rgba(96,165,250,0.1);color:var(--accent);border-radius:var(--radius-pill);">built-in</span>
+                </div>
+              </div>
+            </td>
+            <td style="padding:14px 8px;">
+              <span class="status-pill status-down"><span class="status-dot"></span>不可用</span>
+            </td>
+            <td style="padding:14px 8px;text-align:center;font-family:monospace;">1</td>
+            <td style="padding:14px 8px;text-align:center;"><span style="color:var(--error);font-weight:600;">0</span></td>
+            <td style="padding:14px 12px;">
+              <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                <span class="tag" style="font-size:10px;padding:1px 5px;">llama-</span>
+                <span class="tag" style="font-size:10px;padding:1px 5px;">mixtral-</span>
+              </div>
+            </td>
+            <td style="padding:14px 12px;text-align:right;">
+              <div style="display:flex;gap:6px;justify-content:flex-end;">
+                <button class="btn btn-ghost btn-sm">✏️ 编辑</button>
+                <button class="btn btn-ghost btn-sm">🔍 测试</button>
+                <button class="btn btn-danger btn-sm">🗑</button>
+              </div>
+            </td>
+          </tr>
+
+          <!-- Row 5: Custom — Unknown -->
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+            <td style="padding:14px 12px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div style="width:32px;height:32px;border-radius:6px;background:rgba(107,114,128,0.15);display:flex;align-items:center;justify-content:center;font-size:14px;">⚙️</div>
+                <div>
+                  <div style="font-weight:600;">My Proxy</div>
+                  <span style="font-size:11px;padding:1px 6px;background:rgba(107,114,128,0.1);color:var(--text-muted);border-radius:var(--radius-pill);">custom</span>
+                </div>
+              </div>
+            </td>
+            <td style="padding:14px 8px;">
+              <span class="status-pill status-unknown"><span class="status-dot"></span>未检查</span>
+            </td>
+            <td style="padding:14px 8px;text-align:center;font-family:monospace;">1</td>
+            <td style="padding:14px 8px;text-align:center;"><span style="color:var(--text-muted);font-weight:600;">?</span></td>
+            <td style="padding:14px 12px;">
+              <span class="tag" style="font-size:10px;padding:1px 5px;">gpt-</span>
+            </td>
+            <td style="padding:14px 12px;text-align:right;">
+              <div style="display:flex;gap:6px;justify-content:flex-end;">
+                <button class="btn btn-ghost btn-sm">✏️ 编辑</button>
+                <button class="btn btn-ghost btn-sm">🔍 测试</button>
+                <button class="btn btn-danger btn-sm">🗑</button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Dialog -->
+  <div class="glass-panel" style="max-width:440px;">
+    <div style="text-align:center;">
+      <div style="font-size:28px;margin-bottom:12px;">⚠️</div>
+      <div style="font-size:16px;font-weight:600;margin-bottom:8px;">确认删除供应商</div>
+      <div style="font-size:13px;color:var(--text-secondary);margin-bottom:20px;line-height:1.6;">
+        即将删除 <strong style="color:var(--text-primary);">"OpenAI"</strong> 及其 <strong style="color:var(--text-primary);">3</strong> 个 API Key。<br>
+        此操作不可撤销。
+      </div>
+      <div style="background:var(--warning-bg);border:1px solid rgba(245,158,11,0.2);border-radius:var(--radius-md);padding:10px 16px;margin-bottom:20px;font-size:12px;color:var(--warning);">
+        ⚠ 该供应商近 24h 有 <strong>1,247</strong> 条请求记录
+      </div>
+      <div style="display:flex;gap:12px;justify-content:center;">
+        <button class="btn btn-secondary">取消</button>
+        <button class="btn btn-danger">确认删除</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Empty State -->
+  <div class="glass-panel" style="max-width:440px;text-align:center;padding:48px 24px;">
+    <div style="font-size:48px;margin-bottom:16px;opacity:0.6;">🔌</div>
+    <div style="font-size:16px;font-weight:600;margin-bottom:8px;">暂无供应商</div>
+    <div style="font-size:13px;color:var(--text-secondary);margin-bottom:24px;">
+      添加您的第一个供应商，开始使用 AI Relay 中继服务
+    </div>
+    <button class="btn btn-primary">＋ 添加供应商</button>
+  </div>
+</div>
+
+<!-- ========== 移动端适配示例 ========== -->
+<div class="tab-panel" id="tab-mobile">
+  <div class="glass-panel">
+    <div class="panel-title">移动端适配</div>
+    <div class="panel-desc">供应商列表在移动端降级为卡片布局，Stepper 显示进度条</div>
+  </div>
+
+  <!-- Mobile Frame Preview -->
+  <div style="max-width:375px;margin:0 auto 32px;">
+    <div style="background:#000;border-radius:32px;padding:8px;box-shadow:0 0 40px rgba(0,0,0,0.5);">
+      <!-- Status Bar -->
+      <div style="display:flex;justify-content:space-between;padding:8px 20px;font-size:11px;color:var(--text-secondary);">
+        <span>9:41</span>
+        <span>📶 🔋</span>
+      </div>
+      <!-- Content -->
+      <div style="background:var(--bg-radial);border-radius:24px;padding:16px;min-height:500px;">
+
+        <!-- Mobile Stepper -->
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+          <span style="font-size:13px;color:var(--accent);font-weight:600;">Step 2 of 3</span>
+          <div style="flex:1;height:4px;background:var(--border-subtle);border-radius:2px;overflow:hidden;">
+            <div style="width:66%;height:100%;background:var(--gradient-btn);border-radius:2px;"></div>
           </div>
         </div>
+
+        <div style="font-size:16px;font-weight:600;margin-bottom:16px;">供应商列表</div>
+
+        <!-- Mobile Card: OpenAI -->
+        <div style="background:var(--panel-bg);backdrop-filter:blur(12px);border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:14px;margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:16px;">🟢</span>
+              <span style="font-weight:600;font-size:14px;">OpenAI</span>
+            </div>
+            <span class="status-pill status-healthy" style="font-size:11px;padding:2px 8px;"><span class="status-dot"></span>正常</span>
+          </div>
+          <div style="display:flex;gap:16px;font-size:12px;color:var(--text-secondary);">
+            <span>Keys: <strong style="color:var(--text-primary);">3</strong></span>
+            <span>可用: <strong style="color:var(--success);">3</strong></span>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:10px;">
+            <button class="btn btn-ghost btn-sm" style="flex:1;font-size:12px;">✏️ 编辑</button>
+            <button class="btn btn-ghost btn-sm" style="flex:1;font-size:12px;">🔍 测试</button>
+            <button class="btn btn-danger btn-sm" style="font-size:12px;">🗑</button>
+          </div>
+        </div>
+
+        <!-- Mobile Card: DeepSeek -->
+        <div style="background:var(--panel-bg);backdrop-filter:blur(12px);border:1px solid rgba(245,158,11,0.3);border-radius:var(--radius-md);padding:14px;margin-bottom:10px;border-left:3px solid var(--warning);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:16px;">🩵</span>
+              <span style="font-weight:600;font-size:14px;">DeepSeek</span>
+            </div>
+            <span class="status-pill status-degraded" style="font-size:11px;padding:2px 8px;"><span class="status-dot"></span>波动</span>
+          </div>
+          <div style="display:flex;gap:16px;font-size:12px;color:var(--text-secondary);">
+            <span>Keys: <strong style="color:var(--text-primary);">2</strong></span>
+            <span>可用: <strong style="color:var(--warning);">1</strong></span>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:10px;">
+            <button class="btn btn-ghost btn-sm" style="flex:1;font-size:12px;">✏️ 编辑</button>
+            <button class="btn btn-ghost btn-sm" style="flex:1;font-size:12px;">🔍 测试</button>
+            <button class="btn btn-danger btn-sm" style="font-size:12px;">🗑</button>
+          </div>
+        </div>
+
+        <!-- Mobile Add Button -->
+        <button class="btn btn-primary" style="width:100%;margin-top:12px;">＋ 添加供应商</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Responsive Notes -->
+  <div class="glass-panel" style="max-width:600px;">
+    <div class="panel-title">响应式规则</div>
+    <div style="font-size:13px;color:var(--text-secondary);line-height:1.8;">
+      <div style="margin-bottom:12px;">
+        <strong style="color:var(--accent);">桌面 ≥ 960px</strong><br>
+        • 表格视图，6 列完整展示<br>
+        • Stepper 横向步骤条<br>
+        • 模板卡片 3 列网格
+      </div>
+      <div style="margin-bottom:12px;">
+        <strong style="color:var(--accent);">平板 640-959px</strong><br>
+        • 模板卡片 2 列网格<br>
+        • 列表保持表格但压缩列宽
       </div>
       <div>
-        <h2>删除确认</h2>
-        <p class="muted">删除需要二次确认，且同步清除关联 Key。危险按钮使用红色描边，在玻璃底板上不会误读。</p>
-        <div style="height:10px"></div>
-        <div class="card" style="border-color:rgba(239,68,68,.35);background:linear-gradient(135deg,rgba(239,68,68,.08),rgba(15,23,42,.55))">
-          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-            <div style="width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:rgba(239,68,68,.18);font-weight:900">D</div>
-            <div><b>删除 DeepSeek ?</b><br/><span class="muted">将同步移除关联 API Key</span></div>
-          </div>
-          <div class="note" style="border-color:var(--yellow);background:rgba(245,158,11,.1);margin-bottom:12px">如果正在被路由命中，删除后 fallback 链会自动跳过该供应商。建议先禁用确认流量归零后再删除。</div>
-          <div style="display:flex;gap:10px">
-            <button class="btn" style="flex:1">取消</button>
-            <button class="btn danger" style="flex:1;border-color:rgba(239,68,68,.45);background:rgba(239,68,68,.12);color:#fecaca">确认删除</button>
-          </div>
-        </div>
+        <strong style="color:var(--accent);">手机 &lt; 640px</strong><br>
+        • 供应商降级为卡片列表<br>
+        • Stepper 显示 "Step 2 of 3" + 进度条<br>
+        • 模板卡片 1 列堆叠<br>
+        • padding 16px，按钮 44px 以上<br>
+        • Tab 横向滚动
       </div>
     </div>
-  </section>
+  </div>
+</div>
 
-  <div class="section">06 · 空状态 & 移动端</div>
-  <section class="split">
-    <div class="panel glass">
-      <h2>空状态引导</h2>
-      <p class="muted">无供应商时直接展示模板入口，不给用户一个空表格。空状态即第一步引导，降低首次操作的求助率。</p>
-      <div style="height:12px"></div>
-      <div class="card" style="text-align:center;padding:28px;border-style:dashed">
-        <div style="font-size:36px;margin-bottom:12px">＋</div>
-        <h3>还没有供应商</h3>
-        <p class="muted" style="margin:6px 0 14px">从模板开始，3 分钟完成第一条可用配置。</p>
-        <button class="btn primary">选择模板</button>
-      </div>
-    </div>
-    <div class="panel glass">
-      <h2>移动端适配</h2>
-      <p class="muted">手机端表格降级为卡片；Tabs 横向滚动；Drawer 全屏。排版宁可多滚动，也不要挤小字。</p>
-      <div style="height:12px"></div>
-      <div class="phone">
-        <div class="phoneTop"></div>
-        <div class="mobileCard">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>OpenAI</b><span class="pill"><span class="dot ok"></span>正常</span></div>
-          <div class="muted" style="font-size:12px">gpt-, o1-, o3- · Keys 3/4 · openai</div>
-          <div style="height:8px"></div>
-          <div style="display:flex;gap:7px"><button class="btn ghost">测试</button><button class="btn ghost">编辑</button></div>
-        </div>
-        <div class="mobileCard">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>Anthropic</b><span class="pill"><span class="dot ok"></span>正常</span></div>
-          <div class="muted" style="font-size:12px">claude- · Keys 2/2 · anthropic</div>
-          <div style="height:8px"></div>
-          <div style="display:flex;gap:7px"><button class="btn ghost">测试</button><button class="btn ghost">编辑</button></div>
-        </div>
-        <div class="mobileCard">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><b>DeepSeek</b><span class="pill"><span class="dot bad"></span>断开</span></div>
-          <div class="muted" style="font-size:12px">deepseek- · Keys 0/1 · openai</div>
-          <div style="height:8px"></div>
-          <div style="display:flex;gap:7px"><button class="btn ghost">测试</button><button class="btn ghost">编辑</button></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <div class="section">设计规范回顾</div>
-  <section class="panel glass">
-    <h2>视觉 Token 对照</h2>
-    <p class="muted" style="margin-bottom:14px">对齐 v2.1 设计规范和圆桌共识，不新增品牌色；所有交互目标 ≥ 44px。</p>
-    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">
-      <div class="card"><b>背景</b><div class="muted" style="margin-top:4px">radial-gradient(circle at top, #1e293b, #09090b)</div></div>
-      <div class="card"><b>面板</b><div class="muted" style="margin-top:4px">rgba(30,41,59,0.45) + blur(12px)</div></div>
-      <div class="card"><b>主按钮</b><div class="muted" style="margin-top:4px">蓝紫渐变，44px 高度</div></div>
-      <div class="card"><b>成功</b><div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block"></span><span class="muted">#10b981</span></div></div>
-      <div class="card"><b>波动</b><div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;display:inline-block"></span><span class="muted">#f59e0b</span></div></div>
-      <div class="card"><b>断开</b><div style="display:flex;align-items:center;gap:6px;margin-top:4px"><span style="width:10px;height:10px;border-radius:50%;background:#ef4444;display:inline-block"></span><span class="muted">#ef4444</span></div></div>
-      <div class="card"><b>圆角</b><div class="muted" style="margin-top:4px">12–16px 卡片，999px pill</div></div>
-      <div class="card"><b>边框</b><div class="muted" style="margin-top:4px">rgba(255,255,255,0.08)</div></div>
-    </div>
-  </section>
-
-  <footer class="foot">
-    AI Relay 迭代一设计稿 · 供应商模板化创建 / Stepper / 连通性测试 / 状态列表 · 由像素姐输出
-  </footer>
-</main>
-<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+<!-- Tab Switching Script -->
+<script>
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + tabId).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
 </body>
 </html>
