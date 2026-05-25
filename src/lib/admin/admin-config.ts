@@ -333,6 +333,10 @@ export async function getManagedKeys(providerName: string, forceRefresh = false)
 }
 
 export async function getManagedKeysVersion(providerName: string): Promise<number> {
+  const cacheKey = `keyVersion:${providerName}`;
+  const cached = getCached<number>(cacheKey);
+  if (cached !== null) return cached;
+
   const kv = await getKV();
   if (!kv) throw new Error('KV storage not configured');
   const raw = await withTimeout(
@@ -344,7 +348,9 @@ export async function getManagedKeysVersion(providerName: string): Promise<numbe
   if (raw === undefined) {
     throw new Error(`Timeout fetching key version for ${providerName}`);
   }
-  return Number(raw || 0);
+  const version = Number(raw || 0);
+  setCached(cacheKey, version, CONFIG_CACHE_TTL_MS); // 60s cache
+  return version;
 }
 
 async function bumpManagedKeysVersion(providerName: string, kv?: any): Promise<number> {
@@ -353,10 +359,13 @@ async function bumpManagedKeysVersion(providerName: string, kv?: any): Promise<n
   try {
     const key = `${PREFIX.keyVersion}${providerName}`;
     if (typeof client.incr === 'function') {
-      return Number(await client.incr(key));
+      const version = Number(await client.incr(key));
+      clearCache(`keyVersion:${providerName}`); // invalidate cache after bump
+      return version;
     }
     const current = Number(await client.get(key) || 0) + 1;
     await client.set(key, current);
+    clearCache(`keyVersion:${providerName}`); // invalidate cache after bump
     return current;
   } catch {
     return 0;
