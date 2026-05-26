@@ -4,7 +4,7 @@
 
 import type { ChatCompletionRequest } from '../types';
 import type { RelayResult, ProviderConfig, ApiKey } from '../providers/types';
-import { resolveProvider, getUpstreamUrl, resolveModelAlias, resolveFallbackModel, resolveUpstreamModel, getAllProviders } from '../providers';
+import { resolveProvider, getUpstreamUrl, getUpstreamResponsesUrl, resolveModelAlias, resolveFallbackModel, resolveUpstreamModel, getAllProviders } from '../providers';
 import { selectKey, markCooldown, getKeyPool } from './key-pool';
 import { buildHeaders, transformToAnthropic } from './transform';
 import { RelayError } from '../errors';
@@ -33,8 +33,8 @@ function recordError(
 }
 
 /**
- * Core relay function — forwards a chat completion request to the upstream provider.
- * Supports both streaming and non-streaming.
+ * Core relay function — forwards a request to the upstream provider.
+ * Supports both streaming and non-streaming, and both Chat Completions and Responses API.
  *
  * 429 protection layers:
  * 1. Token bucket — proactive rate limiting before the request
@@ -43,7 +43,8 @@ function recordError(
  * 4. Key rotation — switch to next available key on 429/5xx
  */
 export async function relayRequest(
-  body: ChatCompletionRequest
+  body: ChatCompletionRequest,
+  apiType: 'chat' | 'responses' = 'chat'
 ): Promise<RelayResult> {
   const provider = await resolveProvider(body.model);
   if (!provider) {
@@ -86,7 +87,7 @@ export async function relayRequest(
 
       // Try primary provider with retries (with concurrency control)
       primaryResult = await withConcurrency(
-        () => tryProviderWithRetries(provider, body, apiKey, maxRetries)
+        () => tryProviderWithRetries(provider, body, apiKey, maxRetries, apiType)
       );
       if (primaryResult.result) {
         return primaryResult.result;
@@ -141,7 +142,7 @@ export async function relayRequest(
     const fbBody = explicitModel ? { ...body, model: explicitModel } : body;
 
     const fbResult = await withConcurrency(
-      () => tryProviderWithRetries(fbProvider, fbBody, fbKey, fbMaxRetries)
+      () => tryProviderWithRetries(fbProvider, fbBody, fbKey, fbMaxRetries, apiType)
     );
     if (fbResult.result) {
       return fbResult.result;
@@ -165,7 +166,8 @@ async function tryProviderWithRetries(
   provider: ProviderConfig,
   body: ChatCompletionRequest,
   initialKey: ApiKey | null,
-  maxRetries: number
+  maxRetries: number,
+  apiType: 'chat' | 'responses' = 'chat'
 ): Promise<{ result: RelayResult | null; lastError: Error | null }> {
   let currentKey = initialKey;
   let lastError: Error | null = null;
@@ -192,7 +194,7 @@ async function tryProviderWithRetries(
       }
     }
 
-    const url = getUpstreamUrl(provider);
+    const url = apiType === 'responses' ? getUpstreamResponsesUrl(provider) : getUpstreamUrl(provider);
     const isAnthropic = provider.headerFormat === 'anthropic';
 
     // Resolve target model and its alias for the current provider
@@ -202,13 +204,19 @@ async function tryProviderWithRetries(
     const resolvedModel = resolveUpstreamModel(resolvedAlias, provider);
 
     // Transform request body if needed (use resolved model name)
-    // Inject stream_options.include_usage for streaming so upstream returns usage in final SSE chunk
-    const bodyWithResolvedModel: Record<string, unknown> = { ...body, model: resolvedModel };
-    if (body.stream && !isAnthropic) {
-      const existingOpts = typeof body.stream_options === 'object' && body.stream_options !== null ? body.stream_options : {};
-      bodyWithResolvedModel.stream_options = { include_usage: true, ...existingOpts };
+    // For Responses API: pass body directly (no Anthropic transform — Responses API is OpenAI-only)
+    // For Chat API: inject stream_options and optionally transform to Anthropic format
+    let requestBody: Record<string, unknown>;
+    if (apiType === 'responses') {
+      requestBody = { ...body, model: resolvedModel };
+    } else {
+      const bodyWithResolvedModel: Record<string, unknown> = { ...body, model: resolvedModel };
+      if (body.stream && !isAnthropic) {
+        const existingOpts = typeof body.stream_options === 'object' && body.stream_options !== null ? body.stream_options : {};
+        bodyWithResolvedModel.stream_options = { include_usage: true, ...existingOpts };
+      }
+      requestBody = isAnthropic ? transformToAnthropic(bodyWithResolvedModel as ChatCompletionRequest) : bodyWithResolvedModel;
     }
-    const requestBody = isAnthropic ? transformToAnthropic(bodyWithResolvedModel as ChatCompletionRequest) : bodyWithResolvedModel;
 
     const startTime = Date.now();
     try {

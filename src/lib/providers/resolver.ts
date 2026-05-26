@@ -146,6 +146,25 @@ export function getUpstreamUrl(provider: ProviderConfig): string {
 }
 
 /**
+ * Get the upstream URL for a provider's responses endpoint.
+ * Returns /responses path for OpenAI-compatible providers.
+ * Throws for Anthropic (Responses API is OpenAI-only).
+ */
+export function getUpstreamResponsesUrl(provider: ProviderConfig): string {
+  if (provider.headerFormat === 'anthropic') {
+    throw new Error(
+      `Responses API is not supported for Anthropic-format providers (${provider.displayName}). ` +
+      `Only OpenAI-compatible providers support /v1/responses.`
+    );
+  }
+  const customBase = provider.envBaseUrlField
+    ? process.env[provider.envBaseUrlField]
+    : undefined;
+  const base = customBase || provider.baseUrl;
+  return `${base}/responses`;
+}
+
+/**
  * Resolves a model ID suitable for the fallback provider based on the original model ID.
  * Maps reasoning models to reasoning models, cheap models to cheap models, and standard models to standard models.
  */

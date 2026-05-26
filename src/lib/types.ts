@@ -47,6 +47,18 @@ export interface ChatCompletionResponse {
   };
 }
 
+/** OpenAI Responses API request (/v1/responses) */
+export interface ResponsesAPIRequest {
+  model: string;
+  input: string | Array<unknown>;
+  instructions?: string;
+  stream?: boolean;
+  tools?: unknown[];
+  temperature?: number;
+  // Allow passthrough of any other params
+  [key: string]: unknown;
+}
+
 /** Error response in OpenAI format */
 export interface ErrorResponse {
   error: {
