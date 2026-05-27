@@ -16,7 +16,7 @@
 
 <p><strong><a href="https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY,RELAY_ADMIN_KEY,RELAY_SIGNING_SECRET&envDescription=API%20authentication%20keys%20(required%20for%20security)&envLink=https://github.com/MoyuFamily/ai-relay#environment-variables">👉 Deploy Now</a></strong> · <a href="#-one-click-deploy-launch-your-ai-api-gateway-in-2-minutes">View setup steps</a></p>
 
-[![Version](https://img.shields.io/badge/Version-2.3.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.4.0-green.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?logo=next.js)](https://nextjs.org/)
 [![Edge Runtime](https://img.shields.io/badge/Edge_Runtime-⚡-black?logo=vercel)](https://vercel.com/docs/functions/edge-functions)
@@ -74,6 +74,7 @@
 | **Usage Monitor** | Date range, provider filter, usage trend charts |
 | **Upstream Discovery** | Auto-fetch available models from upstream APIs |
 | **Streaming Responses** | SSE pass-through for real-time output |
+| **Responses API** | OpenAI `/v1/responses` endpoint compatible, streaming and non-streaming |
 | **Webhook Notifications** | WeCom / Feishu / DingTalk / Slack — daily reports + alerts |
 | **Temp API Keys** | HMAC-SHA256 stateless signing, auto-expiring |
 | **Virtual Model Mapping** | Route virtual model names to real providers |
@@ -195,6 +196,24 @@ stream = client.chat.completions.create(
 for chunk in stream:
     print(chunk.choices[0].delta.content or "", end="")
 ```
+
+### Responses API
+
+```bash
+# Non-streaming
+curl -X POST https://your-project.vercel.app/v1/responses \
+  -H "Authorization: Bearer *** \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-5.4", "input": "Hello!"}'
+
+# Streaming
+curl -X POST https://your-project.vercel.app/v1/responses \
+  -H "Authorization: Bearer *** \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-5.4", "input": "Hello!", "stream": true}'
+```
+
+> **Note:** The Responses API currently only supports OpenAI-format providers. Anthropic-format providers will return a 400 error.
 
 ### Temporary Keys
 

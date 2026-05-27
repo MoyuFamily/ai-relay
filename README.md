@@ -16,7 +16,7 @@
 
 <p><strong><a href="https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY,RELAY_ADMIN_KEY,RELAY_SIGNING_SECRET&envDescription=API%20authentication%20keys%20(required%20for%20security)&envLink=https://github.com/MoyuFamily/ai-relay#environment-variables">👉 立即一键部署</a></strong> · <a href="#-一键部署2-分钟上线你的-ai-api-网关">查看部署步骤</a></p>
 
-[![Version](https://img.shields.io/badge/Version-2.3.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.4.0-green.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-14-black?logo=next.js)](https://nextjs.org/)
 [![Edge Runtime](https://img.shields.io/badge/Edge_Runtime-⚡-black?logo=vercel)](https://vercel.com/docs/functions/edge-functions)
@@ -74,6 +74,7 @@
 | **用量监控** | 日期筛选、Provider 过滤、趋势图表 |
 | **上游模型发现** | 自动从上游 API 拉取可用模型列表 |
 | **流式响应** | SSE 透传，实时输出 |
+| **Responses API** | 兼容 OpenAI `/v1/responses` 端点，支持流式和非流式 |
 | **Webhook 通知** | 企微 / 飞书 / 钉钉 / Slack，日报 + 超限告警 |
 | **临时 API Key** | HMAC-SHA256 无状态签名，自动过期 |
 | **虚拟模型映射** | 将虚拟模型名路由到真实 Provider |
@@ -195,6 +196,24 @@ stream = client.chat.completions.create(
 for chunk in stream:
     print(chunk.choices[0].delta.content or "", end="")
 ```
+
+### Responses API
+
+```bash
+# 非流式
+curl -X POST https://你的项目.vercel.app/v1/responses \
+  -H "Authorization: Bearer YOUR_R...KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-5.4", "input": "你好！"}'
+
+# 流式
+curl -X POST https://你的项目.vercel.app/v1/responses \
+  -H "Authorization: Bearer YOUR_R...KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-5.4", "input": "你好！", "stream": true}'
+```
+
+> **注意：** Responses API 目前仅支持 OpenAI 格式的 Provider，Anthropic 格式的 Provider 会返回 400 错误。
 
 ### 临时密钥
 

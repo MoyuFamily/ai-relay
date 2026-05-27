@@ -8,6 +8,11 @@
 
 （暂无）
 
+## [2.4.0] - 2026-05-27
+
+### Added
+- **Responses API 支持**：新增 `/v1/responses` 端点，兼容 OpenAI Responses API，支持流式和非流式请求，复用现有 auth、rate limit 和 usage tracking 机制。(#9, #10)
+
 ## [2.3.2] - 2026-05-26
 
 ### Added
