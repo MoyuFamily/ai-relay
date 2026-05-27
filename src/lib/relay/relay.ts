@@ -55,6 +55,14 @@ export async function relayRequest(
     );
   }
 
+  if (apiType === 'responses' && provider.headerFormat === 'anthropic') {
+    throw new RelayError(
+      `Responses API is not supported for Anthropic-format providers (${provider.displayName}). Only OpenAI-compatible providers support /v1/responses.`,
+      'invalid_request_error',
+      400
+    );
+  }
+
   let primaryResult: { result: RelayResult | null; lastError: Error | null } = { result: null, lastError: null };
 
   // Fetch fallback chain early to determine if we can fall back on rate limit/circuit breaker open
@@ -141,6 +149,13 @@ export async function relayRequest(
     // If an explicit model was specified in the fallback entry, override the request model
     const fbBody = explicitModel ? { ...body, model: explicitModel } : body;
 
+    // Skip Anthropic-format providers for Responses API (they don't support it)
+    if (apiType === 'responses' && fbProvider.headerFormat === 'anthropic') {
+      console.warn(`[fallback] ${fbProvider.displayName} does not support Responses API, skipping`);
+      errors.push({ provider: fbProvider.displayName, error: 'Responses API not supported (Anthropic format)' });
+      continue;
+    }
+
     const fbResult = await withConcurrency(
       () => tryProviderWithRetries(fbProvider, fbBody, fbKey, fbMaxRetries, apiType)
     );
@@ -194,7 +209,6 @@ async function tryProviderWithRetries(
       }
     }
 
-    const url = apiType === 'responses' ? getUpstreamResponsesUrl(provider) : getUpstreamUrl(provider);
     const isAnthropic = provider.headerFormat === 'anthropic';
 
     // Resolve target model and its alias for the current provider
@@ -219,6 +233,13 @@ async function tryProviderWithRetries(
     }
 
     const startTime = Date.now();
+    let url: string;
+    try {
+      url = apiType === 'responses' ? getUpstreamResponsesUrl(provider) : getUpstreamUrl(provider);
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      break;
+    }
     try {
       const upstreamResponse = await fetch(url, {
         method: 'POST',
@@ -277,11 +298,13 @@ async function tryProviderWithRetries(
       return { result: { response: upstreamResponse, provider, apiKey: currentKey }, lastError };
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      await markCooldown(currentKey);
-      const nextKey = await selectKey(provider);
-      if (nextKey && nextKey.hash !== currentKey.hash) {
-        currentKey = nextKey;
-        continue;
+      if (currentKey) {
+        await markCooldown(currentKey);
+        const nextKey = await selectKey(provider);
+        if (nextKey && nextKey.hash !== currentKey.hash) {
+          currentKey = nextKey;
+          continue;
+        }
       }
     }
   }

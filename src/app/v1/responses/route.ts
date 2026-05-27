@@ -31,6 +31,27 @@ function estimateTokens(text: string): number {
 }
 
 /**
+ * Extract output text from a Responses API response for token estimation.
+ */
+function extractOutputText(data: Record<string, unknown>): string | null {
+  if (!Array.isArray(data.output)) return null;
+  let text = '';
+  for (const item of data.output) {
+    if (item && typeof item === 'object' && 'type' in item) {
+      const obj = item as Record<string, unknown>;
+      if (obj.type === 'message' && Array.isArray(obj.content)) {
+        for (const part of obj.content) {
+          if (part && typeof part === 'object' && 'text' in part) {
+            text += String((part as { text: string }).text);
+          }
+        }
+      }
+    }
+  }
+  return text || null;
+}
+
+/**
  * Estimate prompt tokens from Responses API request body.
  * input can be a string or an array of items.
  */
@@ -126,17 +147,47 @@ function wrapStreamWithUsageTracking(
 
   return new ReadableStream({
     async pull(controller) {
-      const { done, value } = await reader.read();
+      let done: boolean;
+      let value: Uint8Array | undefined;
+      try {
+        ({ done, value } = await reader.read());
+      } catch (error) {
+        controller.error(error);
+        return;
+      }
+
       if (done) {
-        // Stream ended — record usage
-        if (lastUsage) {
-          const prompt = lastUsage.prompt_tokens ?? lastUsage.input_tokens ?? requestPromptTokens;
-          const completion = lastUsage.completion_tokens ?? lastUsage.output_tokens ?? 0;
-          await recordUsage(prompt, completion);
-        } else if (accumulatedContent) {
-          // Fallback: estimate tokens from accumulated content
-          const estimatedCompletion = estimateTokens(accumulatedContent);
-          await recordUsage(requestPromptTokens, estimatedCompletion);
+        // Flush remaining buffer content
+        const flushed = decoder.decode();
+        if (flushed) buffer += flushed;
+        if (buffer.trim()) {
+          const trimmed = buffer.trim();
+          if (trimmed.startsWith('data: ')) {
+            const data = trimmed.slice(6).trim();
+            if (data !== '[DONE]') {
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.usage) lastUsage = parsed.usage;
+                if (parsed.type === 'response.completed' && parsed.response?.usage) {
+                  lastUsage = parsed.response.usage;
+                }
+              } catch { /* not valid JSON */ }
+            }
+          }
+        }
+
+        // Record usage (best-effort, never stall the stream)
+        try {
+          if (lastUsage) {
+            const prompt = lastUsage.prompt_tokens ?? lastUsage.input_tokens ?? requestPromptTokens;
+            const completion = lastUsage.completion_tokens ?? lastUsage.output_tokens ?? 0;
+            await recordUsage(prompt, completion);
+          } else if (accumulatedContent) {
+            const estimatedCompletion = estimateTokens(accumulatedContent);
+            await recordUsage(requestPromptTokens, estimatedCompletion);
+          }
+        } catch (e) {
+          console.error('[Usage] streaming recordUsage failed:', e);
         }
         controller.close();
         return;
@@ -165,8 +216,7 @@ function wrapStreamWithUsageTracking(
             }
 
             // Accumulate content from output text deltas
-            // Responses API streaming: type=response.output_text.delta
-            if (parsed.type === 'response.output_text.delta' && parsed.delta) {
+            if (parsed.type === 'response.output_text.delta' && typeof parsed.delta === 'string') {
               accumulatedContent += parsed.delta;
             }
 
@@ -179,6 +229,9 @@ function wrapStreamWithUsageTracking(
           }
         }
       }
+    },
+    cancel() {
+      reader.cancel().catch(() => {});
     },
   });
 }
@@ -252,6 +305,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if ((typeof body.input === 'string' && body.input.length === 0) ||
+      (Array.isArray(body.input) && body.input.length === 0)) {
+    return new Response(
+      JSON.stringify({
+        error: {
+          message: 'Field "input" must not be empty.',
+          type: 'invalid_request_error',
+          code: 400,
+        },
+      }),
+      { status: 400, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
   // 3.5. Check rate limits (quota)
   const quota = await usageStorage.checkQuota(true);
   if (!quota.allowed) {
@@ -283,9 +350,9 @@ export async function POST(request: NextRequest) {
     const latencyMs = Date.now() - startTime;
 
     // 5. Stream or return the response
-    if (body.stream) {
+    if (body.stream && response.ok && response.body) {
       const wrappedBody = wrapStreamWithUsageTracking(
-        response.body!,
+        response.body,
         apiKey.hash,
         provider.name,
         body.model,
@@ -313,9 +380,10 @@ export async function POST(request: NextRequest) {
           let promptTokens = data.usage?.prompt_tokens ?? data.usage?.input_tokens ?? 0;
           let completionTokens = data.usage?.completion_tokens ?? data.usage?.output_tokens ?? 0;
 
-          // Fallback: if upstream doesn't return usage, estimate from response text
-          if ((!data.usage || (promptTokens === 0 && completionTokens === 0))) {
-            const estimatedCompletion = estimateTokens(responseBody);
+          // Fallback: only when upstream omitted usage entirely
+          if (!data.usage) {
+            const outputText = extractOutputText(data);
+            const estimatedCompletion = outputText ? estimateTokens(outputText) : estimateTokens(responseBody);
             promptTokens = estimatedPromptTokens;
             completionTokens = estimatedCompletion;
             console.log(`[Usage] responses non-stream fallback estimation: prompt=${promptTokens}, completion=${completionTokens}, model=${body.model}`);
