@@ -305,10 +305,15 @@ export function transformAnthropicToOpenAI(body: Record<string, any>): Record<st
         });
       } else if (part.type === 'tool_result') {
         // Anthropic tool_result → OpenAI tool message (one per result)
+        let resultContent = toolResultContentToText(part.content);
+        // OpenAI tool messages have no explicit error flag, so prefix error results.
+        if (part.is_error) {
+          resultContent = `[ERROR] ${resultContent}`;
+        }
         toolResultMessages.push({
           role: 'tool',
           tool_call_id: part.tool_use_id,
-          content: toolResultContentToText(part.content),
+          content: resultContent,
         });
       }
     }

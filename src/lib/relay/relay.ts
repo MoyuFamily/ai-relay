@@ -176,7 +176,7 @@ export async function relayRequest(
     const resolvedModel = await resolveModelAlias(body.model);
     if (!resolvedModel.toLowerCase().startsWith('claude-')) {
       throw new RelayError(
-        `Anthropic Messages API is only supported for Anthropic-format providers. Model ${body.model} resolved to ${provider.displayName}.`,
+        `/v1/messages requires a claude-* model. Got ${body.model} (resolves to ${resolvedModel}).`,
         'invalid_request_error',
         400
       );
@@ -380,6 +380,11 @@ async function tryProviderWithRetries(
       } else {
         const { transformAnthropicToOpenAI } = await import('./transform');
         requestBody = transformAnthropicToOpenAI({ ...body, model: resolvedModel });
+        // Inject stream_options for OpenAI streaming so usage arrives in the final chunk
+        if (body.stream) {
+          const existingOpts = typeof requestBody.stream_options === 'object' && requestBody.stream_options !== null ? requestBody.stream_options : {};
+          requestBody.stream_options = { include_usage: true, ...existingOpts };
+        }
       }
     } else {
       const bodyWithResolvedModel: Record<string, unknown> = { ...body, model: resolvedModel };

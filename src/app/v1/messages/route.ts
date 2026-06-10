@@ -288,6 +288,12 @@ function wrapOpenAIStreamToAnthropic(
         while (true) {
           const { done, value } = await reader.read();
           if (done) {
+            // Empty upstream stream: ensure we at least emit message_start/stop so
+            // the client gets a parseable (albeit empty) response instead of hanging.
+            if (!hasSentStart) {
+              ensureStarted();
+            }
+
             if (hasSentStart) {
               // Close whatever block is still open (text or the last tool_use).
               closeTextBlock();
@@ -559,70 +565,47 @@ export async function POST(request: NextRequest) {
 
     if (response.ok) {
       try {
+        let promptTokens: number;
+        let completionTokens: number;
+
         if (isAnthropic) {
           const data = JSON.parse(responseBody);
-          const promptTokens = data.usage?.input_tokens ?? estimatedPromptTokens;
-          const completionTokens = data.usage?.output_tokens ?? estimateTokens(extractOutputText(data));
-          const event = createUsageEvent({
-            provider: provider.name,
-            model: body.model,
-            apiKeyHash: apiKey.hash,
-            statusCode: response.status,
-            promptTokens,
-            completionTokens,
-            latencyMs,
-            isStream: false,
-          });
-          await batchRecorder.record(event);
-          await recordRequestLog({
-            traceId,
-            timestamp: new Date().toISOString(),
-            apiKeyHash: apiKey.hash,
-            model: body.model,
-            provider: provider.name,
-            status: 'success',
-            httpStatus: response.status,
-            latencyMs,
-            promptTokens,
-            completionTokens,
-            totalTokens: promptTokens + completionTokens,
-            isStream: false,
-          });
+          promptTokens = data.usage?.input_tokens ?? estimatedPromptTokens;
+          completionTokens = data.usage?.output_tokens ?? estimateTokens(extractOutputText(data));
         } else {
           // Translate OpenAI response to Anthropic format
           const openAiData = JSON.parse(responseBody);
           const translatedData = transformOpenAIToAnthropic(openAiData, body.model);
           responseBody = JSON.stringify(translatedData);
-
-          const promptTokens = openAiData.usage?.prompt_tokens ?? estimatedPromptTokens;
-          const completionTokens = openAiData.usage?.completion_tokens ?? estimateTokens(extractOutputText(translatedData as any));
-          
-          const event = createUsageEvent({
-            provider: provider.name,
-            model: body.model,
-            apiKeyHash: apiKey.hash,
-            statusCode: response.status,
-            promptTokens,
-            completionTokens,
-            latencyMs,
-            isStream: false,
-          });
-          await batchRecorder.record(event);
-          await recordRequestLog({
-            traceId,
-            timestamp: new Date().toISOString(),
-            apiKeyHash: apiKey.hash,
-            model: body.model,
-            provider: provider.name,
-            status: 'success',
-            httpStatus: response.status,
-            latencyMs,
-            promptTokens,
-            completionTokens,
-            totalTokens: promptTokens + completionTokens,
-            isStream: false,
-          });
+          promptTokens = openAiData.usage?.prompt_tokens ?? estimatedPromptTokens;
+          completionTokens = openAiData.usage?.completion_tokens ?? estimateTokens(extractOutputText(translatedData as any));
         }
+
+        const event = createUsageEvent({
+          provider: provider.name,
+          model: body.model,
+          apiKeyHash: apiKey.hash,
+          statusCode: response.status,
+          promptTokens,
+          completionTokens,
+          latencyMs,
+          isStream: false,
+        });
+        await batchRecorder.record(event);
+        await recordRequestLog({
+          traceId,
+          timestamp: new Date().toISOString(),
+          apiKeyHash: apiKey.hash,
+          model: body.model,
+          provider: provider.name,
+          status: 'success',
+          httpStatus: response.status,
+          latencyMs,
+          promptTokens,
+          completionTokens,
+          totalTokens: promptTokens + completionTokens,
+          isStream: false,
+        });
       } catch (error) {
         console.error('[Usage] response translation / usage tracking failed:', error);
       }
