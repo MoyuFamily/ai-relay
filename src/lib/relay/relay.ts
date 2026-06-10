@@ -92,6 +92,7 @@ async function fetchUpstreamWithUserAgentCandidates(input: {
   clientUserAgent?: string;
   url: string;
   body: unknown;
+  passthroughHeaders?: Record<string, string>;
 }): Promise<Response> {
   const payload = JSON.stringify(input.body);
   let lastResponse: Response | null = null;
@@ -111,7 +112,7 @@ async function fetchUpstreamWithUserAgentCandidates(input: {
     try {
       response = await fetch(input.url, {
         method: 'POST',
-        headers: buildHeaders(input.provider.headerFormat, input.apiKey, input.isStream, input.clientUserAgent, customUserAgent),
+        headers: buildHeaders(input.provider.headerFormat, input.apiKey, input.isStream, input.clientUserAgent, customUserAgent, input.passthroughHeaders),
         body: payload,
         signal: controller?.signal,
       });
@@ -159,7 +160,8 @@ function recordError(
 export async function relayRequest(
   body: RelayRequestBody,
   apiType: RelayApiType = 'chat',
-  userAgent?: string
+  userAgent?: string,
+  passthroughHeaders?: Record<string, string>
 ): Promise<RelayResult> {
   const provider = await resolveProvider(body.model);
   if (!provider) {
@@ -170,17 +172,20 @@ export async function relayRequest(
     );
   }
 
+  if (apiType === 'anthropicMessages') {
+    const resolvedModel = await resolveModelAlias(body.model);
+    if (!resolvedModel.toLowerCase().startsWith('claude-')) {
+      throw new RelayError(
+        `Anthropic Messages API is only supported for Anthropic-format providers. Model ${body.model} resolved to ${provider.displayName}.`,
+        'invalid_request_error',
+        400
+      );
+    }
+  }
+
   if (apiType === 'responses' && provider.headerFormat === 'anthropic') {
     throw new RelayError(
       `Responses API is not supported for Anthropic-format providers (${provider.displayName}). Only OpenAI-compatible providers support /v1/responses.`,
-      'invalid_request_error',
-      400
-    );
-  }
-
-  if (apiType === 'anthropicMessages' && provider.headerFormat !== 'anthropic') {
-    throw new RelayError(
-      `Anthropic Messages API is only supported for Anthropic-format providers. Model ${body.model} resolved to ${provider.displayName}.`,
       'invalid_request_error',
       400
     );
@@ -194,7 +199,7 @@ export async function relayRequest(
       if (routingDecision.provider !== provider.name) {
         const allProviders = await getAllProviders();
         const reroutedProvider = allProviders[routingDecision.provider];
-        if (reroutedProvider && (apiType !== 'anthropicMessages' || reroutedProvider.headerFormat === 'anthropic')) {
+        if (reroutedProvider) {
           console.log(`[smart-route] Rerouting ${provider.displayName} → ${reroutedProvider.displayName} (${routingDecision.reason})`);
           effectiveProvider = reroutedProvider;
         }
@@ -236,7 +241,7 @@ export async function relayRequest(
 
       // Try primary provider with retries (with concurrency control)
       primaryResult = await withConcurrency(
-        () => tryProviderWithRetries(effectiveProvider, body, apiKey, maxRetries, apiType, smartRoutingConfigured, userAgent)
+        () => tryProviderWithRetries(effectiveProvider, body, apiKey, maxRetries, apiType, smartRoutingConfigured, userAgent, passthroughHeaders)
       );
       if (primaryResult.result) {
         return primaryResult.result;
@@ -297,14 +302,10 @@ export async function relayRequest(
       continue;
     }
 
-    if (apiType === 'anthropicMessages' && fbProvider.headerFormat !== 'anthropic') {
-      console.warn(`[fallback] ${fbProvider.displayName} does not support Anthropic Messages API, skipping`);
-      errors.push({ provider: fbProvider.displayName, error: 'Anthropic Messages API not supported (non-Anthropic format)' });
-      continue;
-    }
+    // Supported fallback to non-Anthropic format via request translation.
 
     const fbResult = await withConcurrency(
-      () => tryProviderWithRetries(fbProvider, fbBody, fbKey, fbMaxRetries, apiType, smartRoutingConfigured, userAgent)
+      () => tryProviderWithRetries(fbProvider, fbBody, fbKey, fbMaxRetries, apiType, smartRoutingConfigured, userAgent, passthroughHeaders)
     );
     if (fbResult.result) {
       return fbResult.result;
@@ -331,7 +332,8 @@ async function tryProviderWithRetries(
   maxRetries: number,
   apiType: RelayApiType = 'chat',
   smartRoutingConfigured = false,
-  userAgent?: string
+  userAgent?: string,
+  passthroughHeaders?: Record<string, string>
 ): Promise<{ result: RelayResult | null; lastError: Error | null }> {
   let currentKey = initialKey;
   let lastError: Error | null = null;
@@ -370,8 +372,15 @@ async function tryProviderWithRetries(
     // For Responses API: pass body directly (no Anthropic transform — Responses API is OpenAI-only)
     // For Chat API: inject stream_options and optionally transform to Anthropic format
     let requestBody: Record<string, unknown>;
-    if (apiType === 'responses' || apiType === 'anthropicMessages') {
+    if (apiType === 'responses') {
       requestBody = { ...body, model: resolvedModel };
+    } else if (apiType === 'anthropicMessages') {
+      if (provider.headerFormat === 'anthropic') {
+        requestBody = { ...body, model: resolvedModel };
+      } else {
+        const { transformAnthropicToOpenAI } = await import('./transform');
+        requestBody = transformAnthropicToOpenAI({ ...body, model: resolvedModel });
+      }
     } else {
       const bodyWithResolvedModel: Record<string, unknown> = { ...body, model: resolvedModel };
       if (body.stream && !isAnthropic) {
@@ -397,6 +406,7 @@ async function tryProviderWithRetries(
         clientUserAgent: userAgent,
         url,
         body: requestBody,
+        passthroughHeaders,
       });
 
       const latencyMs = Date.now() - startTime;

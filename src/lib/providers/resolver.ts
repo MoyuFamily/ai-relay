@@ -172,6 +172,25 @@ export function getUpstreamUrl(provider: ProviderConfig): string {
 }
 
 /**
+ * Get the upstream URL for an Anthropic provider's token-counting endpoint.
+ * Only Anthropic-format upstreams expose /messages/count_tokens; for any other
+ * format we have no real endpoint to forward to (callers fall back to a local
+ * estimate instead). Throws for non-Anthropic providers.
+ */
+export function getUpstreamCountTokensUrl(provider: ProviderConfig): string {
+  if (provider.headerFormat !== 'anthropic') {
+    throw new Error(
+      `count_tokens is only supported for Anthropic-format providers (${provider.displayName}).`
+    );
+  }
+  const customBase = provider.envBaseUrlField
+    ? process.env[provider.envBaseUrlField]
+    : undefined;
+  const base = customBase || provider.baseUrl;
+  return `${base}/messages/count_tokens`;
+}
+
+/**
  * Get the upstream URL for a provider's responses endpoint.
  * Returns /responses path for OpenAI-compatible providers.
  * Throws for Anthropic (Responses API is OpenAI-only).
