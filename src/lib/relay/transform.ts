@@ -3,6 +3,7 @@
 // ============================================================
 
 import type { ChatCompletionRequest, ChatCompletionResponse } from '../types';
+import { RELAY_MANAGED_HEADERS } from './passthrough';
 
 /**
  * Transform OpenAI-format request to Anthropic format.
@@ -94,6 +95,20 @@ function defaultUserAgent(headerFormat: 'openai' | 'anthropic' | 'azure'): strin
   return process.env.RELAY_DEFAULT_USER_AGENT?.trim() || DEFAULT_USER_AGENTS[headerFormat];
 }
 
+function setHeaderCaseInsensitive(
+  headers: Record<string, string>,
+  name: string,
+  value: string
+): void {
+  const lowerName = name.toLowerCase();
+  for (const existingName of Object.keys(headers)) {
+    if (existingName !== name && existingName.toLowerCase() === lowerName) {
+      delete headers[existingName];
+    }
+  }
+  headers[name] = value;
+}
+
 /**
  * Build upstream request headers based on provider format.
  *
@@ -129,18 +144,24 @@ export function buildHeaders(
     headers['Accept'] = 'text/event-stream';
   }
 
-  // Forward all client-supplied headers to the upstream.
-  // The caller (route handler) already filtered out sensitive/conflicting headers
-  // like Authorization, Host, Content-Length, etc. A client-pinned anthropic-version
-  // overrides our default above.
+  // Forward client-supplied headers to the upstream. Relay-managed headers are
+  // rejected here as a second line of defense in case a caller bypasses the
+  // route-level collector. Other headers are assigned case-insensitively so an
+  // intentional override such as anthropic-version cannot become a duplicate.
   if (passthroughHeaders) {
     for (const [name, value] of Object.entries(passthroughHeaders)) {
-      if (value) headers[name] = value;
+      if (value && !RELAY_MANAGED_HEADERS.has(name.toLowerCase())) {
+        setHeaderCaseInsensitive(headers, name, value);
+      }
     }
   }
 
   // Priority: custom provider UA > client UA > default SDK UA
-  headers['User-Agent'] = customUserAgent || resolveUpstreamUserAgent(userAgent, headerFormat);
+  setHeaderCaseInsensitive(
+    headers,
+    'User-Agent',
+    customUserAgent || resolveUpstreamUserAgent(userAgent, headerFormat)
+  );
 
   return headers;
 }

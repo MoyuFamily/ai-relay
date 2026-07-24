@@ -71,7 +71,7 @@ describe('Header Passthrough', () => {
 
   it('should allow client anthropic-version to override default', () => {
     const passthroughHeaders = {
-      'anthropic-version': '2024-01-01',
+      'Anthropic-Version': '2024-01-01',
     };
 
     const headers = buildHeaders(
@@ -84,7 +84,45 @@ describe('Header Passthrough', () => {
     );
 
     // Client version should override our default
-    expect(headers['anthropic-version']).toBe('2024-01-01');
+    expect(new Headers(headers).get('anthropic-version')).toBe('2024-01-01');
+    expect(
+      Object.keys(headers).filter((name) => name.toLowerCase() === 'anthropic-version')
+    ).toHaveLength(1);
+  });
+
+  it('should reject relay-managed headers even when passed directly to buildHeaders', () => {
+    const headers = buildHeaders(
+      'openai',
+      'provider-key',
+      true,
+      'claude-cli/1.2.3',
+      undefined,
+      {
+        'content-type': 'application/xml',
+        ACCEPT: 'application/json',
+        authorization: 'Bearer client-key',
+        'X-API-Key': 'client-key',
+        'User-Agent': 'malicious-client/1.0',
+        'x-custom-header': 'safe-value',
+      }
+    );
+    const normalized = new Headers(headers);
+
+    expect(normalized.get('content-type')).toBe('application/json');
+    expect(normalized.get('accept')).toBe('text/event-stream');
+    expect(normalized.get('authorization')).toBe('Bearer provider-key');
+    expect(normalized.get('x-api-key')).toBeNull();
+    expect(normalized.get('user-agent')).toBe('claude-cli/1.2.3');
+    expect(normalized.get('x-custom-header')).toBe('safe-value');
+    expect(
+      Object.keys(headers).filter((name) => name.toLowerCase() === 'content-type')
+    ).toHaveLength(1);
+    expect(
+      Object.keys(headers).filter((name) => name.toLowerCase() === 'accept')
+    ).toHaveLength(1);
+    expect(
+      Object.keys(headers).filter((name) => name.toLowerCase() === 'user-agent')
+    ).toHaveLength(1);
   });
 
   it('should work without passthroughHeaders', () => {
@@ -108,6 +146,8 @@ describe('Header Passthrough', () => {
         ['api-key', 'azure-key'],
         ['x-custom-header', 'safe-value'],
         ['user-agent', 'my-client/1.0'],
+        ['content-type', 'application/json'],
+        ['accept', 'application/json'],
       ]);
 
       const result = collectPassthroughHeaders({
@@ -120,10 +160,12 @@ describe('Header Passthrough', () => {
       expect(result['authorization']).toBeUndefined();
       expect(result['x-api-key']).toBeUndefined();
       expect(result['api-key']).toBeUndefined();
+      expect(result['content-type']).toBeUndefined();
+      expect(result['accept']).toBeUndefined();
+      expect(result['user-agent']).toBeUndefined();
 
       // Safe headers should pass through
       expect(result['x-custom-header']).toBe('safe-value');
-      expect(result['user-agent']).toBe('my-client/1.0');
     });
 
     it('should filter out PII/privacy headers', () => {
@@ -166,7 +208,7 @@ describe('Header Passthrough', () => {
         ['upgrade', 'websocket'],
         ['te', 'trailers'],
         ['trailer', 'Expires'],
-        ['user-agent', 'my-client/1.0'],
+        ['x-client-version', '1.0'],
       ]);
 
       const result = collectPassthroughHeaders({
@@ -185,7 +227,7 @@ describe('Header Passthrough', () => {
       expect(result['trailer']).toBeUndefined();
 
       // Safe headers should pass through
-      expect(result['user-agent']).toBe('my-client/1.0');
+      expect(result['x-client-version']).toBe('1.0');
     });
 
     it('should be case-insensitive for blocked headers', () => {
@@ -194,6 +236,9 @@ describe('Header Passthrough', () => {
         ['X-API-KEY', 'key'],
         ['Cookie', 'session=123'],
         ['HOST', 'example.com'],
+        ['Content-Type', 'application/json'],
+        ['ACCEPT', 'application/json'],
+        ['User-Agent', 'my-client/1.0'],
         ['x-custom-header', 'value'],
       ]);
 
@@ -208,6 +253,9 @@ describe('Header Passthrough', () => {
       expect(result['X-API-KEY']).toBeUndefined();
       expect(result['Cookie']).toBeUndefined();
       expect(result['HOST']).toBeUndefined();
+      expect(result['Content-Type']).toBeUndefined();
+      expect(result['ACCEPT']).toBeUndefined();
+      expect(result['User-Agent']).toBeUndefined();
 
       // Safe headers should pass through
       expect(result['x-custom-header']).toBe('value');
