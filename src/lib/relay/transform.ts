@@ -3,7 +3,7 @@
 // ============================================================
 
 import type { ChatCompletionRequest, ChatCompletionResponse } from '../types';
-import { RELAY_MANAGED_HEADERS } from './passthrough';
+import { RELAY_MANAGED_HEADERS } from './header-policy';
 
 /**
  * Transform OpenAI-format request to Anthropic format.
@@ -156,12 +156,10 @@ export function buildHeaders(
     }
   }
 
-  // Priority: custom provider UA > client UA > default SDK UA
-  setHeaderCaseInsensitive(
-    headers,
-    'User-Agent',
-    customUserAgent || resolveUpstreamUserAgent(userAgent, headerFormat)
-  );
+  // Priority: custom provider UA > client UA > default SDK UA.
+  // RELAY_MANAGED_HEADERS blocks any case-variant of user-agent from the
+  // passthrough loop above, so a plain assignment cannot create a duplicate.
+  headers['User-Agent'] = customUserAgent || resolveUpstreamUserAgent(userAgent, headerFormat);
 
   return headers;
 }

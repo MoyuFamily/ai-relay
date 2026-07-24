@@ -5,22 +5,7 @@
 // Uses a blocklist approach to filter out sensitive/conflicting headers.
 // ============================================================
 
-/**
- * Headers owned by the relay. Clients may supply these on the incoming
- * request, but they are handled through dedicated logic rather than generic
- * passthrough:
- * - authentication is replaced with the selected provider key
- * - content-type and accept are derived from the outgoing payload/stream mode
- * - user-agent is filtered and resolved separately
- */
-export const RELAY_MANAGED_HEADERS: ReadonlySet<string> = new Set([
-  'authorization',
-  'x-api-key',
-  'api-key',
-  'content-type',
-  'accept',
-  'user-agent',
-]);
+import { RELAY_MANAGED_HEADERS } from './header-policy';
 
 /**
  * Headers that should NOT be forwarded to upstream providers.
