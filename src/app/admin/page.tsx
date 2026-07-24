@@ -419,9 +419,25 @@ export default function AdminPage() {
           <LogoIcon size={38} />
           <div>
             <h1 style={{ fontSize: '1.8rem', margin: 0, fontWeight: 700, color: '#fff' }}>{t.title}</h1>
-            {process.env.NEXT_PUBLIC_DEPLOY_TIME && (
+            {(process.env.NEXT_PUBLIC_DEPLOY_TIME || process.env.NEXT_PUBLIC_DEPLOY_COMMIT) && (
               <span style={{ fontSize: '0.72rem', color: '#9ca3af', display: 'block', marginTop: '0.15rem' }}>
-                {t.deployTime}: {new Date(process.env.NEXT_PUBLIC_DEPLOY_TIME).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US')}
+                {process.env.NEXT_PUBLIC_DEPLOY_TIME && (
+                  <>
+                    {t.deployTime}: {new Date(process.env.NEXT_PUBLIC_DEPLOY_TIME).toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US')}
+                  </>
+                )}
+                {process.env.NEXT_PUBLIC_DEPLOY_TIME && process.env.NEXT_PUBLIC_DEPLOY_COMMIT && ' · '}
+                {process.env.NEXT_PUBLIC_DEPLOY_COMMIT && (
+                  <>
+                    {t.deployCommit}:{' '}
+                    <code
+                      title={process.env.NEXT_PUBLIC_DEPLOY_COMMIT}
+                      style={{ color: '#cbd5e1', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+                    >
+                      {process.env.NEXT_PUBLIC_DEPLOY_COMMIT.slice(0, 7)}
+                    </code>
+                  </>
+                )}
               </span>
             )}
           </div>

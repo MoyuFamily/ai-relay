@@ -5,20 +5,19 @@
 // Uses a blocklist approach to filter out sensitive/conflicting headers.
 // ============================================================
 
+import { RELAY_MANAGED_HEADERS } from './header-policy';
+
 /**
  * Headers that should NOT be forwarded to upstream providers.
  *
  * Categories:
- * - Authentication: authorization, x-api-key, api-key (we set these with provider keys)
+ * - Relay-managed: authentication, content negotiation, user-agent
  * - Connection/Transport: host, content-length, connection, transfer-encoding, etc.
  * - PII/Privacy: cookie, x-forwarded-for, x-real-ip, forwarded (client IP/tracking)
  * - Proxy: proxy-authorization, te, trailer, upgrade
  */
 const BLOCKED_PASSTHROUGH_HEADERS = new Set([
-  // Authentication - we set these ourselves with provider keys
-  'authorization',
-  'x-api-key',
-  'api-key',
+  ...RELAY_MANAGED_HEADERS,
 
   // Connection and transport headers - managed by fetch API
   'host',
@@ -48,12 +47,13 @@ const BLOCKED_PASSTHROUGH_HEADERS = new Set([
  *
  * This includes:
  * - Anthropic-specific headers (anthropic-beta, anthropic-version, anthropic-dangerous-direct-browser-access)
- * - Client identification headers (x-app, x-claude-code-session-id, user-agent)
+ * - Client identification headers (x-app, x-claude-code-session-id)
  * - SDK tracking headers (x-stainless-*, openai-*, etc.)
  * - Any other non-sensitive headers
  *
  * Headers in BLOCKED_PASSTHROUGH_HEADERS are filtered out for security:
  * - Authentication headers (we use provider keys instead)
+ * - Content-Type, Accept, and User-Agent (the relay manages them explicitly)
  * - PII/privacy headers (cookie, x-forwarded-for, x-real-ip)
  * - Connection headers (managed by fetch API)
  *
