@@ -2,7 +2,7 @@
 
 <img src="docs/assets/logo-banner.svg" alt="AI Relay" width="400">
 
-**Your personal AI API gateway — deploy to cloud or run locally, one endpoint for all LLM providers**
+**Open-source AI API gateway — deploy on your VPS, Vercel, Cloudflare, or locally**
 
 <p>
   <a href="https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY,RELAY_ADMIN_KEY,RELAY_SIGNING_SECRET&envDescription=API%20authentication%20keys%20(required%20for%20security)&envLink=https://github.com/MoyuFamily/ai-relay#-quick-start">
@@ -32,41 +32,41 @@
 > Unify OpenAI, Claude, DeepSeek and more behind a single endpoint.
 > Automatic key rotation, failover, and circuit breaking — no glue code needed.
 >
-> Three ways to run, pick what fits:
-> - ☁️ **Vercel / Cloudflare** — live in 2 minutes, zero servers
-> - 💻 **Local CLI** — `airelay local:start`, no cloud quota consumed
-> - 🔧 **Dev mode** — `npm run dev`, edit and iterate
+> **Deployment options — from zero-ops to fully self-hosted:**
+> - 🖥️ **VPS / self-hosted** — dedicated resources, an always-on endpoint, operational control, and room for sustained workloads
+> - ☁️ **Vercel / Cloudflare** — quick serverless setup, no VPS maintenance
+> - 💻 **Local CLI** — `airelay local:start`, private localhost relay with local usage records
+> - 🔧 **Development** — `npm run dev`, edit and iterate
 
 ### Who should use which?
 
-| | ☁️ Vercel | ☁️ Cloudflare | 💻 Local CLI |
-|---|---|---|---|
-| **Best for** | Light users, quick tryout | Heavy coding users | Agent / multimodal / power users |
-| **Monthly volume** | Low-mid (< 500M tokens/month) | High frequency (daily coding sessions) | Unlimited, depends on network bandwidth |
-| **Token stats** | Sampling-based (configurable rate) | Sampling-based (CF CPU budget) | **Precise** (SQLite per-request logging) |
-| **Runtime** | Edge Serverless, cold start < 50ms | Edge Worker, global distribution | Persistent local process, no cold start |
-| **Storage** | Upstash Redis (KV) | Cloudflare D1 + KV | Local SQLite |
-| **Typical use** | Personal chat, light API relay | Copilot / Cursor high-freq coding | Codex / Claude Code local agent, large image/video multimodal, local key storage |
-| **Key limit** | Free tier has traffic and storage caps; high-freq or multimodal usage will hit limits | CF Worker CPU time limited, long responses need optimization | Must keep process running yourself |
+| | 🖥️ VPS / Self-hosted | ☁️ Vercel | ☁️ Cloudflare | 💻 Local CLI |
+|---|---|---|---|---|
+| **Best for** | Sustained traffic, shared endpoints, long-running integrations, control over resources | Quick trials and lightweight apps | Globally distributed serverless traffic | Private development and local agents |
+| **Runtime** | Always-on Node.js application, no serverless execution window | Serverless functions | Edge workers | Persistent local process |
+| **Operations** | You manage Linux, updates, HTTPS and backups | Managed platform | Managed platform | You manage the local process |
+| **Observability** | Host-level metrics and logs; persistent request logs with a configured backend | Platform logs; usage sampling | Platform logs; usage sampling | SQLite request/usage records |
+| **Storage** | Configure a supported backing store; standalone PostgreSQL config integration is still in progress | Upstash Redis (KV) | Cloudflare D1 + KV | Local SQLite |
+| **Trade-off** | Best infrastructure control, but requires a maintained server | Hosting quotas and runtime limits | Edge resource and runtime limits | Endpoint availability depends on your device |
 
 > **⚠️ Vercel Hobby usage guidance:**
 > - **Good fit**: Personal chat, light API relay, dev/debugging phase
 > - **Not ideal**: High-frequency coding calls (e.g. Copilot/Cursor continuous use), large image/video multimodal, long reasoning tasks
 > - Free-tier storage and traffic are limited; the project provides usage sampling and multi-key rotation settings to help — all adjustable from the admin dashboard
 >
-> Heavy coding users should go directly with Cloudflare. Agent and multimodal users should use Local CLI.
+> For sustained traffic, shared access, and long-running streaming, a VPS offers the most infrastructure control. Cloudflare is a convenient managed option for frequent requests; Local CLI is ideal for private agent workflows.
 
-> **TL;DR:** Start with Vercel to try it out. Switch to Cloudflare for heavy coding. Go local CLI for agents and multimodal. All three share the same config and API — migrate anytime.
+> **TL;DR:** Start on Vercel, use Cloudflare for managed edge deployment, choose a VPS for a persistent self-hosted service, or run locally for private agents. The gateway API stays consistent; storage and operational setup vary by runtime.
 
 ## 🎯 Why AI Relay?
 
 | | |
 |---|---|
-| **Serverless** | No server, no Docker, no ops — deploy to Vercel / Cloudflare in 2 minutes |
+| **Choice of infrastructure** | Deploy serverless on Vercel/Cloudflare, run a persistent service on your VPS, or use Local CLI |
 | **Zero cost to start** | Runs on free tiers — personal devs pay nothing |
 | **One endpoint, drop-in** | Compatible with OpenAI SDK — just change `base_url`, zero code changes |
 | **Multi-key, multi-provider** | Automatic rotation, failover, circuit breaking — built-in resilience |
-| **Three deployment modes** | Cloud serverless / local CLI / dev mode — same config, same API |
+| **Best control on VPS** | Manage CPU, memory, network, uptime and host-level observability for sustained workloads; requires server administration |
 
 ## 🚀 Quick Start
 
@@ -133,6 +133,28 @@ curl https://your-project.pages.dev/health
 ```
 
 > **Storage:** CF uses D1 (usage stats) + KV (config). Free tier supports ~30-50K requests/day.
+
+</details>
+
+<details>
+<summary><strong>🖥️ Deploy on a VPS (self-hosted Node.js)</strong></summary>
+
+AI Relay can run as a long-lived Next.js application on a Linux VPS. This is the preferred **self-managed** route when you need predictable resource allocation, a stable endpoint, host-level monitoring, or workloads that should not depend on serverless execution windows. Actual throughput and latency depend on your VPS and upstream providers.
+
+```bash
+git clone https://github.com/MoyuFamily/ai-relay.git
+cd ai-relay
+pnpm install
+cp .env.local.example .env.local
+# Set strong RELAY_API_KEY and RELAY_ADMIN_KEY values,
+# provider keys, and any backing-store credentials required by your setup.
+pnpm build
+pnpm exec next start --hostname 127.0.0.1 --port 3000
+```
+
+Place the service behind an HTTPS reverse proxy, restrict admin access, and arrange your own process supervisor, backups and log rotation. Do not expose port 3000 directly to the public internet.
+
+> **Current implementation boundary:** VPS-hosted Node.js execution is available through the existing app runtime, but the separate all-in-one Server Runtime / Docker image and full standalone PostgreSQL ConfigStore are still being developed. The PostgreSQL ConfigStore is not yet a drop-in replacement for the configured KV-backed paths. Review [storage architecture](docs/storage-architecture.md) and validate your chosen persistence configuration before a production deployment.
 
 </details>
 
@@ -351,6 +373,21 @@ Access `/admin` with `RELAY_ADMIN_KEY`:
 - **Team sharing** — Shared relay instance, quota management, admin visibility
 - **CI/CD integration** — HMAC temp keys, auto-expiring, no cleanup needed
 - **Cost optimization** — Route by model/task to different providers, virtual model mapping
+
+## 🌐 Community Infrastructure (Planned)
+
+AI Relay is an [MIT-licensed](LICENSE), community-accessible open-source project. Alongside its serverless and self-hosted deployment options, we are planning a **non-commercial, always-on compatibility and reliability test environment** to help contributors reproduce issues across runtimes.
+
+The proposed Linux-based community infrastructure would provide:
+
+- **Protocol compatibility checks** — exercise OpenAI-compatible endpoints, streaming/SSE behavior, model routing and fallback using mock or explicitly authorized test providers.
+- **Reliability and performance tests** — reproduce timeouts, error responses and concurrency scenarios with controlled workloads and published, reproducible findings.
+- **Safe public demonstrations** — demonstrate API behavior with simulated credentials and sanitized example data; no collection of visitors' personal provider keys.
+- **Contributor verification** — run regression tests and keep diagnostic artifacts available for issue reports and pull requests.
+
+**Status: planned, not a currently operating public service.** A VPS would provide persistent processes, predictable test resources and host-level metrics that are harder to maintain consistently across ephemeral serverless runs. Infrastructure granted for this purpose would be used for non-commercial open-source development and education, not API resale or unrelated services.
+
+We welcome infrastructure sponsorship for this effort. Sponsors providing the environment may be acknowledged here and in project documentation once support is confirmed.
 
 ## 📢 Notifications & Alerts
 
