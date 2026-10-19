@@ -2,7 +2,7 @@
 
 <img src="docs/assets/logo-banner.svg" alt="AI Relay" width="400">
 
-**你的个人 AI API 网关 — 云端一键部署，本地 CLI 运行，统一管理所有大模型接口**
+**开源 AI API 网关 — 支持 VPS 自托管、Vercel、Cloudflare 与本地运行**
 
 <p>
   <a href="https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY,RELAY_ADMIN_KEY,RELAY_SIGNING_SECRET&envDescription=API%20authentication%20keys%20(required%20for%20security)&envLink=https://github.com/MoyuFamily/ai-relay/blob/main/README_CN.md#-快速开始">
@@ -32,41 +32,41 @@
 > 把 OpenAI、Claude、DeepSeek 等多个 Provider 的 API Key 统一接入，通过一个端点对外服务。
 > 自动轮换 Key、故障转移、熔断保护，不用写一行胶水代码。
 >
-> 三种部署方式，按需选择：
-> - ☁️ **Vercel / Cloudflare** — 2 分钟云端上线，零服务器
-> - 💻 **本地 CLI** — `airelay local:start` 一行命令，不消耗云端额度
-> - 🔧 **本地开发** — `npm run dev`，改代码即生效
+> **多种部署形态，自由选择：**
+> - 🖥️ **VPS / 自托管** — 常驻服务、专属资源、灵活运维，适合持续高负载与共享接入
+> - ☁️ **Vercel / Cloudflare** — 快速上线，无需维护 VPS
+> - 💻 **本地 CLI** — `airelay local:start`，本地运行并记录用量
+> - 🔧 **开发模式** — `npm run dev`，方便修改和调试
 
 ### 谁该用哪个？
 
-| | ☁️ Vercel | ☁️ Cloudflare | 💻 本地 CLI |
-|---|---|---|---|
-| **适合谁** | 轻量用户、快速试用 | 编码重度用户 | Agent / 多模态 / 高阶用户 |
-| **月请求量** | 中低频（月 Token < 5 亿） | 高频（日均数万次编码调用） | 不限，取决于网络带宽 |
-| **Token 统计** | 采样统计（可配采样率） | 采样统计（CF CPU 预算限制） | **精确统计**（SQLite 逐条记录） |
-| **部署形态** | Edge Serverless，冷启动 < 50ms | Edge Worker，全球分发 | 本机常驻进程，无冷启动 |
-| **存储** | Upstash Redis（KV） | Cloudflare D1 + KV | 本地 SQLite |
-| **典型场景** | 个人日常对话、轻量 API 中转 | Copilot / Cursor 高频编码调用 | Codex / Claude Code 本地 Agent、大图/视频多模态、密钥本机化 |
-| **核心限制** | 免费层有流量和存储上限，高并发/多模态场景会触顶 | CF Worker CPU 时间受限，长响应需优化 | 需要自己保持进程运行 |
+| | 🖥️ VPS / 自托管 | ☁️ Vercel | ☁️ Cloudflare | 💻 本地 CLI |
+|---|---|---|---|---|
+| **适合场景** | 持续请求、团队共享、长时间集成任务、资源自主掌控 | 快速体验、轻量应用 | 全球分发的 Serverless 请求 | 个人开发和本地 Agent |
+| **运行形态** | Node.js 长驻进程，不受 Serverless 单次执行窗口约束 | Serverless Functions | Edge Workers | 本机常驻进程 |
+| **运维方式** | 自行管理 Linux、更新、HTTPS 与备份 | 平台托管 | 平台托管 | 自行管理本机进程 |
+| **可观测性** | 主机指标和日志；配置持久化后可保留请求日志 | 平台日志、用量采样 | 平台日志、用量采样 | SQLite 请求与用量记录 |
+| **存储** | 需配置当前支持的存储后端；独立 PostgreSQL 配置存储仍在开发 | Upstash Redis（KV） | Cloudflare D1 + KV | 本地 SQLite |
+| **核心取舍** | 资源、网络与运维控制最强，但需要维护服务器 | 免费层额度和运行时限制 | Edge 资源与执行时间限制 | 端点可用性依赖本机 |
 
 > **⚠️ Vercel Hobby 使用建议：**
 > - **适合**：个人日常对话、轻量 API 中转、开发调试阶段
 > - **不适合**：高频编码调用（如 Copilot/Cursor 连续使用）、大图/视频等多模态场景、长时间推理任务
 > - 免费层的存储和流量资源有限，项目已实现用量采样统计来缓解压力；多 Key 轮换和用量采样参数均可在管理后台调整
 >
-> 编码重度用户建议直接用 Cloudflare，Agent 和多模态场景建议本地 CLI。
+> 对持续高频请求、团队共享和长时间流式传输，VPS 能提供更强的资源与运维控制；希望免维护的用户可以选择 Cloudflare，个人 Agent 则适合本地 CLI。
 
-> **一句话选择：** 用 Vercel 起步体验，编码多就切 Cloudflare，跑 Agent 或多模态就上本地 CLI。三种方式共用同一套配置和 API，随时可以迁移。
+> **一句话选择：** Vercel 负责快速上手，Cloudflare 负责托管边缘部署，VPS 负责稳定常驻和更高控制权，本地 CLI 适合私有 Agent。核心网关 API 一致，但不同运行时的存储与运维配置有所区别。
 
 ## 🎯 为什么选 AI Relay
 
 | | 说明 |
 |---|---|
-| **无服务器** | 不买服务器、不装 Docker、不运维 — Vercel / Cloudflare 一键部署，2 分钟上线 |
+| **自由选择部署方式** | Vercel/Cloudflare 免运维，VPS 稳定自托管，本地 CLI 即开即用 |
 | **零成本启动** | 免费层即可跑起来，个人开发者不用花一分钱 |
 | **一个端点搞定** | 兼容 OpenAI SDK，现有代码只改 `base_url`，零改动迁移 |
 | **多 Key 多 Provider** | 自动轮换、故障转移、熔断保护，内置容灾能力 |
-| **三种部署形态** | 云端 Serverless / 本地 CLI / 开发模式，同一套配置、同一个 API |
+| **VPS 体验更可控** | CPU、内存、网络、常驻进程和主机级监控自主可控，适合长期负载；需要自行运维 |
 
 ## 🚀 快速开始
 
@@ -133,6 +133,28 @@ curl https://你的项目.pages.dev/health
 ```
 
 > **存储说明：** CF 部署使用 D1（用量统计）+ KV（配置数据），免费层可支撑 3-5 万次请求/天。
+
+</details>
+
+<details>
+<summary><strong>🖥️ VPS 自托管部署（Node.js）</strong></summary>
+
+AI Relay 可以通过现有 Next.js 运行时部署到 Linux VPS，作为长期在线服务运行。如果你希望获得更稳定的资源分配、长期可用的 API 端点、完整的主机级监控，以及不受 Serverless 单次执行窗口约束的运行环境，**VPS 是更适合的自托管方案**。实际吞吐和延迟仍取决于服务器配置、网络与上游 Provider。
+
+```bash
+git clone https://github.com/MoyuFamily/ai-relay.git
+cd ai-relay
+pnpm install
+cp .env.local.example .env.local
+# 配置强随机 RELAY_API_KEY、RELAY_ADMIN_KEY、
+# Provider 密钥及当前运行环境所需的存储后端凭据。
+pnpm build
+pnpm exec next start --hostname 127.0.0.1 --port 3000
+```
+
+建议通过 HTTPS 反向代理提供服务，限制管理后台访问，并自行配置进程守护、备份和日志轮转。不要将 3000 端口直接暴露到公网。
+
+> **当前实现边界：** VPS 已可通过现有 Next.js 应用运行时自托管，但独立 Server Runtime、Docker 镜像与完整的 PostgreSQL ConfigStore 仍在开发中。当前 PostgreSQL ConfigStore 不能直接代替既有 KV 配置路径。生产环境部署前请参考[存储架构说明](docs/storage-architecture.md)，确认所选功能的存储后端已正确配置并实际验证。
 
 </details>
 
@@ -353,6 +375,21 @@ curl -X POST https://你的项目.vercel.app/v1/responses \
 - **团队共享** — 共享中转实例，配额管理，Admin 可见性
 - **CI/CD 集成** — HMAC 临时密钥，自动过期无需清理
 - **成本优化** — 按模型/任务路由到不同 Provider，虚拟模型映射
+
+## 🌐 开源社区基础设施（规划中）
+
+AI Relay 是采用 [MIT 许可证](LICENSE) 的开源项目。除了 Serverless 和 VPS 自托管部署，我们计划建设一个**非商业、长期在线的兼容性与可靠性测试环境**，方便贡献者跨运行时复现问题、验证改动。
+
+计划中的 Linux 社区基础设施主要用于：
+
+- **API 协议兼容性测试**：使用模拟 Provider 或明确授权的测试服务，验证 OpenAI 兼容接口、流式 SSE、模型路由与 fallback。
+- **可靠性与性能测试**：以可控工作负载复现超时、错误响应和并发场景，并公开可复现的测试结果。
+- **安全的公开演示**：使用模拟密钥与脱敏数据展示功能，不收集访问者的个人 Provider API Key。
+- **开源贡献验证**：运行回归测试，为 Issue 和 PR 提供可追溯的诊断数据。
+
+**当前状态：规划中，尚未宣称公开演示服务已上线。** VPS 可以提供常驻进程、相对稳定的测试资源和主机级指标，补充 Serverless 临时执行环境的局限。相关赞助资源将专用于非商业开源开发与教育用途，不用于付费 API 转售或无关服务。
+
+欢迎为这项工作提供基础设施赞助。确认赞助后，我们可在 README 和项目文档中公开致谢。
 
 ## 📢 通知与告警
 
