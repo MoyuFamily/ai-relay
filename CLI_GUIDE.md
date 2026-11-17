@@ -1,221 +1,204 @@
-# AI Relay CLI 使用指南
+# AI Relay CLI (`airelay`) 使用指南
 
-## 快速开始
+`airelay` 是 AI Relay 的本机轻量运行时工具。它默认在本机启动 `http://127.0.0.1:3147`，复用与云端完全一致的 Relay 核心转发引擎（多 Key 轮换、Fallback 链、模型别名、OpenAI ↔ Anthropic 跨协议转换），让 Codex、Claude Code、Cursor 等本地工具直接从本机发起上游请求，不消耗 Vercel / Cloudflare 的 Serverless 额度。
 
-### 安装
+---
+
+## 1. 安装与验证
 
 ```bash
-# 全局安装
+git clone https://github.com/MoyuFamily/ai-relay.git
+cd ai-relay
+pnpm install
+
+# 注册全局 airelay 命令（也可以直接使用 pnpm run cli -- <command>）
 npm link
 
-# 验证
+# 验证安装
 airelay --help
 ```
 
-### 基本用法
+> 如果系统未全局安装 `tsx`，也可以直接通过仓库脚本运行：`pnpm run local:start` 或 `pnpm run cli -- local:status`。
+
+---
+
+## 2. 命令一览
+
+| 命令 | 说明 |
+|------|------|
+| `airelay login [cloud-url]` | 通过设备授权码流程绑定云端或自部署的 AI Relay 实例（可选） |
+| `airelay local:start` | 启动本机 HTTP 转发服务（默认监听 `127.0.0.1:3147`） |
+| `airelay local:status` | 查看本机设备配置、监听地址与有效配置来源 |
+| `airelay agent:install codex [--dry-run]` | 自动备份并向 `~/.codex/config.toml` 写入本地 Relay 配置 |
+| `airelay agent:doctor codex` | 检查 Codex 配置文件是否正确指向本地 Relay |
+| `airelay agent:uninstall codex [--dry-run]` | 从 `~/.codex/config.toml` 移除本地 Relay 配置块 |
+
+`airelay local:start` 支持的参数：
+- `-c, --config <source>`：指定本地 JSON 配置文件路径或远程快照 URL
+- `-p, --port <port>`：自定义监听端口（默认 `3147`）
+- `--host <host>`：自定义监听地址（默认 `127.0.0.1`；若设为 `0.0.0.0` 请务必配置 `RELAY_API_KEY`）
+
+---
+
+## 3. 四种配置来源（按优先级从高到低）
+
+`airelay local:start` 会按以下顺序自动解析配置来源：
+
+### 方式 1：命令行显式指定（`--config`）
 
 ```bash
-# 方式 1: 云端配置（推荐）
-airelay login https://cfairelay.izmw.me
-airelay local:start
-
-# 方式 2: 本地配置文件
-airelay local:start --config ./relay-config.json
-
-# 方式 3: 环境变量
-export RELAY_CLOUD_URL="https://cfairelay.izmw.me"
-airelay local:start
-
-# 方式 4: 自定义端口和主机
-airelay local:start --port 3000 --host localhost
-# ⚠️ 警告：使用 --host 0.0.0.0 会暴露到公网，仅在安全网络环境下使用
-```
-
-## 配置方式
-
-### 云端配置
-
-最简单的方式，所有配置从云端同步：
-
-```bash
-# 1. 创建 profile
-mkdir -p ~/.airelay
-cat > ~/.airelay/config.json << 'INNER_EOF'
-{
-  "cloudUrl": "https://cfairelay.izmw.me",
-  "deviceName": "my-laptop",
-  "listenHost": "127.0.0.1",
-  "listenPort": 8787
-}
-INNER_EOF
-
-# 2. 启动
-airelay local:start
-```
-
-### 本地文件配置
-
-```bash
-# 创建配置文件
-cat > relay-config.json << 'INNER_EOF'
+cat > relay-config.json << 'EOF'
 {
   "version": 1,
   "providers": {
     "openai": {
-      "name": "OpenAI",
-      "apiKeys": ["sk-..."],
-      "baseUrl": "https://api.openai.com"
+      "name": "openai",
+      "displayName": "OpenAI",
+      "baseUrl": "https://api.openai.com/v1",
+      "modelPrefixes": ["gpt-"],
+      "headerFormat": "openai",
+      "envKeyField": "OPENAI_KEYS",
+      "apiKeys": ["sk-your-openai-key"]
     },
     "anthropic": {
-      "name": "Anthropic",
-      "apiKeys": ["sk-ant-..."],
-      "baseUrl": "https://api.anthropic.com"
+      "name": "anthropic",
+      "displayName": "Anthropic",
+      "baseUrl": "https://api.anthropic.com/v1",
+      "modelPrefixes": ["claude-"],
+      "headerFormat": "anthropic",
+      "envKeyField": "CLAUDE_KEYS",
+      "apiKeys": ["sk-ant-your-claude-key"]
     }
+  },
+  "modelAliases": {
+    "aliases": { "fast": "gpt-5.4-mini" },
+    "hidden": []
   }
 }
-INNER_EOF
+EOF
 
-# 启动
 airelay local:start --config ./relay-config.json
 ```
 
-### 环境变量配置
+### 方式 2：环境变量指定配置源（`RELAY_CONFIG_PATH` / `RELAY_CLOUD_URL`）
 
 ```bash
-# 设置 keys（自动发现所有 XXX_KEYS）
-export OPENAI_KEYS="sk-xxx"
-export OPENAI_BASE_URL="https://api.openai.com"  # 可选
-
-export CLAUDE_KEYS="sk-ant-xxx"
-export DEEPSEEK_KEYS="sk-deepseek-xxx"
-
-# 启动（自动发现所有 provider）
+export RELAY_CONFIG_PATH=./relay-config.json
 airelay local:start
 ```
 
-### 混合模式
+### 方式 3：绑定云端 / 自部署实例同步配置（推荐已有后台用户）
+
+先确保远端实例已配置 `DEVICE_TOKEN_SECRET` 环境变量，然后执行设备登录：
 
 ```bash
-# 云端基础配置 + 本地覆盖
-export RELAY_CLOUD_URL="https://cfairelay.izmw.me"
-airelay local:start --config ./local-overrides.json
+# 1. 发起设备绑定，按终端提示打开浏览器并输入 Admin Key 批准设备
+airelay login https://your-relay.example.com
+
+# 2. 启动本机服务（每 30 秒检查配置版本并热更新，每 60 秒上报心跳与聚合用量）
+airelay local:start
 ```
 
-## 验证
+> 也可以访问后台的 `/admin/local-relay` 页面查看当前在线设备列表与最近心跳时间。
+
+### 方式 4：纯环境变量内联 Key（零配置文件最快启动）
+
+自动扫描环境变量中的 `OPENAI_KEYS`、`CLAUDE_KEYS`、`DEEPSEEK_KEYS`、`XIAOMI_KEYS` 等 `*_KEYS` 变量（支持逗号分隔多 Key 轮换与对应的 `*_BASE_URL`）：
 
 ```bash
-# 健康检查
-curl http://localhost:8787/health
+export OPENAI_KEYS="sk-key-1,sk-key-2"
+export CLAUDE_KEYS="sk-ant-key-1"
+airelay local:start
+```
 
-# 获取模型列表
-curl http://localhost:8787/v1/models
+---
 
-# 测试 OpenAI 接口
-curl http://localhost:8787/v1/chat/completions \
+## 4. 本地目录与安全模型
+
+- **Profile 路径**：`~/.ai-relay/config.json`（权限 `0600`，保存 `deviceName`、`listenHost`、`listenPort` 以及可选的 `cloudUrl` / `deviceId` / `deviceToken`）。
+- **备份目录**：`~/.ai-relay/backups/`（执行 `agent:install` 修改客户端配置前自动生成备份）。
+- **请求鉴权**：
+  - 当监听回环地址（`127.0.0.1` / `localhost` / `::1`）且未设置 `RELAY_API_KEY` 时，允许本机工具免密或使用任意占位 Key 直接调用。
+  - 若设置了 `RELAY_API_KEY`，或将 `--host` 暴露到非回环网卡（如 `0.0.0.0`），服务端会强制校验 `Authorization: Bearer <RELAY_API_KEY>` 或 `X-API-Key`。
+- **云端同步安全**：`/api/local/config/version` 与 `/api/local/config/snapshot` 均要求有效的设备令牌（`deviceToken`）或 Admin 密钥鉴权，且设备授权码仅允许一次性换取令牌。
+
+---
+
+## 5. 本地接口验证
+
+默认端口为 `3147`：
+
+```bash
+# 1. 健康检查
+curl http://127.0.0.1:3147/health
+
+# 2. 查看可用模型列表
+curl http://127.0.0.1:3147/v1/models
+
+# 3. 测试 OpenAI Chat Completions
+curl http://127.0.0.1:3147/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer any-key" \
-  -d '{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}'
+  -d '{"model":"gpt-5.4","messages":[{"role":"user","content":"Hello!"}]}'
 
-# 测试 Anthropic 接口
-curl http://localhost:8787/v1/messages \
+# 4. 测试 Anthropic Messages
+curl http://127.0.0.1:3147/v1/messages \
   -H "Content-Type: application/json" \
-  -H "x-api-key: any-key" \
   -H "anthropic-version: 2023-06-01" \
-  -d '{"model":"claude-opus-4-8","messages":[{"role":"user","content":"hi"}],"max_tokens":1024}'
+  -d '{"model":"claude-sonnet-4-6","max_tokens":512,"messages":[{"role":"user","content":"Hello!"}]}'
+
+# 5. 测试 OpenAI Responses API
+curl http://127.0.0.1:3147/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-5.4","input":"Hello!"}'
 ```
 
-## 故障排查
+---
 
-### 问题 1: command not found: airelay
+## 6. 接入本地 AI 编程工具
+
+### Codex CLI（自动配置）
 
 ```bash
-# 检查 npm global bin 目录
-npm config get prefix
+# 预览变更
+airelay agent:install codex --dry-run
 
-# 添加到 PATH
-export PATH="$(npm config get prefix)/bin:$PATH"
+# 写入 ~/.codex/config.toml 并自动备份原文件
+airelay agent:install codex
+
+# 诊断配置状态
+airelay agent:doctor codex
 ```
 
-### 问题 2: tsx 未安装
+### Claude Code / OpenAI SDK 工具（环境变量接入）
 
 ```bash
-npm install -g tsx
+# Claude Code
+export ANTHROPIC_BASE_URL="http://127.0.0.1:3147"
+export ANTHROPIC_API_KEY="local-relay"
+
+# 任意兼容 OpenAI SDK 的客户端
+export OPENAI_BASE_URL="http://127.0.0.1:3147/v1"
+export OPENAI_API_KEY="local-relay"
 ```
 
-### 问题 3: 端口被占用
+---
+
+## 7. Shell 自动补全
+
+仓库内置了 Bash 与 Zsh 补全脚本：
 
 ```bash
-airelay local:start --port 3000
-```
+# Zsh
+echo "source $(pwd)/cli/completions.zsh" >> ~/.zshrc
+source ~/.zshrc
 
-### 问题 4: 无法连接云端
-
-```bash
-# 测试网络
-curl https://cfairelay.izmw.me/health
-
-# 检查配置
-cat ~/.airelay/config.json
-```
-
-## 卸载
-
-```bash
-npm unlink -g airelay
-```
-
-## 开发者模式
-
-```bash
-# 本地开发（修改代码后立即生效）
-npm link
-
-# 测试
-airelay local:start
-
-# 取消链接
-npm unlink -g airelay
-```
-
-## Shell 自动补全
-
-安装后可以启用命令自动补全，按 Tab 键自动提示：
-
-### Bash
-
-```bash
-# 临时启用（当前会话）
-source cli/completions.sh
-
-# 永久启用
+# Bash
 echo "source $(pwd)/cli/completions.sh" >> ~/.bashrc
 source ~/.bashrc
 ```
 
-### Zsh
+卸载全局链接：
 
 ```bash
-# 临时启用（当前会话）
-source cli/completions.zsh
-
-# 永久启用
-echo "source $(pwd)/cli/completions.zsh" >> ~/.zshrc
-source ~/.zshrc
+npm unlink -g airelay
 ```
-
-### 使用效果
-
-```bash
-# 输入 aire 然后按 Tab
-airelay
-
-# 输入 airelay 然后按 Tab，显示所有命令
-airelay [Tab]
-login  local  local:start  local:status  agent:install  ...
-
-# 输入 airelay local: 然后按 Tab
-airelay local:[Tab]
-local:start  local:status
-```
-
-现在输入 `aire` + Tab 就可以自动补全了！

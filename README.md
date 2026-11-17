@@ -2,23 +2,27 @@
 
 <img src="docs/assets/logo-banner.svg" alt="AI Relay" width="400">
 
-**Your personal AI API gateway — deploy to cloud or run locally, one endpoint for all LLM providers**
+**Your personal & team AI API gateway — deploy serverless, self-host with Docker, or run locally**
 
 <p>
   <a href="https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY,RELAY_ADMIN_KEY,RELAY_SIGNING_SECRET&envDescription=API%20authentication%20keys%20(required%20for%20security)&envLink=https://github.com/MoyuFamily/ai-relay#-quick-start">
     <img src="https://vercel.com/button" alt="Deploy with Vercel" height="36">
   </a>
   &nbsp;
-  <a href="#-deploy-to-cloudflare-pages">
+  <a href="#deploy-cloudflare">
     <img src="https://img.shields.io/badge/⚡_Deploy_to_Cloudflare-F38020?style=for-the-badge&logo=cloudflare&logoColor=white" alt="Deploy to Cloudflare" height="36">
   </a>
   &nbsp;
-  <a href="#-run-locally-cli">
-    <img src="https://img.shields.io/badge/💻_Run_Locally-000?style=for-the-badge&logo=terminal&logoColor=white" alt="Run locally" height="36">
+  <a href="#deploy-self-hosted">
+    <img src="https://img.shields.io/badge/🐳_Self--Host_(Docker)-2496ED?style=for-the-badge&logo=docker&logoColor=white" alt="Self-Host with Docker" height="36">
+  </a>
+  &nbsp;
+  <a href="#deploy-local-cli">
+    <img src="https://img.shields.io/badge/💻_Run_Locally_(CLI)-000?style=for-the-badge&logo=terminal&logoColor=white" alt="Run locally" height="36">
   </a>
 </p>
 
-[![Version](https://img.shields.io/badge/Version-2.13.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.14.2-green.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [English](README.md) · [中文](README_CN.md)
@@ -29,311 +33,264 @@
 
 > **One gateway for all your AI APIs.**
 >
-> Unify OpenAI, Claude, DeepSeek and more behind a single endpoint.
-> Automatic key rotation, failover, and circuit breaking — no glue code needed.
->
-> Three ways to run, pick what fits:
-> - ☁️ **Vercel / Cloudflare** — live in 2 minutes, zero servers
-> - 💻 **Local CLI** — `airelay local:start`, no cloud quota consumed
-> - 🔧 **Dev mode** — `npm run dev`, edit and iterate
+> Unify OpenAI, Anthropic (Claude), DeepSeek, MiMo, and any OpenAI/Anthropic-compatible provider behind a single endpoint.
+> Automatic multi-key rotation, cross-protocol failover, circuit breaking, and smart routing — zero glue code required.
 
-### Who should use which?
+### Choose Your Deployment Mode
 
-| | ☁️ Vercel | ☁️ Cloudflare | 💻 Local CLI |
-|---|---|---|---|
-| **Best for** | Light users, quick tryout | Heavy coding users | Agent / multimodal / power users |
-| **Monthly volume** | Low-mid (< 500M tokens/month) | High frequency (daily coding sessions) | Unlimited, depends on network bandwidth |
-| **Token stats** | Sampling-based (configurable rate) | Sampling-based (CF CPU budget) | **Precise** (SQLite per-request logging) |
-| **Runtime** | Edge Serverless, cold start < 50ms | Edge Worker, global distribution | Persistent local process, no cold start |
-| **Storage** | Upstash Redis (KV) | Cloudflare D1 + KV | Local SQLite |
-| **Typical use** | Personal chat, light API relay | Copilot / Cursor high-freq coding | Codex / Claude Code local agent, large image/video multimodal, local key storage |
-| **Key limit** | Free tier has traffic and storage caps; high-freq or multimodal usage will hit limits | CF Worker CPU time limited, long responses need optimization | Must keep process running yourself |
+| | ☁️ Vercel | ⚡ Cloudflare Pages | 🐳 Self-Hosted (Docker / VPS) | 💻 Local CLI (`airelay`) |
+|---|---|---|---|---|
+| **Best for** | Quick evaluation & personal chat | High-frequency coding on free tier | Long-running agents, teams, zero limits | Single-machine coding agents |
+| **Runtime** | Vercel Node.js Serverless (`60s` max) | Cloudflare Workers (`@opennextjs/cloudflare`) | Standalone Node.js container / process | Local HTTP server (`127.0.0.1:3147`) |
+| **Storage** | Upstash Redis (`@vercel/kv`) | Cloudflare KV (config) + D1 (usage) | Persistent Disk (`./data`) **or** PostgreSQL | Cloud snapshot / local JSON / env |
+| **Token stats** | Configurable sampling (`RELAY_KV_USAGE_SAMPLE_RATE`) | Direct D1 writes + byte-estimated streams | **100% real-time exact** (Disk or Postgres) | Syncs batched usage to Cloud Admin |
+| **Background cron** | Vercel Cron (`/api/cron/*`) | Workers `scheduled()` + D1 cleanup | **Built-in scheduler** (auto-enabled) | 30s config sync + 60s heartbeat |
+| **Platform limits** | Hobby free-tier bandwidth & KV command caps | ~10ms Free Worker CPU budget, 6 sockets | **None** (bound only by your server) | Localhost only unless bound to LAN |
 
-> **⚠️ Vercel Hobby usage guidance:**
-> - **Good fit**: Personal chat, light API relay, dev/debugging phase
-> - **Not ideal**: High-frequency coding calls (e.g. Copilot/Cursor continuous use), large image/video multimodal, long reasoning tasks
-> - Free-tier storage and traffic are limited; the project provides usage sampling and multi-key rotation settings to help — all adjustable from the admin dashboard
->
-> Heavy coding users should go directly with Cloudflare. Agent and multimodal users should use Local CLI.
+> **TL;DR:** Try **Vercel** in 2 minutes → use **Cloudflare** for heavy serverless coding → deploy **Docker / VPS** for zero serverless timeouts or team sharing → run **Local CLI** on your laptop for local agents like Codex and Claude Code. All four share the exact same Relay Core and API!
 
-> **TL;DR:** Start with Vercel to try it out. Switch to Cloudflare for heavy coding. Go local CLI for agents and multimodal. All three share the same config and API — migrate anytime.
-
-## 🎯 Why AI Relay?
-
-| | |
-|---|---|
-| **Serverless** | No server, no Docker, no ops — deploy to Vercel / Cloudflare in 2 minutes |
-| **Zero cost to start** | Runs on free tiers — personal devs pay nothing |
-| **One endpoint, drop-in** | Compatible with OpenAI SDK — just change `base_url`, zero code changes |
-| **Multi-key, multi-provider** | Automatic rotation, failover, circuit breaking — built-in resilience |
-| **Three deployment modes** | Cloud serverless / local CLI / dev mode — same config, same API |
+---
 
 ## 🚀 Quick Start
 
-### ☁️ Deploy to Vercel (recommended for new users)
+### ☁️ 1. Deploy to Vercel (Fastest Start)
 
-> Prerequisites: [Vercel account](https://vercel.com/signup) (free) + at least one AI provider API key
-
-1. Click **Deploy with Vercel** above, fill in 3 environment variables:
+1. Click **Deploy with Vercel** above and set:
 
 | Variable | Description |
 |----------|-------------|
-| `RELAY_API_KEY` | Client authentication key (use a strong password) |
-| `RELAY_ADMIN_KEY` | Admin dashboard login key (can be same as above) |
-| `RELAY_SIGNING_SECRET` | Temp key signing secret (can be same as above) |
+| `RELAY_API_KEY` | Client authentication key for `/v1/*` (`Bearer` or `X-API-Key`) |
+| `RELAY_ADMIN_KEY` | Admin dashboard key (optional; falls back to `RELAY_API_KEY`) |
+| `RELAY_SIGNING_SECRET` | HMAC signing secret for temporary keys (optional) |
 
-2. After deploy, go to Vercel Dashboard → **Storage** → Create **Upstash for Redis** (Free tier) → Connect to project
-3. Access the Admin dashboard to add Provider keys, then start calling:
+2. In Vercel Dashboard → **Storage** → attach **Upstash for Redis** (`KV_REST_API_URL` & `KV_REST_API_TOKEN`).
+3. Visit `/admin` to add upstream provider keys, then call `/v1/chat/completions`:
 
 ```bash
 curl -X POST https://your-project.vercel.app/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_R...KEY" \
+  -H "Authorization: Bearer YOUR_RELAY_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model": "gpt-5.4", "messages": [{"role": "user", "content": "Hello!"}]}'
 ```
 
-<details>
-<summary><strong>☁️ Deploy to Cloudflare Pages</strong></summary>
+<details id="deploy-cloudflare">
+<summary><strong>⚡ 2. Deploy to Cloudflare Pages</strong></summary>
 
-**Prerequisites:** [Cloudflare account](https://dash.cloudflare.com/sign-up) (free) + GitHub repo
+**Prerequisites:** [Cloudflare account](https://dash.cloudflare.com/sign-up) (free) + GitHub fork.
 
-> ⚠️ You must configure GitHub Secrets first, or the deploy will fail.
-
-**Step 1 — Fork and configure GitHub Secrets**
-
-Go to **Settings → Secrets and variables → Actions → Repository secrets** and add:
+**Step 1 — Configure GitHub Repository Secrets** (`Settings → Secrets and variables → Actions`):
 
 | Secret | Description | Required |
 |--------|-------------|----------|
-| `CLOUDFLARE_API_TOKEN` | CF API Token (Pages:Edit + D1:Edit + KV:Edit) | ✅ |
-| `CLOUDFLARE_ACCOUNT_ID` | CF Account ID | ✅ |
-| `RELAY_API_KEY` | Client auth key | ✅ |
-| `RELAY_ADMIN_KEY` | Admin login key (optional, defaults to API key) | ⬜ |
-| `RELAY_SIGNING_SECRET` | Temp key signing secret (optional) | ⬜ |
+| `CLOUDFLARE_API_TOKEN` | Token with `Cloudflare Pages:Edit`, `D1:Edit`, `Workers KV Storage:Edit` | ✅ |
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare Account ID | ✅ |
+| `RELAY_API_KEY` | Client authentication key | ✅ |
+| `RELAY_ADMIN_KEY` | Admin login key (optional, defaults to `RELAY_API_KEY`) | ⬜ |
+| `RELAY_SIGNING_SECRET` | Temporary key signing secret (optional) | ⬜ |
+| `DEVICE_TOKEN_SECRET` | Device token hash secret for `airelay login` (optional) | ⬜ |
+| `CRON_SECRET` | Authenticates scheduled probe/report jobs (optional) | ⬜ |
 
-<details>
-<summary>How to get a Cloudflare API Token</summary>
+**Step 2 — Push or trigger workflow**
 
-1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/profile/api-tokens)
-2. Click **Create Token** → **Create Custom Token**
-3. Permissions: Account → Cloudflare Pages / D1 / Workers KV Storage → Edit
-4. Copy the token
-
-</details>
-
-**Step 2 — Push to deploy**
-
-Push to `main` — GitHub Actions auto-handles: D1 setup → KV creation → build → deploy → env config.
+Push to `main` (or trigger **Deploy to Cloudflare Pages** in GitHub Actions). The workflow automatically provisions D1 + KV, runs migrations, builds the OpenNext bundle, and syncs secrets.
 
 **Step 3 — Verify**
 
 ```bash
 curl https://your-project.pages.dev/health
-# → {"status":"ok"}
 ```
-
-> **Storage:** CF uses D1 (usage stats) + KV (config). Free tier supports ~30-50K requests/day.
 
 </details>
 
-<details>
-<summary><strong>💻 Run Locally (CLI)</strong></summary>
+<details id="deploy-self-hosted">
+<summary><strong>🐳 3. Self-Host with Docker / VPS (Disk or PostgreSQL)</strong></summary>
 
-Beyond cloud deploy, AI Relay provides a local CLI to run a lightweight relay on your machine — no cloud quota consumed.
+Self-hosted mode runs as a standalone Node.js server with **built-in cron scheduling** (periodic health probes, daily usage aggregation, and webhook reports) and **container liveness support** (`/health?liveness=1`).
 
-> 📖 Full docs: [CLI_GUIDE.md](CLI_GUIDE.md)
+#### Option A — Single-Container Persistent Disk (Zero External DB)
 
-```bash
-# 1. Clone and install
-git clone https://github.com/MoyuFamily/ai-relay.git && cd ai-relay && pnpm install
-
-# 2. Install CLI globally
-npm link
-
-# 3. Start (4 config options supported)
-airelay local:start                              # local config file
-airelay local:start --config ./relay-config.json  # specify config file
-export OPENAI_KEYS="sk-xxx" && airelay local:start  # environment variables
-airelay login https://your-project.vercel.app && airelay local:start  # sync from cloud
-```
-
-**Use cases:** Local dev/debug · Intranet environments · Quick provider testing · CI/CD integration
-
-</details>
-
-<details>
-<summary><strong>🔧 Local Development (Web App)</strong></summary>
+Persists all Admin settings, keys, aliases, routing rules, quotas, and usage in `/app/data/kv-store.json`:
 
 ```bash
 git clone https://github.com/MoyuFamily/ai-relay.git && cd ai-relay
-npm install
-cp .env.local.example .env.local
-# Edit .env.local with your API keys
-npm run dev  # http://localhost:3000
+RELAY_API_KEY=your-strong-secret docker compose up -d --build
+```
+
+#### Option B — Multi-Instance High Availability with PostgreSQL
+
+Pass `DATABASE_URL` — AI Relay **auto-creates all PostgreSQL tables and indexes on startup** (zero manual migration steps):
+
+```bash
+DATABASE_URL=postgresql://airelay:airelay@postgres:5432/airelay \
+RELAY_API_KEY=your-strong-secret \
+docker compose --profile postgres up -d --build
+```
+
+#### Option C — Bare-Metal / PM2 / Systemd
+
+```bash
+pnpm install --frozen-lockfile
+NEXT_STANDALONE=1 pnpm run build
+cp -r public .next/standalone/public
+cp -r .next/static .next/standalone/.next/static
+RELAY_API_KEY=your-strong-secret RELAY_DATA_DIR=./data node .next/standalone/server.js
+```
+
+> **Container Healthchecks:** Use `GET /health?liveness=1` for Docker / Kubernetes / Coolify liveness probes (returns `200` even before provider keys are added in `/admin`), and `GET /health` for readiness probes (`200` when ≥1 key is available, `503` when `0` keys are available).
+
+</details>
+
+<details id="deploy-local-cli">
+<summary><strong>💻 4. Run Locally via CLI (<code>airelay</code>)</strong></summary>
+
+Run a lightweight local gateway on `http://127.0.0.1:3147` for Codex, Claude Code, Cursor, or local scripts without consuming cloud serverless quota.
+
+> 📖 Full guide: [CLI_GUIDE.md](CLI_GUIDE.md)
+
+```bash
+git clone https://github.com/MoyuFamily/ai-relay.git && cd ai-relay
+pnpm install && npm link
+
+# Option A: Sync providers & keys from your Cloud / Self-Hosted Admin
+airelay login https://your-relay.example.com
+airelay local:start
+
+# Option B: Standalone local config file or environment variables
+airelay local:start --config ./relay-config.json
+OPENAI_KEYS="sk-xxx" airelay local:start
+
+# Optional: Auto-configure Codex CLI
+airelay agent:install codex
+airelay agent:doctor codex
 ```
 
 </details>
 
+---
+
 ## ✨ Core Capabilities
 
-**Routing & Resilience**
-| Feature | Description |
-|---------|-------------|
-| Multi-provider routing | OpenAI · Claude · DeepSeek · MiMo · Custom — single endpoint |
-| Multi-key rotation | Round-robin + 429 auto-backoff, single key failure doesn't affect service |
-| Multi-level fallback | Provider → Key chain failover with configurable recovery |
-| Circuit breaker | Auto-remove failing providers, auto-restore when recovered |
-| Smart routing | Latency / cost / availability priority, auto-select optimal provider |
+**Protocol & Cross-Provider Translation**
+| Endpoint | Protocol | Capabilities |
+|----------|----------|--------------|
+| `POST /v1/chat/completions` | OpenAI Chat Completions | Streaming & non-streaming, tool calls, vision, transparent fallback to Anthropic `/v1/messages` |
+| `POST /v1/messages` | Anthropic Messages API | Native Claude Code / SDK support, streaming SSE, transparent fallback to OpenAI-format providers |
+| `POST /v1/messages/count_tokens` | Anthropic Token Counting | Upstream token counting with automatic local estimation fallback |
+| `POST /v1/responses` | OpenAI Responses API | Streaming & non-streaming Responses API forwarding |
+| `GET /v1/models` & `/v1/models/:model` | OpenAI Model Discovery | Aggregated model list + virtual aliases + hidden-model filtering |
 
-**Protocol & Compatibility**
-| Feature | Description |
-|---------|-------------|
-| OpenAI compatible | `/v1/chat/completions` · `/v1/responses` · SSE streaming — use OpenAI SDK directly |
-| Anthropic native | `/v1/messages` endpoint — Claude clients connect without conversion |
-| Virtual model mapping | Route virtual model names to real providers, swap underlying models on demand |
+**Routing, Resilience & Governance**
+- **Multi-key rotation & cooldowns**: Round-robin rotation with automatic 60s per-key cooldown on `429` / `5xx` and instant retry on healthy keys.
+- **Multi-provider fallback & cycle prevention**: Chain fallbacks across providers and model mappings (`provider:model`) with loop detection.
+- **Circuit breaker & smart routing**: Automatically isolate degraded upstreams and route by priority rules, latency, cost, or availability.
+- **Stateless temporary keys**: Issue HMAC-SHA256 time-bounded client tokens with model allowlists and request quotas.
+- **Webhooks & observability**: Daily usage reports and threshold alerts to Slack, Feishu, WeCom, DingTalk, or generic webhooks, plus opt-in request tracing.
 
-**Management & Monitoring**
-| Feature | Description |
-|---------|-------------|
-| Admin dashboard | Web UI for key management, quota config, usage stats, model testing |
-| Provider wizard | 3-step creation: pick template → add key → test & save |
-| Model aliases | CSV import/export, inline edit, model visibility control |
-| Request logs | Real-time request tracing with memory / KV / Postgres backends |
-
-**Security & Notifications**
-| Feature | Description |
-|---------|-------------|
-| Temp API keys | HMAC-SHA256 stateless signing, auto-expiring — perfect for CI/CD |
-| Key security | Masked display, health monitoring, rotation alerts, audit logs |
-| Webhook alerts | WeCom / Feishu / DingTalk / Slack — daily reports + threshold alerts |
-
-**Deployment & Ops**
-| Feature | Description |
-|---------|-------------|
-| Zero servers | Vercel Edge Runtime / Cloudflare Workers — global edge, < 50ms latency |
-| Dual platform | Vercel one-click; Cloudflare via GitHub Actions push-to-deploy |
-| Local CLI | `airelay local:start` — same config, same API, no cloud quota used |
-| Usage sampling | Configurable sample rate for high-concurrency scenarios |
+---
 
 ## 🏗️ Architecture
 
-```
-                  ┌─────────────────────────────────────────┐
-                  │           AI Relay Gateway               │
-                  ├─────────────────────────────────────────┤
-  Client ────────▶│  Edge Runtime                           │
-  (OpenAI SDK)    │    ├─ Circuit breaker + Fallback chain  │
-                  │    ├─ Key rotation (Round-robin + 429)  │
-                  │    ├─ Smart routing (latency/cost/avail)│
-                  │    └─ Protocol bridge (OpenAI ↔ Anthropic)│
-                  ├──────────┬──────────┬───────────────────┤
-                  │  Vercel  │   CF     │  Local CLI         │
-                  │  Edge    │  Workers │  (airelay start)   │
-                  │  + Redis │  + D1+KV │  + SQLite/KV      │
-                  └──────────┴──────────┴───────────────────┘
-                    ▼           ▼           ▼
-                  OpenAI    Claude    DeepSeek    Custom ...
+```text
+Clients (OpenAI SDK / Claude Code / Codex / Cursor / curl)
+   │
+   ▼  /v1/chat/completions · /v1/messages · /v1/responses · /v1/models
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         AI Relay Core Engine                            │
+│  Auth (Constant-Time + Temp HMAC) → Quota & Payload Guards              │
+│  → Model Alias & Priority Rules → Smart Routing & Circuit Breaker       │
+│  → Multi-Key Pool Rotation → Bidirectional OpenAI ↔ Anthropic Bridge    │
+├─────────────────┬──────────────────┬───────────────────┬────────────────┤
+│ Vercel          │ Cloudflare Pages │ Self-Hosted Node  │ Local CLI      │
+│ Serverless Node │ OpenNext Workers │ Docker / VPS      │ 127.0.0.1:3147 │
+│ + Upstash KV    │ + CF KV + CF D1  │ + Disk or Postgres│ + Cloud Sync   │
+└─────────────────┴──────────────────┴───────────────────┴────────────────┘
+   │                  │                  │                  │
+   ▼                  ▼                  ▼                  ▼
+OpenAI · Anthropic (Claude) · DeepSeek · MiMo · Custom OpenAI/Anthropic APIs
 ```
 
-## 📖 Usage
+See [Technical Design](docs/TECH-DESIGN.md) and [Storage Architecture](docs/storage-architecture.md) for deep dives.
 
-### OpenAI SDK
+---
+
+## 📖 Usage Examples
+
+### OpenAI SDK (Python / TypeScript)
 
 ```python
 from openai import OpenAI
 
 client = OpenAI(
     api_key="YOUR_RELAY_API_KEY",
-    base_url="https://your-project.vercel.app/v1"
+    base_url="https://your-relay.example.com/v1",
 )
 
-# Standard call
-response = client.chat.completions.create(
-    model="gpt-5.4",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-
-# Streaming
 stream = client.chat.completions.create(
     model="gpt-5.4",
-    messages=[{"role": "user", "content": "Tell me a story"}],
-    stream=True
+    messages=[{"role": "user", "content": "Hello!"}],
+    stream=True,
 )
 for chunk in stream:
     print(chunk.choices[0].delta.content or "", end="")
 ```
 
-### Claude / Anthropic Messages API
+### Anthropic Messages API (Claude Code / SDK)
 
 ```bash
-curl -X POST https://your-project.vercel.app/v1/messages \
+curl -X POST https://your-relay.example.com/v1/messages \
   -H "x-api-key: YOUR_RELAY_API_KEY" \
   -H "anthropic-version: 2023-06-01" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "claude-sonnet",
+    "model": "claude-sonnet-4-6",
     "max_tokens": 1024,
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
 
-### Responses API
+### OpenAI Responses API
 
 ```bash
-curl -X POST https://your-project.vercel.app/v1/responses \
-  -H "Authorization: Bearer YOUR_R...KEY" \
+curl -X POST https://your-relay.example.com/v1/responses \
+  -H "Authorization: Bearer YOUR_RELAY_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model": "gpt-5.4", "input": "Hello!", "stream": true}'
+  -d '{"model": "gpt-5.4", "input": "Summarize this repository", "stream": true}'
 ```
 
-> Responses API currently only supports OpenAI-format providers.
+---
 
-## 🏁 Comparison
+## 🔧 Configuration Reference
 
-| | AI Relay | OneAPI / new-api | FastGPT | OpenRouter |
-|---|---|---|---|---|
-| **Deploy** | One-click (Vercel / CF / Local CLI) | Self-hosted (Docker) | Self-hosted (Docker) | SaaS only |
-| **Server cost** | **Zero** (free tier works) | Needs server | Needs server | Pay per use |
-| **Key differentiator** | Edge latency + circuit breaker + local CLI | Multi-key mgmt | Knowledge base + API | API marketplace |
-
-**Choose AI Relay when:** You want a self-controlled AI API gateway without servers, Docker, or ops overhead.
-
-## 🔧 Configuration
-
-### Environment Variables
+See [`.env.local.example`](.env.local.example) for the complete template.
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `RELAY_API_KEY` | Client auth key (comma-separated for multiple) | ✅ |
-| `RELAY_ADMIN_KEY` | Admin login key (falls back to `RELAY_API_KEY`) | ⬜ |
-| `RELAY_SIGNING_SECRET` | Temp key signing secret | ⬜ |
-| `OPENAI_KEYS` | OpenAI API Keys | ⬜ |
-| `CLAUDE_KEYS` | Anthropic API Keys | ⬜ |
-| `DEEPSEEK_KEYS` | DeepSeek API Keys | ⬜ |
-| `RELAY_UPSTREAM_TIMEOUT_MS` | Upstream timeout (default 50000, 0 to disable) | ⬜ |
-| `RELAY_KV_USAGE_SAMPLE_RATE` | Usage sampling rate (default 1, 0.1 = 10% sample) | ⬜ |
+| `RELAY_API_KEY` | Client auth key(s), comma-separated (`Bearer` or `X-API-Key`) | ✅ |
+| `RELAY_ADMIN_KEY` | Admin dashboard key(s) (falls back to `RELAY_API_KEY` if unset) | ⬜ |
+| `RELAY_SIGNING_SECRET` | HMAC signing secret for temporary client keys | ⬜ |
+| `DEVICE_TOKEN_SECRET` | Secret for hashing `airelay login` device tokens | ⬜ |
+| `OPENAI_KEYS` / `CLAUDE_KEYS` / `DEEPSEEK_KEYS` / `XIAOMI_KEYS` | Static provider keys (can also be managed dynamically in `/admin`) | ⬜ |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Vercel KV / Upstash Redis credentials (Vercel mode) | ⬜ |
+| `RELAY_DATA_DIR` / `RELAY_STORAGE_PATH` | Persistent JSON state directory/file for single-node self-hosted mode (default `./data`) | ⬜ |
+| `DATABASE_URL` | PostgreSQL connection string for multi-node self-hosted mode (auto-bootstraps schema) | ⬜ |
+| `ENABLE_SELF_HOSTED_CRON` | Enable built-in background probes & daily reports on self-hosted servers (default `true`) | ⬜ |
+| `SELF_HOSTED_PROBE_INTERVAL_MINUTES` | Upstream health probe interval in minutes on self-hosted servers (default `60`) | ⬜ |
+| `RELAY_DAILY_LIMIT` / `RELAY_MONTHLY_LIMIT` | Global daily/monthly request limits (`0` = unlimited) | ⬜ |
+| `RELAY_MAX_CONCURRENT` | Per-instance concurrent `/v1/*` request cap (`0` = unlimited) | ⬜ |
+| `RELAY_ALLOWED_ORIGINS` | Allowed browser CORS origins (comma-separated or `*`) | ⬜ |
+| `RELAY_UPSTREAM_TIMEOUT_MS` | Upstream timeout in ms (default `50000`, `0` to disable) | ⬜ |
+| `RELAY_KV_USAGE_SAMPLE_RATE` | KV usage sampling rate for Upstash quota saving (`1` = 100%, `0.1` = 10%) | ⬜ |
 
-> Provider keys are recommended to be configured via Admin dashboard (stored in Redis), not environment variables.
-
-### Supported Providers
-
-| Provider | Example Models | Status |
-|----------|---------------|--------|
-| OpenAI | gpt-5.4, gpt-5.4-mini | ✅ Built-in |
-| Anthropic (Claude) | claude-sonnet-4-6, claude-opus-4-7 | ✅ Built-in |
-| DeepSeek | deepseek-v4-flash, deepseek-v4-pro | ✅ Built-in |
-| MiMo | mimo-v2.5, mimo-v2.5-pro | ✅ Built-in |
-| Custom | Any OpenAI-compatible API | ✅ Configurable |
+---
 
 ## 📊 Admin Dashboard
 
-Access `/admin` with `RELAY_ADMIN_KEY`:
+Sign in at `/admin` with `RELAY_ADMIN_KEY`:
 
-- **Provider Keys** — Key management + connectivity testing
-- **Routing Policy** — Priority rules + Fallback Chain, drag-to-reorder
-- **Usage Monitor** — Date range, provider filter, trend charts
-- **Model Testing** — Test specific model connectivity and responses
-- **Notifications** — Webhook push, alert thresholds, daily reports
+- **Overview & Monitor** — Real-time request/token metrics, provider health probes, error breakdown, and opt-in request logs.
+- **Providers & Keys** — 3-step custom provider wizard, Cherry Studio / NewAPI import, CcSwitch export, multi-key health testing.
+- **Routing & Models** — Model aliases, visibility controls, priority rules, smart routing weights, and drag-and-drop fallback chains.
+- **Security & Tools** — Temporary HMAC key generator, key rotation alerts, config/stats JSON backup & restore, and webhook notifications.
 
 <details>
 <summary>View screenshots</summary>
@@ -344,41 +301,16 @@ Access `/admin` with `RELAY_ADMIN_KEY`:
 
 </details>
 
-## 🎯 Use Cases
+---
 
-- **Multi-key consolidation** — Unify scattered OpenAI / Claude / DeepSeek keys behind one endpoint
-- **Agent / IDE integration** — Codex, Claude Code, Cursor → local relay, low latency, no cloud quota
-- **Team sharing** — Shared relay instance, quota management, admin visibility
-- **CI/CD integration** — HMAC temp keys, auto-expiring, no cleanup needed
-- **Cost optimization** — Route by model/task to different providers, virtual model mapping
+## 📚 Documentation
 
-## 📢 Notifications & Alerts
-
-Supports WeCom / Feishu / DingTalk / Slack / Generic Webhook.
-
-- **Daily reports** — Cron-scheduled with daily totals, per-provider breakdown, day-over-day comparison
-- **Threshold alerts** — Per-provider or global request/token volume thresholds
-
-Configure: Admin → Notification Settings → Add Webhook → Enable
-
-## 🤝 Contributing
-
-1. Fork → Create branch → Commit → Push → Open Pull Request
-
-See [Release Flow](docs/RELEASE-FLOW.md): changes merge to `pre-release` first, then `main` after verification.
-
-## 🙏 Acknowledgments
-
-- [OpenRouter](https://openrouter.ai) · [OneAPI](https://github.com/songquanpeng/one-api) · [new-api](https://github.com/Calcium-Ion/new-api) · [FastGPT](https://github.com/labring/FastGPT)
-- [Vercel](https://vercel.com) · [OpenAI](https://platform.openai.com) · [Linux Do](https://linux.do/)
-
-## ❓ FAQ
-
-See [FAQ](docs/FAQ.md) for deployment, configuration, and local relay issues.
-
-## 📝 Changelog
-
-See [CHANGELOG.md](CHANGELOG.md).
+- **[CLI & Local Relay Guide](CLI_GUIDE.md)** — `airelay` installation, cloud sync, standalone config, and Codex integration
+- **[Technical Design](docs/TECH-DESIGN.md)** — End-to-end request lifecycle, protocol translation, and platform constraints
+- **[Storage Architecture](docs/storage-architecture.md)** — Multi-platform KV / D1 / Disk / PostgreSQL storage adapters
+- **[FAQ](docs/FAQ.md)** — Troubleshooting deployment, auth, Docker, and local relay
+- **[Release Flow](docs/RELEASE-FLOW.md)** — Branching & CI/CD workflow for forks and maintainers
+- **[Changelog](CHANGELOG.md)** — Version history
 
 ## 📄 License
 
