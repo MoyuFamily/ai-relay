@@ -1,0 +1,63 @@
+# ============================================================
+# AI Relay — Docker Compose (Self-Hosted / VPS Deployment)
+# ============================================================
+# Quick start (single-container, zero external DB, persistent disk):
+#   RELAY_API_KEY=your-secret docker compose up -d --build
+#
+# Multi-instance / PostgreSQL mode:
+#   DATABASE_URL=postgresql://airelay:airelay@postgres:5432/airelay \
+#   RELAY_API_KEY=your-secret \
+#   docker compose --profile postgres up -d --build
+# ============================================================
+
+services:
+  ai-relay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai-relay
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      RELAY_API_KEY: ${RELAY_API_KEY:?Set RELAY_API_KEY in environment or .env}
+      RELAY_ADMIN_KEY: ${RELAY_ADMIN_KEY:-}
+      RELAY_SIGNING_SECRET: ${RELAY_SIGNING_SECRET:-}
+      DEVICE_TOKEN_SECRET: ${DEVICE_TOKEN_SECRET:-}
+      OPENAI_KEYS: ${OPENAI_KEYS:-}
+      CLAUDE_KEYS: ${CLAUDE_KEYS:-}
+      DEEPSEEK_KEYS: ${DEEPSEEK_KEYS:-}
+      XIAOMI_KEYS: ${XIAOMI_KEYS:-}
+      # Storage: leave DATABASE_URL empty to use persistent disk (/app/data/kv-store.json),
+      # or set DATABASE_URL=postgresql://... for multi-replica PostgreSQL mode.
+      RELAY_DATA_DIR: /app/data
+      DATABASE_URL: ${DATABASE_URL:-}
+      DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+      # Built-in background scheduler (health probes, daily reports, webhook dispatch)
+      ENABLE_SELF_HOSTED_CRON: ${ENABLE_SELF_HOSTED_CRON:-true}
+      SELF_HOSTED_PROBE_INTERVAL_MINUTES: ${SELF_HOSTED_PROBE_INTERVAL_MINUTES:-60}
+    volumes:
+      - ai-relay-data:/app/data
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai-relay-postgres
+    profiles:
+      - postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-airelay}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airelay}
+      POSTGRES_DB: ${POSTGRES_DB:-airelay}
+    volumes:
+      - ai-relay-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-airelay} -d ${POSTGRES_DB:-airelay}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ai-relay-data:
+  ai-relay-pgdata:

@@ -9,7 +9,7 @@ export interface RuntimeCapabilities {
   persistentProcess: boolean;
   publicEndpoint: boolean;
   localAgentSetup: boolean;
-  storage: 'kv' | 'd1' | 'sqlite' | 'postgres';
+  storage: 'kv' | 'd1' | 'sqlite' | 'postgres' | 'file';
 }
 
 export function detectRuntime(): RuntimeCapabilities {
@@ -46,7 +46,21 @@ export function detectRuntime(): RuntimeCapabilities {
     };
   }
 
-  // Local CLI / standalone Node process
+  if (
+    process.env.RELAY_STORAGE_PATH ||
+    process.env.RELAY_DATA_DIR ||
+    process.env.NODE_ENV === 'production'
+  ) {
+    return {
+      runtime: 'server',
+      persistentProcess: true,
+      publicEndpoint: true,
+      localAgentSetup: false,
+      storage: process.env.KV_REST_API_URL ? 'kv' : 'file',
+    };
+  }
+
+  // Local CLI / standalone dev process
   return {
     runtime: 'local',
     persistentProcess: true,

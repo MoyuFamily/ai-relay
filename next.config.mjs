@@ -24,12 +24,11 @@ function resolveDeployCommit() {
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Edge Runtime is set per-route via export const runtime = 'edge'
-  // No special config needed
+  ...(process.env.NEXT_STANDALONE === '1' ? { output: 'standalone' } : {}),
   env: {
     NEXT_PUBLIC_DEPLOY_TIME: new Date().toISOString(),
     NEXT_PUBLIC_DEPLOY_COMMIT: resolveDeployCommit(),
-  }
+  },
 };
 
 export default nextConfig;

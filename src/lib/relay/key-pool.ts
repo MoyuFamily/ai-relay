@@ -285,3 +285,10 @@ export function updateMemoryKeyPool(providerName: string, rawKeys: string[], ver
     knownManagedVersions.set(providerName, version);
   }
 }
+
+export function __resetKeyPoolsForTests(): void {
+  keyPools.clear();
+  cooldowns.clear();
+  lastManagedVersionCheck.clear();
+  knownManagedVersions.clear();
+}

@@ -56,6 +56,12 @@ export const __adminConfigCacheForTests = {
   clear(): void {
     clearCache();
   },
+  resetClients(): void {
+    _kv = null;
+    _pgKv = null;
+    _pgKvUrl = null;
+    clearCache();
+  },
 };
 
 export function createMemoryMockKV() {
@@ -196,15 +202,77 @@ export function createMemoryMockKV() {
   return result;
 }
 
+let _pgKv: any = null;
+let _pgKvUrl: string | null = null;
+
+export type StorageBackendType =
+  | 'cloudflare-kv-d1'
+  | 'vercel-kv'
+  | 'postgres'
+  | 'file'
+  | 'memory'
+  | 'none';
+
+function isNextProductionBuildPhase(): boolean {
+  return process.env.NEXT_PHASE === 'phase-production-build';
+}
+
+function canUseSelfHostedPostgres(): boolean {
+  if (isNextProductionBuildPhase()) return false;
+  if (process.env.VERCEL || process.env.CF_PAGES) return false;
+  if (process.env.VITEST && process.env.RELAY_ENABLE_POSTGRES_IN_TEST !== '1') return false;
+  const url = process.env.DATABASE_URL?.trim() || '';
+  return /^postgres(ql)?:\/\//i.test(url);
+}
+
+function hasExplicitFileStorageEnv(): boolean {
+  return Boolean(process.env.RELAY_STORAGE_PATH?.trim() || process.env.RELAY_DATA_DIR?.trim());
+}
+
+function canUseDefaultSelfHostedFileStorage(): boolean {
+  if (isNextProductionBuildPhase()) return false;
+  if (process.env.VERCEL || process.env.CF_PAGES) return false;
+  if (process.env.VITEST) return false;
+  return process.env.NODE_ENV === 'production';
+}
+
+export async function detectStorageBackend(): Promise<StorageBackendType> {
+  if (isCloudflareSync()) {
+    const cfEnv = getCFEnvSync() || await getCFEnv();
+    return cfEnv?.KV ? 'cloudflare-kv-d1' : 'none';
+  }
+  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+    return 'vercel-kv';
+  }
+  if (!process.env.VERCEL && !process.env.CF_PAGES && hasExplicitFileStorageEnv()) {
+    return 'file';
+  }
+  if (canUseSelfHostedPostgres()) {
+    return 'postgres';
+  }
+  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+    return 'memory';
+  }
+  if (canUseDefaultSelfHostedFileStorage()) {
+    return 'file';
+  }
+  return 'none';
+}
+
 /**
  * Get KV client for the current environment.
- * Supports Cloudflare Pages KV binding, Vercel KV REST API, and in-memory mock for dev/test.
- * Exported for reuse by other modules that need environment-agnostic KV access (e.g. smart-routing).
+ * Supports:
+ * 1. Cloudflare Pages/Workers KV binding (`CFKVAdapter`)
+ * 2. Vercel KV / Upstash REST API (`@vercel/kv`)
+ * 3. Self-hosted explicit file storage (`RELAY_STORAGE_PATH` / `RELAY_DATA_DIR` -> `FileKVAdapter`)
+ * 4. Self-hosted PostgreSQL (`DATABASE_URL` -> `PostgresKVAdapter`)
+ * 5. Development / Test in-memory mock (`createMemoryMockKV`)
+ * 6. Self-hosted zero-dependency production default (`./data/kv-store.json` -> `FileKVAdapter`)
  */
 export async function getKV() {
   const g = global as any;
 
-  // Cloudflare Pages: use CF KV binding via CFKVAdapter
+  // 1. Cloudflare Pages/Workers: use CF KV binding via CFKVAdapter
   if (isCloudflareSync()) {
     try {
       const cfEnv = getCFEnvSync() || await getCFEnv();
@@ -216,20 +284,57 @@ export async function getKV() {
     return null;
   }
 
+  // 2. Vercel KV / Upstash REST API
   if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-    if (_kv && !_kv._isMock) return _kv;
+    if (_kv && _kv._backendType === 'vercel-kv') return _kv;
     try {
       const mod = await import('@vercel/kv');
       _kv = mod.kv || mod.createClient({
         url: process.env.KV_REST_API_URL,
         token: process.env.KV_REST_API_TOKEN,
       });
+      if (_kv && typeof _kv === 'object') {
+        _kv._backendType = 'vercel-kv';
+      }
       return _kv;
     } catch {
       return null;
     }
   }
 
+  // Avoid opening database sockets or writing local files during `next build` static generation
+  if (isNextProductionBuildPhase()) {
+    return null;
+  }
+
+  // 3. Explicit self-hosted persistent file storage (RELAY_STORAGE_PATH or RELAY_DATA_DIR)
+  if (!process.env.VERCEL && !process.env.CF_PAGES && hasExplicitFileStorageEnv()) {
+    try {
+      const { getFileKVAdapter } = await import('../storage/file-kv-adapter');
+      return getFileKVAdapter();
+    } catch {
+      return null;
+    }
+  }
+
+  // 4. Self-hosted PostgreSQL (multi-instance / Docker / VPS with DATABASE_URL)
+  if (canUseSelfHostedPostgres()) {
+    try {
+      const url = process.env.DATABASE_URL!.trim();
+      if (_pgKv && _pgKvUrl === url) return _pgKv;
+      const [{ getPostgresSql }, { PostgresKVAdapter }] = await Promise.all([
+        import('../db/client'),
+        import('../storage/postgres-kv-adapter'),
+      ]);
+      _pgKv = new PostgresKVAdapter(getPostgresSql());
+      _pgKvUrl = url;
+      return _pgKv;
+    } catch {
+      return null;
+    }
+  }
+
+  // 5. Development / Test in-memory mock
   if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
     if (!g._mockKVInstance) {
       g._mockKVInstance = createMemoryMockKV();
@@ -237,6 +342,16 @@ export async function getKV() {
     }
     _kv = g._mockKVInstance;
     return _kv;
+  }
+
+  // 6. Self-hosted single-node production default: persistent disk file (`./data/kv-store.json`)
+  if (canUseDefaultSelfHostedFileStorage()) {
+    try {
+      const { getFileKVAdapter } = await import('../storage/file-kv-adapter');
+      return getFileKVAdapter();
+    } catch {
+      return null;
+    }
   }
 
   return null;
@@ -1648,5 +1763,62 @@ export async function importStatsData(payload: Record<string, any>): Promise<voi
     }
   } catch {
     // Non-critical: D1 write failure should not fail the whole import
+  }
+
+  // On self-hosted Postgres, also sync daily_usage rows so relational trend/report queries match
+  if (canUseSelfHostedPostgres()) {
+    try {
+      const [{ getPostgresSql }, { ensureSelfHostedPostgresSchema }] = await Promise.all([
+        import('../db/client'),
+        import('../db/self-hosted-schema'),
+      ]);
+      const sql = getPostgresSql();
+      await ensureSelfHostedPostgresSchema(sql);
+
+      for (const [date, raw] of Object.entries(usageDaily as Record<string, any>)) {
+        if (!raw || typeof raw !== 'object') continue;
+        await sql`
+          INSERT INTO daily_usage (date, provider, requests, tokens, prompt_tokens, completion_tokens)
+          VALUES (
+            ${date},
+            '',
+            ${Number(raw.requests || 0)},
+            ${Number(raw.tokens || 0)},
+            ${Number(raw.promptTokens || 0)},
+            ${Number(raw.completionTokens || 0)}
+          )
+          ON CONFLICT (date, provider) DO UPDATE SET
+            requests = EXCLUDED.requests,
+            tokens = EXCLUDED.tokens,
+            prompt_tokens = EXCLUDED.prompt_tokens,
+            completion_tokens = EXCLUDED.completion_tokens
+        `;
+      }
+
+      for (const [provider, datesData] of Object.entries(usageProviderDaily as Record<string, Record<string, any>>)) {
+        if (!datesData || typeof datesData !== 'object') continue;
+        for (const [date, raw] of Object.entries(datesData)) {
+          if (!raw || typeof raw !== 'object') continue;
+          await sql`
+            INSERT INTO daily_usage (date, provider, requests, tokens, prompt_tokens, completion_tokens)
+            VALUES (
+              ${date},
+              ${provider},
+              ${Number(raw.requests || 0)},
+              ${Number(raw.tokens || 0)},
+              ${Number(raw.promptTokens || 0)},
+              ${Number(raw.completionTokens || 0)}
+            )
+            ON CONFLICT (date, provider) DO UPDATE SET
+              requests = EXCLUDED.requests,
+              tokens = EXCLUDED.tokens,
+              prompt_tokens = EXCLUDED.prompt_tokens,
+              completion_tokens = EXCLUDED.completion_tokens
+          `;
+        }
+      }
+    } catch {
+      // Non-critical: Postgres relational sync failure should not fail KV backup import
+    }
   }
 }

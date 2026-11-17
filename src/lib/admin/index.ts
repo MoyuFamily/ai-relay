@@ -1,5 +1,7 @@
 export {
   getKV,
+  detectStorageBackend,
+  type StorageBackendType,
   getGlobalConfigVersion,
   getManagedKeysVersion,
   getFallbackChain,

@@ -1,0 +1,26 @@
+# Dependencies & build outputs
+node_modules
+.next
+.open-next
+.wrangler
+out
+dist
+coverage
+
+# Git & editor metadata
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+
+# Local secrets & runtime state
+.env
+.env.*
+!.env.local.example
+data
+scratch
+*.log
+npm-debug.log*
+pnpm-debug.log*

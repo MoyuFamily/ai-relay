@@ -5,7 +5,8 @@
 import { withTimeout } from '@/lib/utils/timeout';
 import { getAllProviders } from '@/lib/providers';
 import type { TrendPoint } from '@/lib/usage';
-import { getCFEnvSync, getCFEnv } from '@/lib/cf-env';
+import { getCFEnvSync, getCFEnv, isCloudflareSync } from '@/lib/cf-env';
+import { getKV as getSharedKV } from '@/lib/admin/admin-config';
 
 export interface UsageDailyReport {
   date: string;
@@ -35,37 +36,19 @@ export const usageReportKeys = {
 };
 
 async function getKV() {
-  const g = global as any;
+  if (_kv) return _kv;
+  return getSharedKV();
+}
 
-  // Cloudflare Pages: use CF KV binding via CFKVAdapter
-  const cfEnv = getCFEnvSync() || await getCFEnv();
-  if (cfEnv?.KV) {
-    try {
-      const { CFKVAdapter } = await import('@/lib/admin/cf-kv-adapter');
-      return new CFKVAdapter(cfEnv.KV);
-    } catch {
-      return null;
-    }
-  }
-
-  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-    if (_kv && !_kv._isMock) return _kv;
-    try {
-      const mod = await import('@vercel/kv');
-      _kv = mod.kv || mod.createClient({
-        url: process.env.KV_REST_API_URL,
-        token: process.env.KV_REST_API_TOKEN,
-      });
-      return _kv;
-    } catch {
-      return null;
-    }
-  }
-  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
-    _kv = g._mockKVInstance || null;
-    return _kv;
-  }
-  return null;
+function canUseSelfHostedPostgresReports(): boolean {
+  if (isCloudflareSync()) return false;
+  if (process.env.NEXT_PHASE === 'phase-production-build') return false;
+  if (process.env.VERCEL || process.env.CF_PAGES) return false;
+  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) return false;
+  if (process.env.RELAY_STORAGE_PATH?.trim() || process.env.RELAY_DATA_DIR?.trim()) return false;
+  if (process.env.VITEST && process.env.RELAY_ENABLE_POSTGRES_IN_TEST !== '1') return false;
+  const url = process.env.DATABASE_URL?.trim() || '';
+  return /^postgres(ql)?:\/\//i.test(url);
 }
 
 function parseReport(raw: unknown): UsageDailyReport | null {
@@ -161,6 +144,80 @@ export async function aggregateUsageDailyReport(date: string): Promise<UsageDail
       };
     } catch {
       // Fall through to KV if D1 query fails
+    }
+  }
+
+  // Self-hosted PostgreSQL: usage is stored in relational `daily_usage` + `error_stats`
+  if (canUseSelfHostedPostgresReports()) {
+    try {
+      const [{ getPostgresSql }, { ensureSelfHostedPostgresSchema }] = await Promise.all([
+        import('@/lib/db/client'),
+        import('@/lib/db/self-hosted-schema'),
+      ]);
+      const sql = getPostgresSql();
+      await ensureSelfHostedPostgresSchema(sql);
+
+      const [usageRows, errorRows] = await Promise.all([
+        sql<Array<Record<string, unknown>>>`
+          SELECT provider, requests, tokens, prompt_tokens, completion_tokens
+          FROM daily_usage
+          WHERE date = ${date}
+        `,
+        sql<Array<{ total_errors: string | number | null }>>`
+          SELECT COALESCE(SUM(count), 0) AS total_errors
+          FROM error_stats
+          WHERE date = ${date}
+        `,
+      ]);
+
+      if (usageRows.length === 0) return null;
+
+      let totalRequests = 0;
+      let totalTokens = 0;
+      let promptTokens = 0;
+      let completionTokens = 0;
+      const byProvider: UsageDailyReport['byProvider'] = {};
+
+      for (const row of usageRows) {
+        const provider = String(row.provider ?? '');
+        if (provider === '') {
+          totalRequests = Number(row.requests ?? 0);
+          totalTokens = Number(row.tokens ?? 0);
+          promptTokens = Number(row.prompt_tokens ?? 0);
+          completionTokens = Number(row.completion_tokens ?? 0);
+        } else {
+          byProvider[provider] = {
+            requests: Number(row.requests ?? 0),
+            tokens: Number(row.tokens ?? 0),
+            promptTokens: Number(row.prompt_tokens ?? 0),
+            completionTokens: Number(row.completion_tokens ?? 0),
+          };
+        }
+      }
+
+      if (totalRequests === 0 && Object.keys(byProvider).length === 0) {
+        return null;
+      }
+
+      const totalErrors = Number(errorRows[0]?.total_errors ?? 0);
+      const denominator = totalRequests + totalErrors;
+      const errorRate = denominator > 0 ? Math.round((totalErrors / denominator) * 10000) / 10000 : 0;
+
+      return {
+        date,
+        summary: {
+          totalRequests,
+          totalTokens,
+          promptTokens,
+          completionTokens,
+          errorRate,
+          p95LatencyMs: null,
+        },
+        byProvider,
+        topModels: [],
+      };
+    } catch {
+      // Fall through to KV if Postgres query fails
     }
   }
 
