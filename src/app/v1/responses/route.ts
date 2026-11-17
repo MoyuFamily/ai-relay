@@ -10,10 +10,10 @@
 // ============================================================
 
 import { NextRequest } from 'next/server';
-import { validateAuth, relayRequest } from '@/lib/relay';
+import { validateAuth, relayRequest, validateBase64ImageSizes, validateRequestSize, validateContentLengthHeader } from '@/lib/relay';
 import { collectPassthroughHeaders } from '@/lib/relay/passthrough';
 import { RelayError } from '@/lib/errors';
-import { createUsageEvent } from '@/lib/usage';
+import { createUsageEvent, getBatchRecorder } from '@/lib/usage';
 import { createUsageStorage } from '@/lib/usage/factory';
 import { recordRequestLog } from '@/lib/observability/request-logs';
 import { chunkHasUsage, jsonStringFieldLength, createByteCountingStream, estimateCompletionTokensFromStreamBytes } from '@/lib/usage/stream-usage';
@@ -21,6 +21,8 @@ import { isCloudflareSync, runAfterResponse } from '@/lib/cf-env';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
+
+const batchRecorder = getBatchRecorder();
 
 /** Rough chars-per-token estimate for fallback */
 const CHARS_PER_TOKEN = 4;
@@ -111,8 +113,7 @@ function wrapStreamWithUsageTracking(
   model: string,
   startTime: number,
   requestPromptTokens: number,
-  traceId: string,
-  usageStorage: import('@/lib/usage/sdk').UsageStorage
+  traceId: string
 ): ReadableStream<Uint8Array> {
   const reader = upstreamBody.getReader();
   const decoder = new TextDecoder();
@@ -135,7 +136,7 @@ function wrapStreamWithUsageTracking(
       latencyMs,
       isStream: true,
     });
-    await usageStorage.record(event);
+    await batchRecorder.record(event);
     await recordRequestLog({
       traceId,
       timestamp: new Date().toISOString(),
@@ -257,6 +258,7 @@ function wrapStreamWithUsageTracking(
  */
 export async function POST(request: NextRequest) {
   const traceId = request.headers.get('x-request-id') || `trace_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const routeStartTime = Date.now();
   let requestedModel: string | undefined;
 
   // 1. Validate authentication
@@ -273,7 +275,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 1.5. Cheap O(1) Content-Length pre-check before buffering request body
+  const headerSizeCheck = validateContentLengthHeader(request.headers);
+  if (!headerSizeCheck.valid) {
+    return new Response(
+      JSON.stringify({
+        error: {
+          message: headerSizeCheck.error,
+          type: 'invalid_request_error',
+          code: 400,
+        },
+      }),
+      { status: 400, headers: { 'Content-Type': 'application/json', 'X-Request-ID': traceId } }
+    );
+  }
+
   const usageStorage = await createUsageStorage();
+  batchRecorder.setStorage(usageStorage as any);
 
   // 2. Parse request body
   // On Cloudflare Free, keep the original request text so the relay can forward
@@ -302,6 +320,22 @@ export async function POST(request: NextRequest) {
         },
       }),
       { status: 400, headers: { 'Content-Type': 'application/json' } }
+    );
+  }
+
+  const sizeCheck = onCloudflare
+    ? validateRequestSize(rawBody?.length ?? 0)
+    : validateBase64ImageSizes(body);
+  if (!sizeCheck.valid) {
+    return new Response(
+      JSON.stringify({
+        error: {
+          message: sizeCheck.error,
+          type: 'invalid_request_error',
+          code: 400,
+        },
+      }),
+      { status: 400, headers: { 'Content-Type': 'application/json', 'X-Request-ID': traceId } }
     );
   }
 
@@ -402,7 +436,7 @@ export async function POST(request: NextRequest) {
             isStream: true,
           });
           runAfterResponse(async () => {
-            await usageStorage.record(event);
+            await batchRecorder.record(event);
             await recordRequestLog({
               traceId,
               timestamp: new Date().toISOString(),
@@ -427,6 +461,7 @@ export async function POST(request: NextRequest) {
             'Connection': 'keep-alive',
             'X-Relay-Provider': provider.name,
             'X-Relay-Key': apiKey.hash,
+            'X-Request-ID': traceId,
           },
         });
       }
@@ -438,8 +473,7 @@ export async function POST(request: NextRequest) {
         body.model,
         startTime,
         estimatedPromptTokens,
-        traceId,
-        usageStorage
+        traceId
       );
       return new Response(wrappedBody, {
         status: response.status,
@@ -449,6 +483,7 @@ export async function POST(request: NextRequest) {
           'Connection': 'keep-alive',
           'X-Relay-Provider': provider.name,
           'X-Relay-Key': apiKey.hash,
+          'X-Request-ID': traceId,
         },
       });
     } else {
@@ -480,7 +515,7 @@ export async function POST(request: NextRequest) {
             latencyMs,
             isStream: false,
           });
-          await usageStorage.record(event);
+          await batchRecorder.record(event);
           await recordRequestLog({
             traceId,
             timestamp: new Date().toISOString(),
@@ -498,6 +533,22 @@ export async function POST(request: NextRequest) {
         } catch (e) {
           console.error('[Usage] responses non-stream track failed:', e);
         }
+      } else {
+        runAfterResponse(() =>
+          recordRequestLog({
+            traceId,
+            timestamp: new Date().toISOString(),
+            apiKeyHash: apiKey.hash,
+            model: body.model,
+            provider: provider.name,
+            status: 'error',
+            httpStatus: response.status,
+            latencyMs,
+            isStream: Boolean(body.stream),
+            errorType: 'upstream_error',
+            errorMessage: responseBody.slice(0, 500),
+          })
+        );
       }
 
       return new Response(responseBody, {
@@ -506,16 +557,46 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
           'X-Relay-Provider': provider.name,
           'X-Relay-Key': apiKey.hash,
+          'X-Request-ID': traceId,
         },
       });
     }
   } catch (error) {
+    const errLatencyMs = Date.now() - routeStartTime;
     if (error instanceof RelayError) {
-      return error.toResponse();
+      runAfterResponse(() =>
+        recordRequestLog({
+          traceId,
+          timestamp: new Date().toISOString(),
+          model: requestedModel,
+          status: 'error',
+          httpStatus: error.status,
+          latencyMs: errLatencyMs,
+          isStream: Boolean(body?.stream),
+          errorType: error.type,
+          errorMessage: error.message,
+        })
+      );
+      const res = error.toResponse();
+      res.headers.set('X-Request-ID', traceId);
+      return res;
     }
 
     // Handle Responses API specific errors (e.g., Anthropic provider not supported)
     if (error instanceof Error && error.message.includes('not supported for Anthropic')) {
+      runAfterResponse(() =>
+        recordRequestLog({
+          traceId,
+          timestamp: new Date().toISOString(),
+          model: requestedModel,
+          status: 'error',
+          httpStatus: 400,
+          latencyMs: errLatencyMs,
+          isStream: Boolean(body?.stream),
+          errorType: 'invalid_request_error',
+          errorMessage: error.message,
+        })
+      );
       return new Response(
         JSON.stringify({
           error: {
@@ -524,11 +605,24 @@ export async function POST(request: NextRequest) {
             code: 400,
           },
         }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
+        { status: 400, headers: { 'Content-Type': 'application/json', 'X-Request-ID': traceId } }
       );
     }
 
     console.error('Relay error:', error);
+    runAfterResponse(() =>
+      recordRequestLog({
+        traceId,
+        timestamp: new Date().toISOString(),
+        model: requestedModel,
+        status: 'error',
+        httpStatus: 500,
+        latencyMs: errLatencyMs,
+        isStream: Boolean(body?.stream),
+        errorType: 'server_error',
+        errorMessage: error instanceof Error ? error.message : String(error),
+      })
+    );
     return new Response(
       JSON.stringify({
         error: {
@@ -537,7 +631,7 @@ export async function POST(request: NextRequest) {
           code: 500,
         },
       }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { 'Content-Type': 'application/json', 'X-Request-ID': traceId } }
     );
   }
 }

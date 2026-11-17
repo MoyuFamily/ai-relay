@@ -20,20 +20,26 @@ import { withConcurrency } from './concurrency';
 import { smartRoute, recordProviderResult, isSmartRoutingConfigured } from '../smart-routing';
 import { isCloudflareSync } from '../cf-env';
 
-// Module-level cached storage instance for error recording.
-// Falls back to KVUsageStorage synchronously on first call to avoid
-// blocking the hot path; replaced with the correct backend after the
-// first async resolution completes.
-let _errorStorage: { recordError: (e: any) => Promise<void> } | null = null;
-
+// Resolve usage/error storage per call instead of caching at module scope:
+// on Cloudflare Workers, D1 bindings come from request-scoped AsyncLocalStorage
+// (`getCloudflareContext()`), so reusing a D1UsageStorage across requests would
+// violate workerd's cross-request I/O isolation.
 async function getErrorStorage() {
-  if (_errorStorage) return _errorStorage;
   try {
-    _errorStorage = await createUsageStorage();
+    return await createUsageStorage();
   } catch {
-    _errorStorage = new KVUsageStorage();
+    return new KVUsageStorage();
   }
-  return _errorStorage;
+}
+
+async function cancelResponseBody(response: Response | null | undefined): Promise<void> {
+  try {
+    if (response?.body && typeof response.body.cancel === 'function') {
+      await response.body.cancel();
+    }
+  } catch {
+    // Ignore already-consumed or mocked response streams
+  }
 }
 
 type RelayApiType = 'chat' | 'responses' | 'anthropicMessages';
@@ -121,7 +127,10 @@ function getUserAgentCandidates(provider: ProviderConfig): Array<string | undefi
 }
 
 function shouldRetryWithAlternateUserAgent(response: Response): boolean {
-  return (response.headers.get('content-type') || '').includes('text/html');
+  const contentType = typeof response?.headers?.get === 'function'
+    ? (response.headers.get('content-type') || '')
+    : '';
+  return contentType.includes('text/html');
 }
 
 async function fetchUpstreamWithUserAgentCandidates(input: {
@@ -142,7 +151,10 @@ async function fetchUpstreamWithUserAgentCandidates(input: {
   let lastResponse: Response | null = null;
   const timeoutMs = getUpstreamTimeoutMs();
 
-  for (const customUserAgent of getUserAgentCandidates(input.provider)) {
+  const uaCandidates = getUserAgentCandidates(input.provider);
+
+  for (let idx = 0; idx < uaCandidates.length; idx++) {
+    const customUserAgent = uaCandidates[idx];
     const controller = timeoutMs > 0 ? new AbortController() : null;
     let timedOut = false;
     const timer = controller
@@ -172,6 +184,11 @@ async function fetchUpstreamWithUserAgentCandidates(input: {
     lastResponse = response;
     if (!shouldRetryWithAlternateUserAgent(response)) {
       return response;
+    }
+    // Release socket before retrying with the next User-Agent candidate
+    // (skip on the final candidate so the caller can still inspect lastResponse).
+    if (idx < uaCandidates.length - 1) {
+      await cancelResponseBody(response);
     }
   }
 
@@ -553,6 +570,7 @@ async function tryProviderWithRetries(
 
       // 429 → record in rate limiter + try next key
       if (upstreamResponse.status === 429) {
+        await cancelResponseBody(upstreamResponse);
         await record429(provider.name);
         await markCooldown(currentKey);
         await recordError(provider.name, currentKey.hash, 429, 'Rate limited by upstream');
@@ -568,6 +586,7 @@ async function tryProviderWithRetries(
 
       // 401/403 → key invalid/expired, rotate to next key
       if (upstreamResponse.status === 401 || upstreamResponse.status === 403) {
+        await cancelResponseBody(upstreamResponse);
         await markCooldown(currentKey);
         await recordError(provider.name, currentKey.hash, upstreamResponse.status, 'Auth failed — key invalid or expired');
         if (smartRoutingConfigured) recordProviderResult(provider.name, false, latencyMs, upstreamResponse.status);
@@ -582,6 +601,7 @@ async function tryProviderWithRetries(
 
       // 5xx → try next key (but don't count as 429 for circuit breaker)
       if (upstreamResponse.status >= 500) {
+        await cancelResponseBody(upstreamResponse);
         await markCooldown(currentKey);
         await recordError(provider.name, currentKey.hash, upstreamResponse.status, 'Upstream server error');
         if (smartRoutingConfigured) recordProviderResult(provider.name, false, latencyMs, upstreamResponse.status);
@@ -613,6 +633,10 @@ async function tryProviderWithRetries(
           markCooldown(currentKey);
           await recordError(provider.name, currentKey.hash, 504, `Upstream timeout after ${error.timeoutMs}ms`);
         }
+        // Fail fast with 504 without attempting fallback providers: on Vercel
+        // (maxDuration=60s) and CF Pages, DEFAULT_UPSTREAM_TIMEOUT_MS=50s leaves
+        // just enough headroom to return a structured JSON 504 before the platform
+        // hard-kills the function.
         throw new RelayError(
           `${provider.displayName} timed out after ${error.timeoutMs}ms while waiting for upstream response.`,
           'upstream_error',

@@ -5,6 +5,7 @@
 
 import { getAllProviders } from '@/lib/providers';
 import { getKeyPoolStats, initAllKeyPools } from '@/lib/relay';
+import pkg from '../../../package.json';
 
 export const runtime = 'nodejs';
 
@@ -44,7 +45,7 @@ export async function GET() {
         ms: uptimeMs,
         human: formatUptime(uptimeMs),
       },
-      version: '1.1.0',
+      version: pkg.version,
       providers: {
         configured: configuredProviders,
         total: Object.keys(allProviders).length,
@@ -55,6 +56,8 @@ export async function GET() {
       },
       features: [
         'chat/completions',
+        'messages',
+        'responses',
         'models',
         'streaming',
         'multi-key-rotation',
@@ -67,7 +70,7 @@ export async function GET() {
       status: isHealthy ? 200 : 503,
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'X-Relay-Version': '1.1.0',
+        'X-Relay-Version': pkg.version,
       },
     }
   );

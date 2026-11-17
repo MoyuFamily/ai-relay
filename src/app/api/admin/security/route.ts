@@ -60,11 +60,9 @@ export async function GET(request: NextRequest) {
   let needsRotation = 0;
 
   for (const [providerId, stats] of Object.entries(providerStats)) {
-    const stat = stats as { total: number; available: number; keyHashes: string[] };
+    const stat = stats as { total: number; available: number; keyHashes: string[]; cooldownKeyHashes?: string[] };
+    const cooldownSet = new Set(stat.cooldownKeyHashes || []);
     totalKeys += stat.total;
-
-    const providerErrors = errorStats[providerId] || {};
-    const totalProviderErrors = Object.values(providerErrors).reduce((sum, v) => sum + v, 0);
 
     for (let i = 0; i < stat.keyHashes.length; i++) {
       const keyHash = stat.keyHashes[i];
@@ -85,8 +83,7 @@ export async function GET(request: NextRequest) {
         status = 'warning';
       }
 
-      const isAvailable = stat.available > 0 && i < stat.available;
-      if (!isAvailable && status === 'healthy') {
+      if (cooldownSet.has(keyHash) && status === 'healthy') {
         status = 'cooldown';
       }
 
