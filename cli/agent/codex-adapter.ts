@@ -79,7 +79,7 @@ requires_openai_auth = true
   async doctor(): Promise<DoctorResult> {
     const detection = await this.detect();
 
-    const checks = [
+    const checks: DoctorResult['checks'] = [
       {
         name: 'Codex installed',
         status: detection.installed ? 'pass' : 'fail',
