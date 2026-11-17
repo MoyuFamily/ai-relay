@@ -31,10 +31,22 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm run type-check
 
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test
+
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint, type-check]
+    needs: [lint, type-check, test]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
