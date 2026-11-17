@@ -3,6 +3,7 @@
 // ============================================================
 
 import { withTimeout } from '@/lib/utils/timeout';
+import { getKV as getSharedKV } from '@/lib/admin/admin-config';
 
 export type ProviderHealthStatus = 'healthy' | 'degraded' | 'down' | 'unknown';
 
@@ -34,7 +35,6 @@ export interface ProbeResultInput {
 
 interface CacheEntry<T> { data: T; expiresAt: number }
 
-let _kv: any = null;
 const CACHE_TTL_MS = 60_000;
 const HISTORY_TTL_SECONDS = 7 * 24 * 60 * 60;
 const cache = new Map<string, CacheEntry<unknown>>();
@@ -61,28 +61,7 @@ export const healthKeys = {
 };
 
 async function getKV() {
-  const g = global as any;
-  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-    if (_kv && !_kv._isMock) return _kv;
-    try {
-      const mod = await import('@vercel/kv');
-      _kv = mod.kv || mod.createClient({
-        url: process.env.KV_REST_API_URL,
-        token: process.env.KV_REST_API_TOKEN,
-      });
-      return _kv;
-    } catch {
-      return null;
-    }
-  }
-
-  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
-    if (!g._mockKVInstance) return null;
-    _kv = g._mockKVInstance;
-    return _kv;
-  }
-
-  return null;
+  return getSharedKV();
 }
 
 function parseRecord(raw: unknown): ProviderHealthRecord | null {
@@ -171,6 +150,5 @@ export async function getProviderHealthSnapshot(providerIds: string[] = []): Pro
 export const __healthStoreForTests = {
   clearCache(): void {
     clearHealthCache();
-    _kv = null;
   },
 };

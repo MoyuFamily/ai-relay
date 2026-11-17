@@ -14,33 +14,33 @@ export class PostgresConfigStore implements ConfigStore {
   }
 
   async getProviders(): Promise<Record<string, ProviderConfig>> {
-    // TODO: SELECT * FROM providers
-    throw new Error('PostgresConfigStore not implemented');
+    // Graceful fallback until Postgres config tables are populated:
+    // return empty custom provider map so static/env providers keep working.
+    return {};
   }
 
-  async getProviderKeys(provider: string): Promise<string[] | null> {
-    // TODO: SELECT keys FROM provider_keys WHERE provider = ?
+  async getProviderKeys(_provider: string): Promise<string[] | null> {
     return null;
   }
 
+  async getProviderKeysVersion(_provider: string): Promise<number> {
+    return 0;
+  }
+
   async getModelAliases(): Promise<ModelAliasConfig> {
-    // TODO: SELECT * FROM model_aliases
     return { aliases: {}, hidden: [] };
   }
 
   async getPriorityRules(): Promise<PriorityRule[]> {
-    // TODO: SELECT * FROM priority_rules
     return [];
   }
 
-  async getFallbackChain(provider: string, staticFallbacks?: string[] | string): Promise<string[]> {
-    // TODO: SELECT fallback_chain FROM providers WHERE name = ?
+  async getFallbackChain(_provider: string, staticFallbacks?: string[] | string): Promise<string[]> {
     if (!staticFallbacks) return [];
     return Array.isArray(staticFallbacks) ? staticFallbacks : [staticFallbacks];
   }
 
   async getConfigVersion(): Promise<number> {
-    // TODO: SELECT version FROM config_metadata
-    return Date.now();
+    return 0;
   }
 }

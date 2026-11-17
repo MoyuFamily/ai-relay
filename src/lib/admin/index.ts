@@ -1,4 +1,7 @@
 export {
+  getKV,
+  getGlobalConfigVersion,
+  getManagedKeysVersion,
   getFallbackChain,
   setFallbackChain,
   detectFallbackCycle,

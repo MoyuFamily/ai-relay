@@ -2,6 +2,8 @@
 // AI Relay — Runtime Capabilities
 // ============================================================
 
+import { isCloudflareSync } from '../cf-env';
+
 export interface RuntimeCapabilities {
   runtime: 'vercel' | 'cloudflare' | 'local' | 'server';
   persistentProcess: boolean;
@@ -11,7 +13,7 @@ export interface RuntimeCapabilities {
 }
 
 export function detectRuntime(): RuntimeCapabilities {
-  if (process.env.VERCEL) {
+  if (process.env.VERCEL || process.env.VERCEL_ENV) {
     return {
       runtime: 'vercel',
       persistentProcess: false,
@@ -21,7 +23,9 @@ export function detectRuntime(): RuntimeCapabilities {
     };
   }
 
-  if (process.env.CF_PAGES) {
+  // Detect Cloudflare via request-scoped OpenNext context at runtime,
+  // falling back to CF_PAGES during Cloudflare Pages build steps.
+  if (isCloudflareSync() || process.env.CF_PAGES) {
     return {
       runtime: 'cloudflare',
       persistentProcess: false,
@@ -31,7 +35,18 @@ export function detectRuntime(): RuntimeCapabilities {
     };
   }
 
-  // Assume local if running via CLI
+  const dbUrl = process.env.DATABASE_URL || '';
+  if (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) {
+    return {
+      runtime: 'server',
+      persistentProcess: true,
+      publicEndpoint: true,
+      localAgentSetup: false,
+      storage: 'postgres',
+    };
+  }
+
+  // Local CLI / standalone Node process
   return {
     runtime: 'local',
     persistentProcess: true,

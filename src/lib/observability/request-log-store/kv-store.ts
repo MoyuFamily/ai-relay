@@ -1,7 +1,7 @@
 // ============================================================
-// AI API Relay — KV/D1 Request Log Store
+// AI API Relay — KV Request Log Store (Vercel KV & Cloudflare KV)
 // ============================================================
-// Backs request logs with Vercel KV (on Vercel) or Cloudflare D1 via
+// Backs request logs with Vercel KV (on Vercel) or Cloudflare KV via
 // CFKVAdapter (on CF Pages). Reuses admin-config's getKV() for environment
 // detection and unified access.
 
@@ -13,13 +13,41 @@ const CAPTURE_FLAG_KEY = 'request_log_capture_enabled';
 const DEFAULT_MAX_ENTRIES = 100;
 const PRUNE_INTERVAL = 10; // Prune every N appends instead of every append
 
+async function scanLogKeys(kv: any): Promise<string[]> {
+  const seen = new Set<string>();
+  let cursor: number | string = 0;
+  let guard = 0;
+
+  do {
+    const result: [number | string, unknown] = await kv.scan(cursor, { match: `${PREFIX}*`, count: 100 });
+    if (!Array.isArray(result) || result.length < 2) break;
+    const [nextCursor, batch] = result;
+    if (Array.isArray(batch)) {
+      for (const item of batch) {
+        if (typeof item === 'string' && item.startsWith(PREFIX)) {
+          seen.add(item);
+        }
+      }
+    }
+    cursor = nextCursor;
+    guard++;
+  } while (cursor !== 0 && cursor !== '0' && guard < 50);
+
+  return Array.from(seen);
+}
+
 export class KVRequestLogStore implements RequestLogStore {
-  private maxEntries: number;
+  private defaultMaxEntries: number;
   private appendCount: number = 0;
 
   constructor() {
     const userMax = parseInt(process.env.REQUEST_LOGS_MAX_ENTRIES || '', 10);
-    this.maxEntries = isNaN(userMax) ? DEFAULT_MAX_ENTRIES : userMax;
+    this.defaultMaxEntries = isNaN(userMax) ? DEFAULT_MAX_ENTRIES : Math.max(1, userMax);
+  }
+
+  private getMaxEntries(): number {
+    const userMax = parseInt(process.env.REQUEST_LOGS_MAX_ENTRIES || '', 10);
+    return isNaN(userMax) ? this.defaultMaxEntries : Math.max(1, userMax);
   }
 
   async append(log: RequestLogEntry): Promise<void> {
@@ -29,15 +57,17 @@ export class KVRequestLogStore implements RequestLogStore {
     if (!kv) return;
 
     try {
-      // Key: request_log:<timestamp>:<traceId> for time-ordered listing
-      const key = `${PREFIX}${Date.now()}:${log.traceId}`;
+      // Pad epoch ms to 13 digits so lexicographical key order == chronological order
+      const ts = String(Date.now()).padStart(13, '0');
+      const key = `${PREFIX}${ts}:${log.traceId}`;
       // Store with 7-day TTL
       await kv.set(key, JSON.stringify(log), { ex: 7 * 24 * 60 * 60 });
 
-      // Prune old entries every PRUNE_INTERVAL appends (not every append)
+      // Prune old entries every PRUNE_INTERVAL appends (or immediately when cap is small)
       this.appendCount++;
-      if (this.appendCount % PRUNE_INTERVAL === 0) {
-        await this.pruneIfNeeded(kv);
+      const maxEntries = this.getMaxEntries();
+      if (maxEntries <= PRUNE_INTERVAL || this.appendCount % PRUNE_INTERVAL === 0) {
+        await this.pruneIfNeeded(kv, maxEntries);
       }
     } catch (err) {
       // Non-critical: log append failures don't block the request
@@ -50,25 +80,37 @@ export class KVRequestLogStore implements RequestLogStore {
     if (!kv) return [];
 
     try {
-      // Scan all request_log:* keys (CFKVAdapter and Vercel KV both support scan)
-      const keys = await kv.scan(`${PREFIX}*`);
-      if (!keys || keys.length === 0) return [];
+      const keys = await scanLogKeys(kv);
+      if (keys.length === 0) return [];
 
-      // Fetch all in parallel
-      const values = await Promise.all(
-        (keys as string[]).map((k: string) => kv.get(k).catch(() => null))
+      // Keys embed zero-padded epoch ms; sort newest-first before reading values
+      keys.sort().reverse();
+
+      const hasFieldFilter = Boolean(
+        (filters?.status && filters.status !== 'all') || filters?.provider
       );
+      const targetKeys =
+        !hasFieldFilter && filters?.limit && filters.limit > 0
+          ? keys.slice(0, filters.limit)
+          : keys;
+
+      // Batch fetch via mget when available (1 Upstash HTTP call instead of N,
+      // and concurrency-bounded on CFKVAdapter).
+      const values: unknown[] =
+        typeof kv.mget === 'function'
+          ? await kv.mget(targetKeys)
+          : await Promise.all(targetKeys.map((k) => kv.get(k).catch(() => null)));
 
       let logs: RequestLogEntry[] = values
-        .filter((v) => v !== null)
+        .filter((v) => v !== null && v !== undefined)
         .map((v) => {
           try {
-            return typeof v === 'string' ? JSON.parse(v) : v;
+            return typeof v === 'string' ? JSON.parse(v) : (v as RequestLogEntry);
           } catch {
             return null;
           }
         })
-        .filter((log): log is RequestLogEntry => log !== null);
+        .filter((log): log is RequestLogEntry => log !== null && typeof log === 'object');
 
       // Sort by timestamp DESC (newest first)
       logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -96,10 +138,12 @@ export class KVRequestLogStore implements RequestLogStore {
     if (!kv) return;
 
     try {
-      const keys = await kv.scan(`${PREFIX}*`);
-      if (keys && keys.length > 0) {
-        await Promise.all((keys as string[]).map((k: string) => kv.del(k)));
+      const keys = await scanLogKeys(kv);
+      if (keys.length > 0) {
+        await kv.del(...keys);
       }
+      await kv.del(CAPTURE_FLAG_KEY);
+      this.appendCount = 0;
     } catch (err) {
       console.error('[RequestLogStore] clear failed:', err);
     }
@@ -111,7 +155,8 @@ export class KVRequestLogStore implements RequestLogStore {
 
     try {
       const flag = await kv.get(CAPTURE_FLAG_KEY);
-      return flag === '1';
+      // Both @vercel/kv and CFKVAdapter auto-deserialize JSON `'1'` into `1`
+      return flag === '1' || flag === 1 || flag === true;
     } catch {
       return false;
     }
@@ -128,15 +173,17 @@ export class KVRequestLogStore implements RequestLogStore {
     }
   }
 
-  private async pruneIfNeeded(kv: any): Promise<void> {
+  private async pruneIfNeeded(kv: any, maxEntries = this.getMaxEntries()): Promise<void> {
     try {
-      const keys = await kv.scan(`${PREFIX}*`);
-      if (!keys || keys.length <= this.maxEntries) return;
+      const keys = await scanLogKeys(kv);
+      if (keys.length <= maxEntries) return;
 
-      // Sort keys by timestamp (embedded in key) and delete oldest
+      // Sort keys ascending (oldest first) and delete excess
       const sorted = keys.sort();
-      const toDelete = sorted.slice(0, keys.length - this.maxEntries);
-      await Promise.all(toDelete.map((k: string) => kv.del(k)));
+      const toDelete = sorted.slice(0, keys.length - maxEntries);
+      if (toDelete.length > 0) {
+        await kv.del(...toDelete);
+      }
     } catch {
       // Best-effort pruning
     }

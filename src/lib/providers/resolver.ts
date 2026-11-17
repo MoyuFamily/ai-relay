@@ -62,7 +62,7 @@ export async function getAllProviders(forceRefresh = false): Promise<Record<stri
   }
   try {
     const store = getDefaultConfigStore();
-    const custom = await store.getProviders();
+    const custom = await store.getProviders(forceRefresh);
     const merged = { ...PROVIDERS };
     for (const [name, config] of Object.entries(custom)) {
       merged[name] = {
@@ -75,7 +75,9 @@ export async function getAllProviders(forceRefresh = false): Promise<Record<stri
     return merged;
   } catch (err) {
     console.error('[getAllProviders] Error loading custom providers:', err);
-    return PROVIDERS;
+    cachedProviders = cachedProviders ?? { ...PROVIDERS };
+    cacheTimestamp = now;
+    return cachedProviders;
   }
 }
 

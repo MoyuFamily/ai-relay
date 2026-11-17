@@ -6,6 +6,7 @@
 import { NextRequest } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin';
 import { getAllProviders } from '@/lib/providers';
+import { normalizeUpstreamBase } from '@/lib/providers/resolver';
 import type { ProviderConfig } from '@/lib/providers';
 import { getKeyPool } from '@/lib/relay/key-pool';
 import { buildHeaders } from '@/lib/relay/transform';
@@ -38,13 +39,19 @@ async function probeProvider(provider: ProviderConfig): Promise<{
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   const started = Date.now();
+  const rawBase = (provider.envBaseUrlField ? process.env[provider.envBaseUrlField] : undefined) || provider.baseUrl;
+  const normalizedBase = provider.headerFormat === 'anthropic'
+    ? normalizeUpstreamBase(rawBase)
+    : rawBase.trim().replace(/\/+$/, '');
   try {
-    const res = await fetch(`${provider.baseUrl.replace(/\/$/, '')}/models`, {
+    const res = await fetch(`${normalizedBase}/models`, {
       method: 'GET',
       headers: buildHeaders(provider.headerFormat, key.key, false, undefined, provider.userAgent),
       signal: controller.signal,
     });
     const responseTimeMs = Date.now() - started;
+    // Release the outbound stream immediately (Cloudflare Workers 6-socket cap)
+    res.body?.cancel?.().catch(() => {});
     return {
       ok: res.ok,
       statusCode: res.status,

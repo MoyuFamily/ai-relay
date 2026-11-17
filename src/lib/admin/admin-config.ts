@@ -68,14 +68,16 @@ export function createMemoryMockKV() {
       const keys = Array.isArray(keysOrArray[0]) ? keysOrArray[0] as string[] : keysOrArray as string[];
       return keys.map((key) => store.get(key) ?? null);
     },
-    async set(key: string, value: any) {
+    async set(key: string, value: any, _options?: { ex?: number }) {
       store.set(key, value);
       return 'OK';
     },
-    async del(key: string) {
-      const existed = store.has(key);
-      store.delete(key);
-      return existed ? 1 : 0;
+    async del(...keys: string[]) {
+      let deleted = 0;
+      for (const key of keys) {
+        if (store.delete(key)) deleted++;
+      }
+      return deleted;
     },
     async hgetall(key: string) {
       const val = store.get(key);
@@ -136,15 +138,20 @@ export function createMemoryMockKV() {
       store.set(key, next);
       return next;
     },
-    async sadd(key: string, member: string) {
+    async sadd(key: string, ...members: string[]) {
       let current = store.get(key);
       if (!(current instanceof Set)) {
         current = new Set();
         store.set(key, current);
       }
-      const existed = current.has(member);
-      current.add(member);
-      return existed ? 0 : 1;
+      let added = 0;
+      for (const member of members) {
+        if (!current.has(member)) {
+          current.add(member);
+          added++;
+        }
+      }
+      return added;
     },
     async smembers(key: string) {
       const current = store.get(key);
@@ -153,12 +160,14 @@ export function createMemoryMockKV() {
       }
       return [];
     },
-    async srem(key: string, member: string) {
+    async srem(key: string, ...members: string[]) {
       const current = store.get(key);
       if (current instanceof Set) {
-        const existed = current.has(member);
-        current.delete(member);
-        return existed ? 1 : 0;
+        let removed = 0;
+        for (const member of members) {
+          if (current.delete(member)) removed++;
+        }
+        return removed;
       }
       return 0;
     },
@@ -239,10 +248,54 @@ const PREFIX = {
   fallbacks: 'admin:fallbacks:',   // admin:fallbacks:{provider} → JSON string[]
   keys: 'admin:keys:',             // admin:keys:{provider} → JSON string[] (raw API keys)
   keyVersion: 'admin:keys:version:', // admin:keys:version:{provider} → monotonically increasing number
+  configVersion: 'admin:config:version', // global monotonic version for config snapshots
   quota: 'admin:quota',            // admin:quota → Hash { dailyLimit, monthlyLimit }
   modelAliases: 'relay:models:aliases', // relay:models:aliases → JSON { aliases, hidden }
   priorityRules: 'relay:priority:rules', // relay:priority:rules → JSON PriorityRule[]
 } as const;
+
+export async function getGlobalConfigVersion(forceRefresh = false): Promise<number> {
+  const cacheKey = 'configVersion';
+  if (!forceRefresh) {
+    const cached = getCached<number>(cacheKey);
+    if (cached !== null) return cached;
+  }
+
+  const kv = await getKV();
+  if (!kv) return 0;
+
+  try {
+    const raw = await withTimeout(
+      kv.get(PREFIX.configVersion),
+      1000,
+      null,
+      'getGlobalConfigVersion'
+    );
+    const version = Number(raw || 0);
+    setCached(cacheKey, version, CONFIG_CACHE_TTL_MS);
+    return version;
+  } catch {
+    return 0;
+  }
+}
+
+async function bumpGlobalConfigVersion(kv?: any): Promise<number> {
+  const client = kv || await getKV();
+  if (!client) return 0;
+  try {
+    if (typeof client.incr === 'function') {
+      const next = Number(await client.incr(PREFIX.configVersion));
+      clearCache('configVersion');
+      return next;
+    }
+    const next = Number(await client.get(PREFIX.configVersion) || 0) + 1;
+    await client.set(PREFIX.configVersion, next);
+    clearCache('configVersion');
+    return next;
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * Safely parses values retrieved from KV, handling both raw JSON strings
@@ -316,6 +369,7 @@ export async function savePriorityRules(rulesInput: unknown): Promise<PriorityRu
   }
   const store: PriorityRulesStore = { version: 1, rules, updatedAt: Date.now() };
   await kv.set(PREFIX.priorityRules, store);
+  await bumpGlobalConfigVersion(kv);
   clearCache('priorityRules');
   return rules;
 }
@@ -397,6 +451,7 @@ export async function saveModelAliasConfig(configInput: ModelAliasConfig): Promi
     throw new Error('KV storage not configured — cannot persist model aliases');
   }
   await kv.set(PREFIX.modelAliases, JSON.stringify(config));
+  await bumpGlobalConfigVersion(kv);
   clearCache('modelAliases');
   return config;
 }
@@ -533,6 +588,7 @@ export async function setFallbackChain(
     throw new Error('KV storage not configured — cannot persist fallback overrides');
   }
   await kv.set(`${PREFIX.fallbacks}${providerName}`, JSON.stringify(chain));
+  await bumpGlobalConfigVersion(kv);
   clearCache(`fallback:${providerName}`);
 }
 
@@ -543,6 +599,7 @@ export async function clearFallbackChain(providerName: string): Promise<void> {
   const kv = await getKV();
   if (!kv) return;
   await kv.del(`${PREFIX.fallbacks}${providerName}`);
+  await bumpGlobalConfigVersion(kv);
   clearCache(`fallback:${providerName}`);
 }
 
@@ -552,29 +609,39 @@ export async function clearFallbackChain(providerName: string): Promise<void> {
  * Get managed API keys for a provider.
  * Returns KV override if set, otherwise null (caller should use env vars).
  */
-export async function getManagedKeys(providerName: string, forceRefresh = false): Promise<string[] | null> {
+const TIMEOUT_OR_ERROR = Symbol('kv_timeout_or_error');
+
+export async function getManagedKeys(
+  providerName: string,
+  forceRefresh = false,
+  options?: { throwOnError?: boolean }
+): Promise<string[] | null> {
   const cacheKey = `keys:${providerName}`;
   const cached = forceRefresh ? { hit: false as const } : getCachedEntry<string[] | null>(cacheKey);
   if (cached.hit) return cached.data;
 
   const kv = await getKV();
   if (kv) {
-    try {
-      const raw = await withTimeout(
-        kv.get(`${PREFIX.keys}${providerName}`),
-        1000,
-        null,
-        `getManagedKeys:${providerName}`
-      );
-      if (raw) {
-        const parsed = parseJsonOrArray(raw);
-        if (parsed) {
-          setCached(cacheKey, parsed);
-          return parsed;
-        }
+    const raw = await withTimeout<unknown>(
+      kv.get(`${PREFIX.keys}${providerName}`),
+      1000,
+      TIMEOUT_OR_ERROR,
+      `getManagedKeys:${providerName}`
+    );
+    if (raw === TIMEOUT_OR_ERROR) {
+      // Do NOT poison configCache with `null` on transient KV errors/timeouts.
+      if (options?.throwOnError) {
+        throw new Error(`KV error reading managed keys for ${providerName}`);
       }
-    } catch {
-      // KV unavailable — fall through to return null
+      const stale = getCachedEntry<string[] | null>(cacheKey);
+      return stale.hit ? stale.data : null;
+    }
+    if (raw) {
+      const parsed = parseJsonOrArray(raw);
+      if (parsed) {
+        setCached(cacheKey, parsed);
+        return parsed;
+      }
     }
     setCached(cacheKey, null);
     return null;
@@ -582,22 +649,28 @@ export async function getManagedKeys(providerName: string, forceRefresh = false)
   return null;
 }
 
-export async function getManagedKeysVersion(providerName: string): Promise<number> {
+export async function getManagedKeysVersion(
+  providerName: string,
+  options?: { forceRefresh?: boolean; throwOnError?: boolean }
+): Promise<number> {
   const cacheKey = `keyVersion:${providerName}`;
-  const cached = getCached<number>(cacheKey);
-  if (cached !== null) return cached;
+  if (!options?.forceRefresh) {
+    const cached = getCached<number>(cacheKey);
+    if (cached !== null) return cached;
+  }
 
   const kv = await getKV();
   if (!kv) return 0;
-  let raw: any;
-  try {
-    raw = await withTimeout(
-      kv.get(`${PREFIX.keyVersion}${providerName}`),
-      1000,
-      null,
-      `getManagedKeysVersion:${providerName}`
-    );
-  } catch {
+  const raw = await withTimeout<unknown>(
+    kv.get(`${PREFIX.keyVersion}${providerName}`),
+    1000,
+    TIMEOUT_OR_ERROR,
+    `getManagedKeysVersion:${providerName}`
+  );
+  if (raw === TIMEOUT_OR_ERROR) {
+    if (options?.throwOnError) {
+      throw new Error(`KV error reading key version for ${providerName}`);
+    }
     return 0;
   }
   const version = Number(raw || 0);
@@ -652,16 +725,17 @@ export async function getAllManagedKeys(): Promise<Record<string, string[]>> {
       }
     } while (cursor !== 0);
 
+    const providerKeyNames = keys.filter((k) => !k.startsWith(PREFIX.keyVersion));
     const out: Record<string, string[]> = {};
-    if (keys.length > 0) {
+    if (providerKeyNames.length > 0) {
       const values = await withTimeout(
-        Promise.all(keys.map((k: string) => kv.get(k))),
+        Promise.all(providerKeyNames.map((k: string) => kv.get(k))),
         1000,
-        keys.map(() => null),
+        providerKeyNames.map(() => null),
         'getAllManagedKeys:getValues'
       );
-      for (let i = 0; i < keys.length; i++) {
-        const provider = keys[i].replace('admin:keys:', '');
+      for (let i = 0; i < providerKeyNames.length; i++) {
+        const provider = providerKeyNames[i].replace('admin:keys:', '');
         if (values[i]) {
           const parsed = parseJsonOrArray(values[i]);
           if (parsed) {
@@ -691,6 +765,7 @@ export async function setManagedKeys(
   }
   await kv.set(`${PREFIX.keys}${providerName}`, JSON.stringify(keys));
   const version = await bumpManagedKeysVersion(providerName, kv);
+  await bumpGlobalConfigVersion(kv);
   clearCache(`keys:${providerName}`);
   clearCache('keys:all');
   try {
@@ -970,6 +1045,7 @@ export async function saveCustomProvider(provider: ProviderConfig): Promise<void
     isCustom: true,
   };
   await kv.set('admin:custom_providers', JSON.stringify(custom));
+  await bumpGlobalConfigVersion(kv);
   clearCache('customProviders');
   try {
     const { clearProvidersCache } = await import('../providers/resolver');
@@ -1024,6 +1100,7 @@ export async function deleteCustomProvider(name: string): Promise<void> {
       clearCache(`fallback:${providerName}`);
     }));
   await bumpManagedKeysVersion(name, kv);
+  await bumpGlobalConfigVersion(kv);
   clearCache('customProviders');
   clearCache(`keys:${name}`);
   clearCache('keys:all');
@@ -1275,7 +1352,8 @@ export async function importBackupData(data: Record<string, any>): Promise<void>
     }
   }
 
-  // Clear all caches at the end
+  // Bump global config version and clear all caches at the end
+  await bumpGlobalConfigVersion(kv);
   clearCache();
 }
 

@@ -69,7 +69,7 @@ async function loadManagedKeys(providerName: string, forceRefresh = false): Prom
   try {
     const { getDefaultConfigStore } = await import('../config-store');
     const store = getDefaultConfigStore();
-    const managed = await store.getProviderKeys(providerName);
+    const managed = await store.getProviderKeys(providerName, forceRefresh, { throwOnError: true });
     if (managed === undefined) return undefined;
     if (managed !== null) {
       return managed.map((key) => ({
@@ -84,11 +84,13 @@ async function loadManagedKeys(providerName: string, forceRefresh = false): Prom
   }
 }
 
-async function loadManagedKeysVersion(providerName: string): Promise<number | undefined> {
+async function loadManagedKeysVersion(providerName: string, forceRefresh = false): Promise<number | undefined> {
   try {
     const { getDefaultConfigStore } = await import('../config-store');
     const store = getDefaultConfigStore();
-    const version = await store.getConfigVersion();
+    const version = store.getProviderKeysVersion
+      ? await store.getProviderKeysVersion(providerName, { forceRefresh, throwOnError: true })
+      : await store.getConfigVersion();
     if (version === undefined) return undefined;
     return version;
   } catch {
@@ -120,7 +122,7 @@ export async function getKeyPool(config: ProviderConfig, forceRefresh = false): 
     const lastCheck = lastManagedVersionCheck.get(config.name) || 0;
     if (Date.now() - lastCheck > keyVersionCheckTtlMs()) {
       try {
-        const remoteVersion = await loadManagedKeysVersion(config.name);
+        const remoteVersion = await loadManagedKeysVersion(config.name, true);
         if (remoteVersion !== undefined) {
           const knownVersion = knownManagedVersions.get(config.name) || 0;
           if (remoteVersion !== knownVersion) {
@@ -148,7 +150,7 @@ export async function getKeyPool(config: ProviderConfig, forceRefresh = false): 
   try {
     const [managed, version] = await Promise.all([
       loadManagedKeys(config.name, forceRefresh),
-      loadManagedKeysVersion(config.name),
+      loadManagedKeysVersion(config.name, forceRefresh),
     ]);
     if (managed !== undefined && version !== undefined) {
       if (managed) {
@@ -233,18 +235,26 @@ export async function initAllKeyPools(configs: Record<string, { envKeyField: str
 /**
  * Get key pool stats for admin/status page.
  */
-export function getKeyPoolStats(): Record<string, { total: number; available: number; keyHashes: string[] }> {
+export function getKeyPoolStats(): Record<string, { total: number; available: number; keyHashes: string[]; cooldownKeyHashes: string[] }> {
   const now = Date.now();
-  const stats: Record<string, { total: number; available: number; keyHashes: string[] }> = {};
+  const stats: Record<string, { total: number; available: number; keyHashes: string[]; cooldownKeyHashes: string[] }> = {};
 
   for (const [name, pool] of keyPools) {
-    const available = pool.keys.filter(
-      (k) => !cooldowns.has(k.hash) || now >= cooldowns.get(k.hash)!
-    ).length;
+    const cooldownKeyHashes: string[] = [];
+    let available = 0;
+    for (const k of pool.keys) {
+      const cd = cooldowns.get(k.hash);
+      if (cd !== undefined && now < cd) {
+        cooldownKeyHashes.push(k.hash);
+      } else {
+        available++;
+      }
+    }
     stats[name] = {
       total: pool.keys.length,
       available,
       keyHashes: pool.keys.map((k) => k.hash),
+      cooldownKeyHashes,
     };
   }
 

@@ -97,6 +97,73 @@ export function enumerateDateKeys(from: string, to: string): string[] {
 }
 
 export async function aggregateUsageDailyReport(date: string): Promise<UsageDailyReport | null> {
+  // On Cloudflare Pages/Workers, usage data is stored in D1 (`daily_usage` + `error_stats`),
+  // while KVUsageStorage is intentionally disabled. Aggregate from D1 first when bound.
+  const cfEnv = getCFEnvSync() || await getCFEnv();
+  if (cfEnv?.DB) {
+    try {
+      const [usageRows, errorRows] = await cfEnv.DB.batch([
+        cfEnv.DB.prepare(
+          `SELECT provider, requests, tokens, prompt_tokens, completion_tokens
+           FROM daily_usage WHERE date = ?`
+        ).bind(date),
+        cfEnv.DB.prepare(
+          `SELECT SUM(count) as total_errors FROM error_stats WHERE date = ?`
+        ).bind(date),
+      ]);
+
+      const rows = (usageRows.results || []) as Array<Record<string, unknown>>;
+      if (rows.length === 0) return null;
+
+      let totalRequests = 0;
+      let totalTokens = 0;
+      let promptTokens = 0;
+      let completionTokens = 0;
+      const byProvider: UsageDailyReport['byProvider'] = {};
+
+      for (const row of rows) {
+        const provider = String(row.provider ?? '');
+        if (provider === '') {
+          totalRequests = Number(row.requests ?? 0);
+          totalTokens = Number(row.tokens ?? 0);
+          promptTokens = Number(row.prompt_tokens ?? 0);
+          completionTokens = Number(row.completion_tokens ?? 0);
+        } else {
+          byProvider[provider] = {
+            requests: Number(row.requests ?? 0),
+            tokens: Number(row.tokens ?? 0),
+            promptTokens: Number(row.prompt_tokens ?? 0),
+            completionTokens: Number(row.completion_tokens ?? 0),
+          };
+        }
+      }
+
+      if (totalRequests === 0 && Object.keys(byProvider).length === 0) {
+        return null;
+      }
+
+      const totalErrors = Number(((errorRows.results?.[0] as Record<string, unknown> | undefined)?.total_errors) ?? 0);
+      const denominator = totalRequests + totalErrors;
+      const errorRate = denominator > 0 ? Math.round((totalErrors / denominator) * 10000) / 10000 : 0;
+
+      return {
+        date,
+        summary: {
+          totalRequests,
+          totalTokens,
+          promptTokens,
+          completionTokens,
+          errorRate,
+          p95LatencyMs: null,
+        },
+        byProvider,
+        topModels: [],
+      };
+    } catch {
+      // Fall through to KV if D1 query fails
+    }
+  }
+
   const kv = await getKV();
   if (!kv) return null;
 
@@ -159,7 +226,7 @@ export async function getUsageDailyReports(from: string, to: string): Promise<Us
   if (!kv) return [];
   const dates = enumerateDateKeys(from, to);
   const keys = dates.map(usageReportKeys.daily);
-  const values = keys.length ? await withTimeout(kv.mget(keys), 2000, [], 'usage-report:mget') : [];
+  const values: unknown[] = keys.length ? await withTimeout(kv.mget(keys), 2000, [], 'usage-report:mget') : [];
   return values.map(parseReport).filter((v): v is UsageDailyReport => Boolean(v));
 }
 
