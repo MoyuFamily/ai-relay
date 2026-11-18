@@ -1,9 +1,9 @@
 // ============================================================
 // AI API Relay — Admin Auth Helper
 // ============================================================
-// Uses RELAY_API_KEY for admin authentication (same as relay auth).
+// Uses RELAY_ADMIN_KEY for admin authentication (falls back to RELAY_API_KEY).
 
-import { getRelayApiKeys } from '@/lib/relay';
+import { getRelayApiKeys, constantTimeIncludes } from '../relay/auth';
 
 export { getRelayApiKeys };
 
@@ -12,12 +12,12 @@ export { getRelayApiKeys };
  * Falls back to RELAY_API_KEY if RELAY_ADMIN_KEY is not defined.
  */
 export function getRelayAdminKeys(): string[] {
-  const adminKeys = process.env.RELAY_ADMIN_KEY || '';
-  if (adminKeys) {
-    return adminKeys
-      .split(',')
-      .map((k) => k.trim())
-      .filter(Boolean);
+  const adminKeys = (process.env.RELAY_ADMIN_KEY || '')
+    .split(',')
+    .map((k) => k.trim())
+    .filter(Boolean);
+  if (adminKeys.length > 0) {
+    return adminKeys;
   }
   return getRelayApiKeys();
 }
@@ -28,7 +28,7 @@ export function getRelayAdminKeys(): string[] {
  */
 export function requireAdminAuth(request: Request): Response | null {
   const authHeader = request.headers.get('authorization');
-  const token = authHeader?.replace(/^Bearer\s+/i, '') || '';
+  const token = authHeader?.replace(/^Bearer\s+/i, '').trim() || '';
 
   if (!token) {
     return Response.json(
@@ -38,7 +38,7 @@ export function requireAdminAuth(request: Request): Response | null {
   }
 
   const validKeys = getRelayAdminKeys();
-  if (!validKeys.includes(token)) {
+  if (validKeys.length === 0 || !constantTimeIncludes(validKeys, token)) {
     return Response.json(
       { error: { message: 'Unauthorized. Invalid admin token.', code: 401 } },
       { status: 401 }

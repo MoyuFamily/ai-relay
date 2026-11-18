@@ -10,7 +10,7 @@
 // ============================================================
 
 import { NextRequest } from 'next/server';
-import { validateAuth, relayRequest, validateBase64ImageSizes, validateRequestSize } from '@/lib/relay';
+import { validateAuth, relayRequest, validateBase64ImageSizes, validateRequestSize, validateContentLengthHeader } from '@/lib/relay';
 import { collectPassthroughHeaders } from '@/lib/relay/passthrough';
 import { mapAnthropicStopReasonToOpenAI, transformAnthropicMessageToOpenAIChat } from '@/lib/relay/transform';
 import { RelayError } from '@/lib/errors';
@@ -408,6 +408,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 1.5. Cheap O(1) Content-Length pre-check before buffering request body
+  const headerSizeCheck = validateContentLengthHeader(request.headers);
+  if (!headerSizeCheck.valid) {
+    return new Response(
+      JSON.stringify({
+        error: {
+          message: headerSizeCheck.error,
+          type: 'invalid_request_error',
+          code: 400,
+        },
+      }),
+      { status: 400, headers: { 'Content-Type': 'application/json', 'X-Request-ID': traceId } }
+    );
+  }
+
   const usageStorage = await createUsageStorage();
   batchRecorder.setStorage(usageStorage as any);
 
@@ -574,6 +589,7 @@ export async function POST(request: NextRequest) {
             'Connection': 'keep-alive',
             'X-Relay-Provider': provider.name,
             'X-Relay-Key': apiKey.hash,
+            'X-Request-ID': traceId,
           },
         });
       }
@@ -605,6 +621,7 @@ export async function POST(request: NextRequest) {
           'Connection': 'keep-alive',
           'X-Relay-Provider': provider.name,
           'X-Relay-Key': apiKey.hash,
+          'X-Request-ID': traceId,
         },
       });
     } else {
@@ -661,6 +678,22 @@ export async function POST(request: NextRequest) {
         } catch (e) {
           console.error('[Usage] non-stream track failed:', e);
         }
+      } else {
+        runAfterResponse(() =>
+          recordRequestLog({
+            traceId,
+            timestamp: new Date().toISOString(),
+            apiKeyHash: apiKey.hash,
+            model: body.model,
+            provider: provider.name,
+            status: 'error',
+            httpStatus: response.status,
+            latencyMs,
+            isStream: Boolean(body.stream),
+            errorType: 'upstream_error',
+            errorMessage: responseBody.slice(0, 500),
+          })
+        );
       }
 
       return new Response(responseBody, {
@@ -669,15 +702,45 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
           'X-Relay-Provider': provider.name,
           'X-Relay-Key': apiKey.hash,
+          'X-Request-ID': traceId,
         },
       });
     }
   } catch (error) {
+    const errLatencyMs = Date.now() - routeStartTime;
     if (error instanceof RelayError) {
-      return error.toResponse();
+      runAfterResponse(() =>
+        recordRequestLog({
+          traceId,
+          timestamp: new Date().toISOString(),
+          model: requestedModel,
+          status: 'error',
+          httpStatus: error.status,
+          latencyMs: errLatencyMs,
+          isStream: Boolean(body?.stream),
+          errorType: error.type,
+          errorMessage: error.message,
+        })
+      );
+      const res = error.toResponse();
+      res.headers.set('X-Request-ID', traceId);
+      return res;
     }
 
     console.error('Relay error:', error);
+    runAfterResponse(() =>
+      recordRequestLog({
+        traceId,
+        timestamp: new Date().toISOString(),
+        model: requestedModel,
+        status: 'error',
+        httpStatus: 500,
+        latencyMs: errLatencyMs,
+        isStream: Boolean(body?.stream),
+        errorType: 'server_error',
+        errorMessage: error instanceof Error ? error.message : String(error),
+      })
+    );
     return new Response(
       JSON.stringify({
         error: {
@@ -686,7 +749,7 @@ export async function POST(request: NextRequest) {
           code: 500,
         },
       }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { 'Content-Type': 'application/json', 'X-Request-ID': traceId } }
     );
   }
 }

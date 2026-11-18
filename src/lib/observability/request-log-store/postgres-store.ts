@@ -5,12 +5,20 @@
 // deployments where DATABASE_URL is set.
 
 import type { RequestLogStore, RequestLogEntry, RequestLogFilters } from './types';
-import { getDbOrNull } from '@/lib/db/client';
+import { getDbOrNull, getPostgresSqlOrNull } from '@/lib/db/client';
+import { ensureSelfHostedPostgresSchema } from '@/lib/db/self-hosted-schema';
 import { requestLogs } from '@/lib/db/schema';
 import { desc, eq, and, sql } from 'drizzle-orm';
 
 const DEFAULT_MAX_ENTRIES = 500;
-const CAPTURE_FLAG_KEY = 'request_log_capture_enabled';
+
+async function ensureReadyDb() {
+  const sqlClient = getPostgresSqlOrNull();
+  if (sqlClient) {
+    await ensureSelfHostedPostgresSchema(sqlClient);
+  }
+  return getDbOrNull();
+}
 
 export class PostgresRequestLogStore implements RequestLogStore {
   private maxEntries: number;
@@ -23,10 +31,9 @@ export class PostgresRequestLogStore implements RequestLogStore {
   async append(log: RequestLogEntry): Promise<void> {
     if (!(await this.isCaptureEnabled())) return;
 
-    const db = getDbOrNull();
-    if (!db) return;
-
     try {
+      const db = await ensureReadyDb();
+      if (!db) return;
       await db.insert(requestLogs).values({
         traceId: log.traceId,
         timestamp: new Date(log.timestamp),
@@ -54,10 +61,9 @@ export class PostgresRequestLogStore implements RequestLogStore {
   }
 
   async list(filters?: RequestLogFilters): Promise<RequestLogEntry[]> {
-    const db = getDbOrNull();
-    if (!db) return [];
-
     try {
+      const db = await ensureReadyDb();
+      if (!db) return [];
       const conditions = [];
       if (filters?.status && filters.status !== 'all') {
         conditions.push(eq(requestLogs.status, filters.status));
@@ -99,10 +105,9 @@ export class PostgresRequestLogStore implements RequestLogStore {
   }
 
   async clear(): Promise<void> {
-    const db = getDbOrNull();
-    if (!db) return;
-
     try {
+      const db = await ensureReadyDb();
+      if (!db) return;
       await db.delete(requestLogs);
     } catch (err) {
       console.error('[PostgresRequestLogStore] clear failed:', err);
@@ -110,10 +115,9 @@ export class PostgresRequestLogStore implements RequestLogStore {
   }
 
   async isCaptureEnabled(): Promise<boolean> {
-    const db = getDbOrNull();
-    if (!db) return false;
-
     try {
+      const db = await ensureReadyDb();
+      if (!db) return false;
       const { configFlags } = await import('../../db/schema');
       const { eq, and, gt, sql } = await import('drizzle-orm');
 
@@ -135,10 +139,9 @@ export class PostgresRequestLogStore implements RequestLogStore {
   }
 
   async enableCapture(ttlSeconds: number): Promise<void> {
-    const db = getDbOrNull();
-    if (!db) return;
-
     try {
+      const db = await ensureReadyDb();
+      if (!db) return;
       const { configFlags } = await import('../../db/schema');
       const { sql } = await import('drizzle-orm');
 

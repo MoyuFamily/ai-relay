@@ -5,7 +5,7 @@
 // ============================================================
 
 import { NextRequest } from 'next/server';
-import { validateAuth, relayRequest } from '@/lib/relay';
+import { validateAuth, relayRequest, validateBase64ImageSizes, validateRequestSize, validateContentLengthHeader } from '@/lib/relay';
 import { transformOpenAIToAnthropic } from '@/lib/relay/transform';
 import { collectPassthroughHeaders } from '@/lib/relay/passthrough';
 import { RelayError } from '@/lib/errors';
@@ -467,9 +467,15 @@ function validateBody(body: Partial<AnthropicMessagesRequest>): string | null {
 
 export async function POST(request: NextRequest) {
   const traceId = request.headers.get('x-request-id') || `trace_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const routeStartTime = Date.now();
 
   if (!(await validateAuth(request))) {
     return jsonError(401, 'Invalid API key. Provide a valid key in the Authorization or x-api-key header.', 'authentication_error');
+  }
+
+  const headerSizeCheck = validateContentLengthHeader(request.headers);
+  if (!headerSizeCheck.valid) {
+    return jsonError(400, headerSizeCheck.error || 'Request body too large.');
   }
 
   const usageStorage = await createUsageStorage();
@@ -492,6 +498,13 @@ export async function POST(request: NextRequest) {
     }
   } catch {
     return jsonError(400, 'Invalid JSON in request body.');
+  }
+
+  const sizeCheck = onCloudflare
+    ? validateRequestSize(rawBody?.length ?? 0)
+    : validateBase64ImageSizes(body);
+  if (!sizeCheck.valid) {
+    return jsonError(400, sizeCheck.error || 'Request payload exceeds size limit.');
   }
 
   const validationError = validateBody(body);
@@ -579,6 +592,7 @@ export async function POST(request: NextRequest) {
             'Connection': 'keep-alive',
             'X-Relay-Provider': provider.name,
             'X-Relay-Key': apiKey.hash,
+            'X-Request-ID': traceId,
           },
         });
       }
@@ -610,6 +624,7 @@ export async function POST(request: NextRequest) {
           'Connection': 'keep-alive',
           'X-Relay-Provider': provider.name,
           'X-Relay-Key': apiKey.hash,
+          'X-Request-ID': traceId,
         },
       });
     }
@@ -662,6 +677,22 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         console.error('[Usage] response translation / usage tracking failed:', error);
       }
+    } else {
+      runAfterResponse(() =>
+        recordRequestLog({
+          traceId,
+          timestamp: new Date().toISOString(),
+          apiKeyHash: apiKey.hash,
+          model: body.model,
+          provider: provider.name,
+          status: 'error',
+          httpStatus: response.status,
+          latencyMs,
+          isStream: Boolean(body.stream),
+          errorType: 'upstream_error',
+          errorMessage: responseBody.slice(0, 500),
+        })
+      );
     }
 
     return new Response(responseBody, {
@@ -670,14 +701,46 @@ export async function POST(request: NextRequest) {
         'Content-Type': isAnthropic ? (response.headers.get('content-type') || 'application/json') : 'application/json',
         'X-Relay-Provider': provider.name,
         'X-Relay-Key': apiKey.hash,
+        'X-Request-ID': traceId,
       },
     });
   } catch (error) {
+    const errLatencyMs = Date.now() - routeStartTime;
     if (error instanceof RelayError) {
-      return jsonError(error.status, error.message, error.type);
+      runAfterResponse(() =>
+        recordRequestLog({
+          traceId,
+          timestamp: new Date().toISOString(),
+          model: body?.model,
+          status: 'error',
+          httpStatus: error.status,
+          latencyMs: errLatencyMs,
+          isStream: Boolean(body?.stream),
+          errorType: error.type,
+          errorMessage: error.message,
+        })
+      );
+      const res = jsonError(error.status, error.message, error.type);
+      res.headers.set('X-Request-ID', traceId);
+      return res;
     }
 
     console.error('Anthropic relay error:', error);
-    return jsonError(500, 'Internal relay error.', 'server_error');
+    runAfterResponse(() =>
+      recordRequestLog({
+        traceId,
+        timestamp: new Date().toISOString(),
+        model: body?.model,
+        status: 'error',
+        httpStatus: 500,
+        latencyMs: errLatencyMs,
+        isStream: Boolean(body?.stream),
+        errorType: 'server_error',
+        errorMessage: error instanceof Error ? error.message : String(error),
+      })
+    );
+    const res = jsonError(500, 'Internal relay error.', 'server_error');
+    res.headers.set('X-Request-ID', traceId);
+    return res;
   }
 }

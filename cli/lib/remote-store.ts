@@ -2,9 +2,9 @@
 // AI Relay Local Runtime — Remote Config Store
 // ============================================================
 
-import type { ConfigStore, ConfigSnapshot, ModelAliasConfig } from './types';
-import type { ProviderConfig } from '../providers/types';
-import type { PriorityRule } from '../admin/priority-rules-core';
+import type { ConfigStore, ConfigSnapshot, ModelAliasConfig } from '../../src/lib/config-store/types';
+import type { ProviderConfig } from '../../src/lib/providers/types';
+import type { PriorityRule } from '../../src/lib/admin/priority-rules-core';
 import Database from 'better-sqlite3';
 
 export class RemoteConfigStore implements ConfigStore {

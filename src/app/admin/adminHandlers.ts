@@ -547,7 +547,7 @@ export function useAdminHandlers(apiKey: string, t: any) {
     } finally {
       setOperationLoading(false);
     }
-  }, [apiKey, data?.providers, fetchData, fetchProviderConfig]);
+  }, [apiKey, data?.providers]);
 
   const handleDeleteCustomProvider = useCallback(async (name: string) => {
     if (!confirm(t.deleteCustomProviderConfirm)) return;

@@ -63,7 +63,7 @@ async function getAllModels(): Promise<Array<ModelInfo & { owned_by: string; con
  */
 export async function GET(request: NextRequest) {
   // Optional: auth check (some clients expect /v1/models to be public)
-  const authHeader = request.headers.get('authorization');
+  const authHeader = request.headers.get('authorization') || request.headers.get('x-api-key');
 
   // If auth is provided, validate it; otherwise allow unauthenticated access
   if (authHeader) {
