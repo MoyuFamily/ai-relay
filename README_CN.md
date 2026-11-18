@@ -22,7 +22,7 @@
   </a>
 </p>
 
-[![Version](https://img.shields.io/badge/Version-2.14.2-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.15.0-green.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [English](README.md) · [中文](README_CN.md)
@@ -256,6 +256,23 @@ OpenAI · Anthropic (Claude) · DeepSeek · MiMo · 任意自定义兼容 Provid
 ![辅助工具](docs/assets/screenshots/admin-tools.png)
 
 </details>
+
+---
+
+## 🌐 开源社区基础设施（规划中）
+
+AI Relay 是采用 [MIT 许可证](LICENSE) 的开源项目。除了 Serverless 和 VPS / Docker 自托管部署，我们计划建设一个**非商业、长期在线的兼容性与可靠性测试环境**，方便贡献者跨运行时复现问题、验证改动。
+
+计划中的 Linux 社区基础设施主要用于：
+
+- **API 协议兼容性测试**：使用模拟 Provider 或明确授权的测试服务，验证 OpenAI 兼容接口、流式 SSE、模型路由与 fallback。
+- **可靠性与性能测试**：以可控工作负载复现超时、错误响应和并发场景，并公开可复现的测试结果。
+- **安全的公开演示**：使用模拟密钥与脱敏数据展示功能，不收集访问者的个人 Provider API Key。
+- **开源贡献验证**：运行回归测试，为 Issue 和 PR 提供可追溯的诊断数据。
+
+**当前状态：规划中，尚未宣称公开演示服务已上线。** VPS 可以提供常驻进程、相对稳定的测试资源和主机级指标，补充 Serverless 临时执行环境的局限。相关赞助资源将专用于非商业开源开发与教育用途，不用于付费 API 转售或无关服务。
+
+欢迎为这项工作提供基础设施赞助。确认赞助后，我们可在 README 和项目文档中公开致谢。
 
 ---
 

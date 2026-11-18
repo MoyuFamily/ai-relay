@@ -1,6 +1,6 @@
 # AI Relay — 技术架构设计
 
-> 对应代码基线：`v2.14.2`（多平台统一内核：Vercel / Cloudflare Pages / Docker & VPS 自部署 / 本地 CLI）
+> 对应代码基线：`v2.15.0`（多平台统一内核：Vercel / Cloudflare Pages / Docker & VPS 自部署 / 本地 CLI）
 
 ---
 

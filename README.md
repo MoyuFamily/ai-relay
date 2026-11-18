@@ -22,7 +22,7 @@
   </a>
 </p>
 
-[![Version](https://img.shields.io/badge/Version-2.14.2-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/Version-2.15.0-green.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 [English](README.md) · [中文](README_CN.md)
@@ -300,6 +300,23 @@ Sign in at `/admin` with `RELAY_ADMIN_KEY`:
 ![Tools](docs/assets/screenshots/admin-tools.png)
 
 </details>
+
+---
+
+## 🌐 Community Infrastructure (Planned)
+
+AI Relay is an [MIT-licensed](LICENSE), community-accessible open-source project. Alongside its serverless and self-hosted deployment options, we are planning a **non-commercial, always-on compatibility and reliability test environment** to help contributors reproduce issues across runtimes.
+
+The proposed Linux-based community infrastructure would provide:
+
+- **Protocol compatibility checks** — exercise OpenAI-compatible endpoints, streaming/SSE behavior, model routing and fallback using mock or explicitly authorized test providers.
+- **Reliability and performance tests** — reproduce timeouts, error responses and concurrency scenarios with controlled workloads and published, reproducible findings.
+- **Safe public demonstrations** — demonstrate API behavior with simulated credentials and sanitized example data; no collection of visitors' personal provider keys.
+- **Contributor verification** — run regression tests and keep diagnostic artifacts available for issue reports and pull requests.
+
+**Status: planned, not a currently operating public service.** A VPS provides persistent processes, predictable test resources and host-level metrics that are harder to maintain consistently across ephemeral serverless runs. Infrastructure granted for this purpose would be used for non-commercial open-source development and education, not API resale or unrelated services.
+
+We welcome infrastructure sponsorship for this effort. Sponsors providing the environment may be acknowledged here and in project documentation once support is confirmed.
 
 ---
 
