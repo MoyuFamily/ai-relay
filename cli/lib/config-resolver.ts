@@ -63,7 +63,7 @@ export function resolveConfigSource(options: ResolveConfigOptions): ConfigSource
   // 2. Environment variables - explicit URL or path
   if (env.RELAY_CONFIG_URL || env.RELAY_CLOUD_URL) {
     const url = env.RELAY_CONFIG_URL || env.RELAY_CLOUD_URL;
-    const deviceToken = profile?.deviceToken;
+    const deviceToken = profile?.deviceToken || env.RELAY_DEVICE_TOKEN || env.RELAY_ADMIN_KEY || env.RELAY_API_KEY;
     return new CloudConfigSource(url!, deviceToken);
   }
 
@@ -102,7 +102,7 @@ function createConfigSourceFromArg(
 ): ConfigSource {
   // Check if it's a URL
   if (configArg.startsWith('http://') || configArg.startsWith('https://')) {
-    const deviceToken = profile?.deviceToken;
+    const deviceToken = profile?.deviceToken || process.env.RELAY_DEVICE_TOKEN || process.env.RELAY_ADMIN_KEY || process.env.RELAY_API_KEY;
     return new CloudConfigSource(configArg, deviceToken);
   }
 
@@ -126,14 +126,14 @@ function buildInlineConfigFromEnv(env: NodeJS.ProcessEnv): FileConfig | null {
   const providers: FileConfig['providers'] = {};
 
   // Well-known provider mappings (for display names and default base URLs)
-  const knownProviders: Record<string, { name: string; defaultBaseUrl?: string }> = {
-    'OPENAI': { name: 'OpenAI', defaultBaseUrl: 'https://api.openai.com' },
-    'CLAUDE': { name: 'Anthropic', defaultBaseUrl: 'https://api.anthropic.com' },
-    'ANTHROPIC': { name: 'Anthropic', defaultBaseUrl: 'https://api.anthropic.com' },
-    'DEEPSEEK': { name: 'DeepSeek', defaultBaseUrl: 'https://api.deepseek.com' },
-    'XIAOMI': { name: 'Xiaomi' },
-    'XIAOMI_CODING': { name: 'Xiaomi Coding' },
-    'XIAOMIMIMO_SGP_CODING': { name: 'Xiaomimimo SGP Coding' },
+  const knownProviders: Record<string, { id?: string; name: string; defaultBaseUrl?: string; headerFormat?: 'openai' | 'anthropic' | 'azure'; modelPrefixes?: string[] }> = {
+    'OPENAI': { id: 'openai', name: 'OpenAI', defaultBaseUrl: 'https://api.openai.com/v1', headerFormat: 'openai', modelPrefixes: ['gpt-', 'dall-e-'] },
+    'CLAUDE': { id: 'anthropic', name: 'Anthropic', defaultBaseUrl: 'https://api.anthropic.com/v1', headerFormat: 'anthropic', modelPrefixes: ['claude-'] },
+    'ANTHROPIC': { id: 'anthropic', name: 'Anthropic', defaultBaseUrl: 'https://api.anthropic.com/v1', headerFormat: 'anthropic', modelPrefixes: ['claude-'] },
+    'DEEPSEEK': { id: 'deepseek', name: 'DeepSeek', defaultBaseUrl: 'https://api.deepseek.com/v1', headerFormat: 'openai', modelPrefixes: ['deepseek-'] },
+    'XIAOMI': { id: 'xiaomi', name: 'MiMo (API Key)', defaultBaseUrl: 'https://api.xiaomimimo.com/v1', headerFormat: 'openai', modelPrefixes: ['mimo-'] },
+    'XIAOMI_CODING': { id: 'xiaomi_coding', name: 'MiMo (Coding Plan)', defaultBaseUrl: 'https://token-plan-cn.xiaomimimo.com/v1', headerFormat: 'openai', modelPrefixes: ['mimo-v2.5-pro-coding', 'mimo-v2.5-coding'] },
+    'XIAOMIMIMO_SGP_CODING': { id: 'xiaomi_sgp_coding', name: 'MiMo SGP (Coding Plan)', defaultBaseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1', headerFormat: 'azure', modelPrefixes: ['mimo-v2.5-pro-sgp', 'mimo-v2.5-sgp'] },
   };
 
   // Scan environment for XXX_KEYS patterns
@@ -144,18 +144,18 @@ function buildInlineConfigFromEnv(env: NodeJS.ProcessEnv): FileConfig | null {
 
     // Extract provider prefix (e.g., "OPENAI" from "OPENAI_KEYS")
     const providerPrefix = key.slice(0, -5); // Remove "_KEYS"
-    const providerIdRaw = providerPrefix.toLowerCase().replace(/_/g, '-');
-
-    // Special case: CLAUDE_KEYS → anthropic provider
-    const providerId = providerIdRaw === 'claude' ? 'anthropic' : providerIdRaw;
-
     const knownInfo = knownProviders[providerPrefix];
+    const providerId = knownInfo?.id || providerPrefix.toLowerCase();
     const baseUrlKey = `${providerPrefix}_BASE_URL`;
 
     providers[providerId] = {
-      name: knownInfo?.name || toTitleCase(providerId),
+      name: providerId,
+      displayName: knownInfo?.name || toTitleCase(providerId),
+      headerFormat: knownInfo?.headerFormat || 'openai',
+      modelPrefixes: knownInfo?.modelPrefixes || [`${providerId}-`],
+      envKeyField: key,
       apiKeys: value.split(',').map(k => k.trim()).filter(Boolean),
-      baseUrl: env[baseUrlKey] || knownInfo?.defaultBaseUrl,
+      baseUrl: env[baseUrlKey] || knownInfo?.defaultBaseUrl || '',
     };
   }
 

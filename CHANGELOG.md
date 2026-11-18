@@ -8,6 +8,23 @@
 
 （暂无）
 
+## [2.15.0] - 2026-11-18
+
+### Added
+- **自部署服务完整支持（Docker / VPS）**：
+  - 新增零外部依赖的本地持久化磁盘存储适配器 `FileKVAdapter`（内存 O(1) 读取 + `0600` 临时文件原子落盘），单机部署开箱即用。
+  - 新增多副本安全的 PostgreSQL 存储适配器 `PostgresKVAdapter` 与关系型统计存储 `PostgresUsageStorage`，首次连接幂等自动建表，无需手动执行迁移脚本。
+  - 新增自部署后台调度器 `self-hosted-scheduler`（通过 Next.js `instrumentation.ts` 自动启动），内置周期性上游健康探针、每日 UTC 报表聚合、过期数据清理与按时区投递的 Webhook 日报。
+  - 新增多阶段生产级 `Dockerfile`、`docker-compose.yml`（支持默认磁盘模式与 `--profile postgres` 模式）及 `/health?liveness=1` 容器存活探针。
+- **本地 CLI (`airelay`) 完整闭环**：打通本机 `/v1/chat/completions`、`/v1/messages`、`/v1/messages/count_tokens`、`/v1/responses` 与 `/v1/models` 全协议转发能力，补齐 `/admin/local-relay` 设备管理与授权验证鉴权交互。
+
+### Fixed
+- **多平台存储稳定性加固**：修复 `KVRequestLogStore` 非标准 `scan` 调用与数值型标志位解析问题；为 `CFKVAdapter` 增加单 Key 互斥锁、6 并发管道队列与 `<60s` TTL 安全钳制；修复 `worker.ts` D1 配额清理 SQL 条件与 Cloudflare D1 日报聚合缺失问题；防止瞬时 KV 超时用空值污染内存密钥池缓存。
+- **网关安全与协议细节修复**：移除临时密钥签名的硬编码回退密钥并全面采用常量时间密钥比对；支持动态读取环境变量的并发闸门与 CORS 配置（补齐 `X-API-Key` / `Anthropic-*` 跨域头）；为所有 `/v1/*` 端点补齐 `Content-Length` O(1) 预检、多模态 Base64 体积校验、错误请求日志记录以及重试前上游响应流显式释放。
+
+### Changed
+- **CI 与文档体系重构**：在 GitHub Actions 与 `scripts/ci-local.sh` 中启用完整单元测试门禁，补齐 Cloudflare Pages 部署脚本缺失的环境变量同步，清理过时设计草稿并重写全项目架构与部署文档。
+
 ## [2.13.0] - 2026-06-11
 
 ### Added

@@ -1,12 +1,43 @@
 // ============================================================
-// AI API Relay — Auth Validation
+// AI API Relay — Auth Validation (Edge / CF Workers / Node)
 // ============================================================
+
+/**
+ * Constant-time string comparison compatible with Edge, Cloudflare Workers,
+ * and Node.js without requiring `node:crypto`.
+ */
+export function constantTimeEqual(a: string, b: string): boolean {
+  const encoder = new TextEncoder();
+  const aBytes = encoder.encode(a);
+  const bBytes = encoder.encode(b);
+  const maxLen = Math.max(aBytes.length, bBytes.length);
+  let diff = aBytes.length ^ bBytes.length;
+  for (let i = 0; i < maxLen; i++) {
+    diff |= (aBytes[i] ?? 0) ^ (bBytes[i] ?? 0);
+  }
+  return diff === 0;
+}
+
+export function constantTimeIncludes(candidates: string[], token: string): boolean {
+  let matched = false;
+  for (const candidate of candidates) {
+    if (constantTimeEqual(candidate, token)) {
+      matched = true;
+    }
+  }
+  return matched;
+}
 
 function base64urlEncode(str: string): string {
   if (typeof Buffer !== 'undefined') {
-    return Buffer.from(str).toString('base64url');
+    return Buffer.from(str, 'utf8').toString('base64url');
   }
-  return btoa(str)
+  const bytes = new TextEncoder().encode(str);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary)
     .replace(/\+/g, '-')
     .replace(/\//g, '_')
     .replace(/=+$/, '');
@@ -14,20 +45,27 @@ function base64urlEncode(str: string): string {
 
 function base64urlDecode(str: string): string {
   if (typeof Buffer !== 'undefined') {
-    return Buffer.from(str, 'base64').toString('utf8');
+    return Buffer.from(str, 'base64url').toString('utf8');
   }
   let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
   while (base64.length % 4) {
     base64 += '=';
   }
-  return atob(base64);
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 /**
  * Get the signing secret for generating/validating temporary keys.
+ * Returns null if no secret is configured — never falls back to a hardcoded
+ * public constant, preventing forged temporary tokens on misconfigured instances.
  */
-function getSigningSecret(): string {
-  const secret = process.env.RELAY_SIGNING_SECRET;
+function getSigningSecret(): string | null {
+  const secret = process.env.RELAY_SIGNING_SECRET?.trim();
   if (secret) return secret;
 
   // Fallback to first admin key
@@ -44,11 +82,11 @@ function getSigningSecret(): string {
     .filter(Boolean);
   if (apiKeys.length > 0) return apiKeys[0];
 
-  return 'default-fallback-signing-secret-123456';
+  return null;
 }
 
 /**
- * Sign payload using HMAC-SHA256. Works in both Edge and Node.js.
+ * Sign payload using HMAC-SHA256. Works in Edge, Cloudflare Workers, and Node.js.
  */
 async function signPayload(payloadStr: string, secret: string): Promise<string> {
   const encoder = new TextEncoder();
@@ -63,7 +101,7 @@ async function signPayload(payloadStr: string, secret: string): Promise<string> 
     ['sign']
   );
   const signature = await crypto.subtle.sign('HMAC', key, payloadData);
-  
+
   return Array.from(new Uint8Array(signature))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
@@ -73,6 +111,12 @@ async function signPayload(payloadStr: string, secret: string): Promise<string> 
  * Generate a cryptographically signed temporary request key.
  */
 export async function generateTempKey(durationSeconds: number): Promise<{ key: string; expiresAt: string }> {
+  const secret = getSigningSecret();
+  if (!secret) {
+    throw new Error(
+      'Signing secret is not configured. Set RELAY_SIGNING_SECRET, RELAY_ADMIN_KEY, or RELAY_API_KEY.'
+    );
+  }
   const exp = Date.now() + durationSeconds * 1000;
   const payload = {
     exp,
@@ -80,7 +124,7 @@ export async function generateTempKey(durationSeconds: number): Promise<{ key: s
   };
   const payloadStr = JSON.stringify(payload);
   const payloadBase64 = base64urlEncode(payloadStr);
-  const signature = await signPayload(payloadBase64, getSigningSecret());
+  const signature = await signPayload(payloadBase64, secret);
   const key = `sk-relay-temp-${payloadBase64}.${signature}`;
   return {
     key,
@@ -93,6 +137,9 @@ export async function generateTempKey(durationSeconds: number): Promise<{ key: s
  */
 export async function validateTempKey(token: string): Promise<boolean> {
   try {
+    const secret = getSigningSecret();
+    if (!secret) return false;
+
     const prefix = 'sk-relay-temp-';
     if (!token.startsWith(prefix)) return false;
 
@@ -100,6 +147,13 @@ export async function validateTempKey(token: string): Promise<boolean> {
     if (parts.length !== 2) return false;
 
     const [payloadBase64, signature] = parts;
+    if (!payloadBase64 || !signature) return false;
+
+    const expectedSignature = await signPayload(payloadBase64, secret);
+    if (!constantTimeEqual(signature, expectedSignature)) {
+      return false;
+    }
+
     const payloadStr = base64urlDecode(payloadBase64);
     const payload = JSON.parse(payloadStr);
 
@@ -108,21 +162,20 @@ export async function validateTempKey(token: string): Promise<boolean> {
       return false; // Expired
     }
 
-    const expectedSignature = await signPayload(payloadBase64, getSigningSecret());
-    return signature === expectedSignature;
+    return true;
   } catch {
     return false;
   }
 }
 
 /**
- * Validate the relay API key from the Authorization header.
+ * Validate the relay API key from the Authorization or x-api-key header.
  * Returns true if valid, false otherwise.
  */
 export async function validateAuth(request: Request): Promise<boolean> {
   const authHeader = request.headers.get('authorization');
   const anthropicKeyHeader = request.headers.get('x-api-key');
-  const token = authHeader?.replace(/^Bearer\s+/i, '') || anthropicKeyHeader || '';
+  const token = authHeader?.replace(/^Bearer\s+/i, '').trim() || anthropicKeyHeader?.trim() || '';
   if (!token) return false;
 
   if (token.startsWith('sk-relay-temp-')) {
@@ -130,7 +183,8 @@ export async function validateAuth(request: Request): Promise<boolean> {
   }
 
   const validKeys = getRelayApiKeys();
-  return validKeys.includes(token);
+  if (validKeys.length === 0) return false;
+  return constantTimeIncludes(validKeys, token);
 }
 
 /**

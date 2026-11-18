@@ -6,12 +6,13 @@
 
 import { Command } from 'commander';
 import * as os from 'os';
+import pkg from '../package.json';
 
 const program = new Command();
 
 program
   .name('airelay')
-  .version('2.13.0')
+  .version(pkg.version)
   .description('AI Relay Local Runtime CLI');
 
 program
@@ -75,7 +76,11 @@ program
     const adapter = new CodexAdapter();
     const localRelayUrl = `http://${profile.listenHost}:${profile.listenPort}`;
 
-    const result = await adapter.install({ localRelayUrl, dryRun: options.dryRun || false });
+    const result = await adapter.install({
+      localRelayUrl,
+      relayKey: process.env.RELAY_API_KEY || profile.deviceToken || 'local-relay',
+      dryRun: options.dryRun || false,
+    });
 
     if (result.success) {
       console.log(result.message);

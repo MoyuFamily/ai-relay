@@ -1,17 +1,45 @@
 // ============================================================
 // AI API Relay — GET /health
-// Health check endpoint for monitoring and load balancers
+// Health check endpoint for monitoring, load balancers & containers
 // ============================================================
+// Default (`GET /health`): readiness check — returns 200 when at least
+//   one upstream provider key is available, or 503 (`degraded`) when 0 keys
+//   are available.
+// Container Liveness (`GET /health?liveness=1` or `?probe=liveness`):
+//   always returns 200 while the Node.js HTTP server is responsive, even on
+//   a freshly booted container before keys are added via `/admin`.
 
 import { getAllProviders } from '@/lib/providers';
 import { getKeyPoolStats, initAllKeyPools } from '@/lib/relay';
+import { detectStorageBackend } from '@/lib/admin';
+import { detectRuntime } from '@/lib/runtime/capabilities';
+import pkg from '../../../package.json';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const startTime = Date.now();
 
-export async function GET() {
-  const allProviders = await getAllProviders();
+export async function GET(request: Request) {
+  let isLivenessProbe = false;
+  if (request?.url) {
+    try {
+      const url = new URL(request.url);
+      const livenessParam = url.searchParams.get('liveness');
+      const probeParam = url.searchParams.get('probe');
+      isLivenessProbe =
+        livenessParam === '1' ||
+        livenessParam === 'true' ||
+        probeParam === 'liveness';
+    } catch {
+      // Ignore malformed relative URLs in synthetic test callers
+    }
+  }
+
+  const [allProviders, storageBackend] = await Promise.all([
+    getAllProviders(),
+    detectStorageBackend(),
+  ]);
   await initAllKeyPools(allProviders);
   const poolStats = getKeyPoolStats();
 
@@ -21,7 +49,9 @@ export async function GET() {
   let availableKeys = 0;
 
   for (const [name, config] of Object.entries(allProviders)) {
-    const hasKeys = config.envKeyField ? (!!process.env[config.envKeyField] || (poolStats[name]?.total > 0)) : (poolStats[name]?.total > 0);
+    const hasKeys = config.envKeyField
+      ? (!!process.env[config.envKeyField] || (poolStats[name]?.total > 0))
+      : (poolStats[name]?.total > 0);
     if (hasKeys) {
       configuredProviders++;
       const stats = poolStats[name];
@@ -35,16 +65,26 @@ export async function GET() {
   // Healthy if at least one provider has available keys
   const isHealthy = availableKeys > 0;
   const uptimeMs = Date.now() - startTime;
+  const runtimeInfo = detectRuntime();
+
+  const statusLabel = isHealthy
+    ? 'healthy'
+    : isLivenessProbe
+      ? 'unconfigured'
+      : 'degraded';
 
   return Response.json(
     {
-      status: isHealthy ? 'healthy' : 'degraded',
+      status: statusLabel,
+      relayReady: isHealthy,
+      runtime: runtimeInfo.runtime,
+      storage: storageBackend,
       timestamp: new Date().toISOString(),
       uptime: {
         ms: uptimeMs,
         human: formatUptime(uptimeMs),
       },
-      version: '1.1.0',
+      version: pkg.version,
       providers: {
         configured: configuredProviders,
         total: Object.keys(allProviders).length,
@@ -55,6 +95,8 @@ export async function GET() {
       },
       features: [
         'chat/completions',
+        'messages',
+        'responses',
         'models',
         'streaming',
         'multi-key-rotation',
@@ -64,10 +106,10 @@ export async function GET() {
       ],
     },
     {
-      status: isHealthy ? 200 : 503,
+      status: isHealthy || isLivenessProbe ? 200 : 503,
       headers: {
         'Cache-Control': 'no-cache, no-store, must-revalidate',
-        'X-Relay-Version': '1.1.0',
+        'X-Relay-Version': pkg.version,
       },
     }
   );

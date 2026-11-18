@@ -2,17 +2,31 @@
 // AI Relay CLI — Device Login
 // ============================================================
 
-import { saveProfile } from './profile.js';
+import { loadProfile, saveProfile } from './profile.js';
 
 interface LoginOptions {
   device_name: string;
   platform: string;
 }
 
-export async function login(cloudUrl: string, options: LoginOptions) {
-  console.log(`🔗 Connecting to ${cloudUrl}...`);
+interface SessionCreatedResponse {
+  device_code: string;
+  device_id: string;
+  verification_url: string;
+  expires_in: number;
+}
 
-  const response = await fetch(`${cloudUrl}/api/local/devices/session`, {
+interface SessionPollResponse {
+  status: 'pending' | 'completed';
+  device_id?: string;
+  device_token?: string;
+}
+
+export async function login(cloudUrl: string, options: LoginOptions) {
+  const normalizedUrl = cloudUrl.replace(/\/+$/, '');
+  console.log(`🔗 Connecting to ${normalizedUrl}...`);
+
+  const response = await fetch(`${normalizedUrl}/api/local/devices/session`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -26,7 +40,8 @@ export async function login(cloudUrl: string, options: LoginOptions) {
     process.exit(1);
   }
 
-  const { device_code, device_id, verification_url, expires_in } = await response.json();
+  const { device_code, verification_url, expires_in } =
+    (await response.json()) as SessionCreatedResponse;
 
   console.log('\n📱 Please verify this device in your browser:');
   console.log(`   ${verification_url}`);
@@ -41,7 +56,7 @@ export async function login(cloudUrl: string, options: LoginOptions) {
     attempt++;
 
     const pollResponse = await fetch(
-      `${cloudUrl}/api/local/devices/session?code=${device_code}`
+      `${normalizedUrl}/api/local/devices/session?code=${encodeURIComponent(device_code)}`
     );
 
     if (!pollResponse.ok) {
@@ -52,16 +67,20 @@ export async function login(cloudUrl: string, options: LoginOptions) {
       continue;
     }
 
-    const result = await pollResponse.json();
+    const result = (await pollResponse.json()) as SessionPollResponse;
 
-    if (result.status === 'completed') {
+    if (result.status === 'completed' && result.device_id && result.device_token) {
       console.log('✅ Device verified!\n');
 
+      const existing = await loadProfile();
       await saveProfile({
-        cloudUrl,
+        cloudUrl: normalizedUrl,
         deviceId: result.device_id,
         deviceToken: result.device_token,
         deviceName: options.device_name,
+        listenHost: existing?.listenHost || '127.0.0.1',
+        listenPort: existing?.listenPort || 3147,
+        configVersion: existing?.configVersion || 0,
       });
 
       console.log(`✨ Login successful!`);

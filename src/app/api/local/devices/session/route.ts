@@ -3,32 +3,81 @@
 // ============================================================
 
 import { NextRequest } from 'next/server';
-import { kv } from '@vercel/kv';
+import { getKV } from '@/lib/admin';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+interface DeviceSessionRecord {
+  device_id: string;
+  device_name: string;
+  platform: string;
+  device_token: string;
+  status: 'pending' | 'completed';
+  expires_at: number;
+  created_at: number;
+}
+
+function parseSession(raw: unknown): DeviceSessionRecord | null {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw) as DeviceSessionRecord;
+    } catch {
+      return null;
+    }
+  }
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw as DeviceSessionRecord;
+  }
+  return null;
+}
 
 // POST /api/local/devices/session - Create device code
 export async function POST(request: NextRequest) {
-  const { device_name, platform } = await request.json();
+  const kv = await getKV();
+  if (!kv) {
+    return Response.json(
+      { error: 'KV storage is not configured on this relay instance' },
+      { status: 503 }
+    );
+  }
+
+  let body: { device_name?: unknown; platform?: unknown } = {};
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
+
+  const deviceName =
+    typeof body.device_name === 'string' && body.device_name.trim()
+      ? body.device_name.trim().slice(0, 100)
+      : 'Unknown Device';
+  const platform =
+    typeof body.platform === 'string' && body.platform.trim()
+      ? body.platform.trim().slice(0, 50)
+      : 'unknown';
 
   const deviceCode = `DC_${crypto.randomUUID()}`;
   const deviceId = `device_${crypto.randomUUID()}`;
   const deviceToken = `dt_${crypto.randomUUID().replace(/-/g, '')}`;
   const expiresAt = Date.now() + 600_000; // 10 min
 
-  // Store pending session in KV
-  await kv.hset(`device_session:${deviceCode}`, {
+  const record: DeviceSessionRecord = {
     device_id: deviceId,
-    device_name: device_name || 'Unknown Device',
-    platform: platform || 'unknown',
+    device_name: deviceName,
+    platform,
     device_token: deviceToken,
     status: 'pending',
     expires_at: expiresAt,
     created_at: Date.now(),
-  });
-  await kv.expire(`device_session:${deviceCode}`, 600);
+  };
 
-  const verificationUrl = `${new URL(request.url).origin}/admin/local-relay/verify?code=${deviceCode}`;
+  // Store with native TTL (supported on both Vercel KV and CFKVAdapter)
+  await kv.set(`device_session:${deviceCode}`, JSON.stringify(record), { ex: 600 });
+
+  const verificationUrl = `${new URL(request.url).origin}/admin/local-relay/verify?code=${encodeURIComponent(deviceCode)}`;
 
   return Response.json({
     device_code: deviceCode,
@@ -45,23 +94,38 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: 'Missing device_code' }, { status: 400 });
   }
 
-  const session = await kv.hgetall(`device_session:${deviceCode}`);
+  const kv = await getKV();
+  if (!kv) {
+    return Response.json({ error: 'KV storage is not configured' }, { status: 503 });
+  }
+
+  const raw = (await kv.get(`device_session:${deviceCode}`)) ?? (await kv.hgetall(`device_session:${deviceCode}`));
+  const session = parseSession(raw);
   if (!session) {
     return Response.json({ error: 'Session not found or expired' }, { status: 404 });
   }
 
-  if (session.status === 'completed') {
-    return Response.json({
-      status: 'completed',
-      device_id: session.device_id,
-      device_token: session.device_token,
-    });
-  }
-
-  if (session.status === 'pending' && Date.now() > (session.expires_at as number)) {
+  if (Date.now() > Number(session.expires_at)) {
     await kv.del(`device_session:${deviceCode}`);
     return Response.json({ error: 'Session expired' }, { status: 410 });
   }
 
-  return Response.json({ status: 'pending' });
+  if (session.status === 'completed') {
+    // One-time retrieval: delete session immediately so the plaintext device_token
+    // cannot be replayed from browser history or logs.
+    await kv.del(`device_session:${deviceCode}`);
+    return Response.json(
+      {
+        status: 'completed',
+        device_id: session.device_id,
+        device_token: session.device_token,
+      },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+    );
+  }
+
+  return Response.json(
+    { status: 'pending' },
+    { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+  );
 }

@@ -1,46 +1,64 @@
 // ============================================================
-// AI Relay — Postgres Config Store (for VPS deployment)
+// AI Relay — Postgres Config Store (for Self-Hosted / VPS)
 // ============================================================
+// Persists runtime overrides (custom providers, managed keys,
+// model aliases, priority rules, fallback chains, monotonic
+// config versions) in PostgreSQL `kv_store` via admin-config's
+// PostgresKVAdapter while preserving graceful fallback when DB
+// is temporarily unavailable.
 
 import type { ConfigStore, ModelAliasConfig } from './types';
 import type { ProviderConfig } from '../providers/types';
 import type { PriorityRule } from '../admin/priority-rules-core';
+import {
+  getCustomProviders,
+  getManagedKeys,
+  getManagedKeysVersion,
+  getGlobalConfigVersion,
+  getModelAliasConfig,
+  getPriorityRules as getAdminPriorityRules,
+  getFallbackChain as getAdminFallbackChain,
+} from '../admin/admin-config';
 
 export class PostgresConfigStore implements ConfigStore {
-  private connectionString: string;
+  readonly connectionString: string;
 
   constructor(connectionString?: string) {
     this.connectionString = connectionString || process.env.DATABASE_URL || '';
   }
 
-  async getProviders(): Promise<Record<string, ProviderConfig>> {
-    // TODO: SELECT * FROM providers
-    throw new Error('PostgresConfigStore not implemented');
+  async getProviders(forceRefresh = false): Promise<Record<string, ProviderConfig>> {
+    return await getCustomProviders(forceRefresh);
   }
 
-  async getProviderKeys(provider: string): Promise<string[] | null> {
-    // TODO: SELECT keys FROM provider_keys WHERE provider = ?
-    return null;
+  async getProviderKeys(
+    provider: string,
+    forceRefresh = false,
+    options?: { throwOnError?: boolean }
+  ): Promise<string[] | null> {
+    return await getManagedKeys(provider, forceRefresh, options);
   }
 
-  async getModelAliases(): Promise<ModelAliasConfig> {
-    // TODO: SELECT * FROM model_aliases
-    return { aliases: {}, hidden: [] };
+  async getProviderKeysVersion(
+    provider: string,
+    options?: { forceRefresh?: boolean; throwOnError?: boolean }
+  ): Promise<number> {
+    return await getManagedKeysVersion(provider, options);
   }
 
-  async getPriorityRules(): Promise<PriorityRule[]> {
-    // TODO: SELECT * FROM priority_rules
-    return [];
+  async getModelAliases(forceRefresh = false): Promise<ModelAliasConfig> {
+    return await getModelAliasConfig(forceRefresh);
+  }
+
+  async getPriorityRules(forceRefresh = false): Promise<PriorityRule[]> {
+    return await getAdminPriorityRules(forceRefresh);
   }
 
   async getFallbackChain(provider: string, staticFallbacks?: string[] | string): Promise<string[]> {
-    // TODO: SELECT fallback_chain FROM providers WHERE name = ?
-    if (!staticFallbacks) return [];
-    return Array.isArray(staticFallbacks) ? staticFallbacks : [staticFallbacks];
+    return await getAdminFallbackChain(provider, staticFallbacks);
   }
 
   async getConfigVersion(): Promise<number> {
-    // TODO: SELECT version FROM config_metadata
-    return Date.now();
+    return await getGlobalConfigVersion();
   }
 }

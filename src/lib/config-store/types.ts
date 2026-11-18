@@ -11,10 +11,11 @@ export interface ModelAliasConfig {
 }
 
 export interface ConfigStore {
-  getProviders(): Promise<Record<string, ProviderConfig>>;
-  getProviderKeys(provider: string): Promise<string[] | null>;
-  getModelAliases(): Promise<ModelAliasConfig>;
-  getPriorityRules(): Promise<PriorityRule[]>;
+  getProviders(forceRefresh?: boolean): Promise<Record<string, ProviderConfig>>;
+  getProviderKeys(provider: string, forceRefresh?: boolean, options?: { throwOnError?: boolean }): Promise<string[] | null>;
+  getProviderKeysVersion?(provider: string, options?: { forceRefresh?: boolean; throwOnError?: boolean }): Promise<number>;
+  getModelAliases(forceRefresh?: boolean): Promise<ModelAliasConfig>;
+  getPriorityRules(forceRefresh?: boolean): Promise<PriorityRule[]>;
   getFallbackChain(provider: string, staticFallbacks?: string[] | string): Promise<string[]>;
   getConfigVersion(): Promise<number>;
 }

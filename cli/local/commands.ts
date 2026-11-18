@@ -45,8 +45,8 @@ export async function startCommand(options: StartCommandOptions = {}) {
   if (!configSource) {
     console.error('❌ No configuration source found.\n');
     console.log('You can:');
-    console.log('  1. Login to cloud: ai-relay login <cloud-url>');
-    console.log('  2. Use local config: ai-relay local:start --config ./config.json');
+    console.log('  1. Login to cloud: airelay login <cloud-url>');
+    console.log('  2. Use local config: airelay local:start --config ./config.json');
     console.log('  3. Set environment: export RELAY_CONFIG_PATH=./config.json');
     console.log('  4. Use inline keys: export OPENAI_KEYS=sk-xxx\n');
     process.exit(1);
@@ -93,8 +93,8 @@ export async function statusCommand() {
   if (!profile) {
     console.log('❌ No profile found\n');
     console.log('Run one of these commands to get started:');
-    console.log('  - ai-relay login <cloud-url>');
-    console.log('  - ai-relay local:start --config ./config.json');
+    console.log('  - airelay login <cloud-url>');
+    console.log('  - airelay local:start --config ./config.json');
     console.log('  - export RELAY_CONFIG_PATH=./config.json\n');
     return;
   }

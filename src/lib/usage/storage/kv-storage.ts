@@ -90,43 +90,13 @@ function parseDailyPoint(date: string, raw: Record<string, unknown> | null): Tre
   };
 }
 
-let _kv: any = null;
-
 async function getKV() {
   // Cloudflare Pages: usage is handled by D1UsageStorage, not this file.
   // Return null so KVUsageStorage gracefully no-ops on CF.
   if (isCloudflareSync()) return null;
 
-  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-    if (_kv && !_kv._isMock) return _kv;
-    try {
-      const mod = await import('@vercel/kv');
-      _kv = mod.kv || mod.createClient({
-        url: process.env.KV_REST_API_URL,
-        token: process.env.KV_REST_API_TOKEN,
-      });
-      return _kv;
-    } catch {
-      return null;
-    }
-  }
-
-  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
-    const g = global as any;
-    if (!g._mockKVInstance) {
-      try {
-        const { createMemoryMockKV } = await import('@/lib/admin/admin-config');
-        g._mockKVInstance = createMemoryMockKV();
-        g._mockKVInstance._isMock = true;
-      } catch {
-        // ignore
-      }
-    }
-    _kv = g._mockKVInstance;
-    return _kv;
-  }
-
-  return null;
+  const { getKV: getSharedKV } = await import('@/lib/admin/admin-config');
+  return getSharedKV();
 }
 
 interface AdminCacheEntry {
@@ -499,6 +469,23 @@ function shouldRecheckQuota(dailyUsed: number, dailyLimit: number, monthlyUsed: 
 
 export class KVUsageStorage implements UsageStorage {
   /**
+   * On self-hosted persistent file storage (`FileKVAdapter`), in-memory writes
+   * are sub-microsecond and free (disk writes are coalesced inside FileKVAdapter),
+   * so bypass BatchUsageRecorder's 60s Upstash-saving ring buffer for real-time stats.
+   */
+  get shouldRecordDirect(): boolean {
+    if (isCloudflareSync()) return false;
+    if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) return false;
+    if (process.env.RELAY_STORAGE_PATH?.trim() || process.env.RELAY_DATA_DIR?.trim()) return true;
+    return (
+      process.env.NODE_ENV === 'production' &&
+      !process.env.VERCEL &&
+      !process.env.CF_PAGES &&
+      !process.env.VITEST
+    );
+  }
+
+  /**
    * Record a usage event with per-request KV write.
    * Used for low-traffic paths or when batching is not desired.
    */
@@ -521,7 +508,7 @@ export class KVUsageStorage implements UsageStorage {
       let writeKeyUsage = false;
       let keyRequests = 0;
       let keyTokens = 0;
-      const mode = getMode();
+      const mode = kv._isFileKV && !process.env.RELAY_KV_KEY_USAGE_MODE ? 'full' : getMode();
       if (mode === 'full') {
         writeKeyUsage = true;
         keyRequests = requestCount;
@@ -627,7 +614,8 @@ export class KVUsageStorage implements UsageStorage {
 
       const date = today();
       const status = String(event.statusCode);
-      const detailRate = getSampleRate('RELAY_KV_ERROR_DETAIL_SAMPLE_RATE', 0.2);
+      const defaultDetailRate = kv._isFileKV ? 1 : 0.2;
+      const detailRate = getSampleRate('RELAY_KV_ERROR_DETAIL_SAMPLE_RATE', defaultDetailRate);
       const writeDetail = shouldSample(detailRate);
 
       await withTimeout(

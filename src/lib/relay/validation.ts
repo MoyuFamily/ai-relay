@@ -1,35 +1,80 @@
+const MAX_INLINE_IMAGE_BYTES = 1024 * 1024; // 1MB
+
+function checkBase64Bytes(base64Data: string): { valid: boolean; error?: string } {
+  const approximateBytes = Math.ceil((base64Data.length * 3) / 4);
+  if (approximateBytes > MAX_INLINE_IMAGE_BYTES) {
+    const sizeInMB = (approximateBytes / (1024 * 1024)).toFixed(2);
+    return {
+      valid: false,
+      error: `Base64 image size exceeds the limit of 1MB (current size: ${sizeInMB}MB).`,
+    };
+  }
+  return { valid: true };
+}
+
+function checkDataUrl(url: string): { valid: boolean; error?: string } {
+  if (!url.startsWith('data:')) return { valid: true };
+  const commaIdx = url.indexOf(',');
+  if (commaIdx === -1) return { valid: true };
+  return checkBase64Bytes(url.slice(commaIdx + 1));
+}
+
 /**
- * Validate base64 image sizes in request body.
- * If any image exceeds 1MB, returns validation result with error.
+ * Validate base64 image sizes in request body across OpenAI Chat Completions,
+ * Anthropic Messages, and OpenAI Responses API formats.
+ * If any inline image exceeds 1MB, returns validation result with error.
  */
 export function validateBase64ImageSizes(body: any): { valid: boolean; error?: string } {
-  if (!body || !body.messages || !Array.isArray(body.messages)) {
+  if (!body || typeof body !== 'object') {
     return { valid: true };
   }
 
-  const MAX_SIZE_BYTES = 1024 * 1024; // 1MB
-
-  for (let i = 0; i < body.messages.length; i++) {
-    const msg = body.messages[i];
-    if (msg && Array.isArray(msg.content)) {
+  // OpenAI Chat Completions & Anthropic Messages (`messages` array)
+  if (Array.isArray(body.messages)) {
+    for (let i = 0; i < body.messages.length; i++) {
+      const msg = body.messages[i];
+      if (!msg || !Array.isArray(msg.content)) continue;
       for (let j = 0; j < msg.content.length; j++) {
         const part = msg.content[j];
-        if (part && typeof part === 'object' && part.type === 'image_url' && part.image_url?.url) {
-          const url: string = part.image_url.url;
-          if (url.startsWith('data:')) {
-            const commaIdx = url.indexOf(',');
-            if (commaIdx !== -1) {
-              const base64Data = url.slice(commaIdx + 1);
-              // Calculate approximate size in bytes: base64 length * 0.75
-              const approximateBytes = Math.ceil((base64Data.length * 3) / 4);
-              if (approximateBytes > MAX_SIZE_BYTES) {
-                const sizeInMB = (approximateBytes / (1024 * 1024)).toFixed(2);
-                return {
-                  valid: false,
-                  error: `Base64 image size exceeds the limit of 1MB (current size: ${sizeInMB}MB).`
-                };
-              }
-            }
+        if (!part || typeof part !== 'object') continue;
+
+        // OpenAI format: { type: 'image_url', image_url: { url: 'data:...' } }
+        if (part.type === 'image_url' && typeof part.image_url?.url === 'string') {
+          const check = checkDataUrl(part.image_url.url);
+          if (!check.valid) return check;
+        }
+
+        // Anthropic format: { type: 'image', source: { type: 'base64', data: '...' } }
+        if (part.type === 'image' && typeof part.source?.data === 'string') {
+          const check = checkBase64Bytes(part.source.data);
+          if (!check.valid) return check;
+        }
+      }
+    }
+  }
+
+  // OpenAI Responses API (`input` array)
+  if (Array.isArray(body.input)) {
+    for (let i = 0; i < body.input.length; i++) {
+      const item = body.input[i];
+      if (!item || typeof item !== 'object') continue;
+      if (item.type === 'input_image' && typeof item.image_url === 'string') {
+        const check = checkDataUrl(item.image_url);
+        if (!check.valid) return check;
+      }
+      if (Array.isArray(item.content)) {
+        for (let j = 0; j < item.content.length; j++) {
+          const part = item.content[j];
+          if (!part || typeof part !== 'object') continue;
+          const imgUrl =
+            typeof part.image_url === 'string'
+              ? part.image_url
+              : typeof part.image_url?.url === 'string'
+                ? part.image_url.url
+                : null;
+          if ((part.type === 'input_image' || part.type === 'image_url') && imgUrl) {
+            const check = checkDataUrl(imgUrl);
+            if (!check.valid) return check;
           }
         }
       }
@@ -40,9 +85,9 @@ export function validateBase64ImageSizes(body: any): { valid: boolean; error?: s
 }
 
 /**
- * Default cap for the Cloudflare request-size guard (10MB). Generous enough
+ * Default cap for the total request-size guard (10MB). Generous enough
  * for legitimate multi-modal requests (several images + text) while bounding
- * the oversized payloads that validateBase64ImageSizes used to reject.
+ * oversized payloads before memory/CPU exhaustion.
  */
 const DEFAULT_MAX_REQUEST_BYTES = 10 * 1024 * 1024;
 
@@ -55,18 +100,12 @@ function maxRequestBytes(): number {
 }
 
 /**
- * Cheap O(1) total request-size guard for Cloudflare Free.
+ * Cheap O(1) total request-size guard for Cloudflare Free and pre-flight header checks.
  *
  * The precise per-image base64 scan (validateBase64ImageSizes) is O(body)
  * CPU, which CF Free's ~10ms budget can't afford on large requests. This
  * preserves equivalent abuse protection at constant cost by capping the
- * whole request size instead of scanning each image: an oversized inline
- * image still pushes the total body past the cap and is rejected before
- * relay. Coarser than the per-image limit by design.
- *
- * `rawByteLength` is the request text's character length (UTF-16 code units,
- * ≈ bytes for the base64/ASCII payloads that dominate large requests).
- * Pass the upstream Content-Length when available for an exact byte count.
+ * whole request size instead of scanning each image.
  * Set RELAY_MAX_REQUEST_BYTES=0 to disable.
  */
 export function validateRequestSize(rawByteLength: number): { valid: boolean; error?: string } {
@@ -80,4 +119,16 @@ export function validateRequestSize(rawByteLength: number): { valid: boolean; er
     };
   }
   return { valid: true };
+}
+
+/**
+ * Pre-parse Content-Length check so oversized bodies are rejected before
+ * buffering `request.text()` / `request.json()` into isolate memory.
+ */
+export function validateContentLengthHeader(headers: Pick<Headers, 'get'>): { valid: boolean; error?: string } {
+  const rawLen = headers.get('content-length');
+  if (!rawLen) return { valid: true };
+  const parsed = Number(rawLen);
+  if (!Number.isFinite(parsed) || parsed <= 0) return { valid: true };
+  return validateRequestSize(parsed);
 }

@@ -170,7 +170,7 @@ export function fileConfigToSnapshot(fileConfig: Partial<FileConfig>): ConfigSna
  * the full ConfigSnapshot structure. Watches file for changes.
  */
 export class FileConfigSource implements ConfigSource {
-  private watcher?: fs.FSWatcher;
+  private watcher?: fsSync.FSWatcher;
 
   constructor(private readonly filePath: string) {}
 
@@ -202,7 +202,7 @@ export class FileConfigSource implements ConfigSource {
       });
 
       // Handle watcher errors (e.g., file deleted)
-      this.watcher.on('error', (error) => {
+      this.watcher.on('error', (error: Error) => {
         console.error(`⚠️  Config file watcher error: ${error.message}`);
         if (this.watcher) {
           this.watcher.close();

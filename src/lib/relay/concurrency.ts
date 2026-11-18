@@ -3,11 +3,23 @@
 //
 // Limits the number of concurrent in-flight requests to upstream
 // providers. Excess requests are queued; if the queue is full,
-// a 429 is returned immediately.
+// a 429/502 is returned immediately.
+// Reads env limits dynamically so Cloudflare Workers / OpenNext
+// request-scoped env vars and runtime overrides take effect.
 // ============================================================
 
-const MAX_CONCURRENT = parseInt(process.env.RELAY_MAX_CONCURRENT || '3', 10);
-const MAX_QUEUE = parseInt(process.env.RELAY_MAX_QUEUE || '10', 10);
+const DEFAULT_MAX_CONCURRENT = 3;
+const DEFAULT_MAX_QUEUE = 10;
+
+function getMaxConcurrent(): number {
+  const parsed = parseInt(process.env.RELAY_MAX_CONCURRENT || '', 10);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : DEFAULT_MAX_CONCURRENT;
+}
+
+function getMaxQueue(): number {
+  const parsed = parseInt(process.env.RELAY_MAX_QUEUE || '', 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_MAX_QUEUE;
+}
 
 let inFlight = 0;
 const queue: Array<{
@@ -21,14 +33,17 @@ const queue: Array<{
  * Rejects if the queue is full or the wait times out.
  */
 export function acquireSlot(timeoutMs = 30_000): Promise<void> {
+  const maxConcurrent = getMaxConcurrent();
+  const maxQueue = getMaxQueue();
+
   return new Promise((resolve, reject) => {
-    if (inFlight < MAX_CONCURRENT) {
+    if (inFlight < maxConcurrent) {
       inFlight++;
       resolve();
       return;
     }
 
-    if (queue.length >= MAX_QUEUE) {
+    if (queue.length >= maxQueue) {
       reject(new Error('Concurrency queue full'));
       return;
     }
@@ -54,8 +69,8 @@ export function acquireSlot(timeoutMs = 30_000): Promise<void> {
  * Release a concurrency slot. Resumes the next queued request.
  */
 export function releaseSlot(): void {
-  inFlight--;
-  if (queue.length > 0) {
+  inFlight = Math.max(0, inFlight - 1);
+  if (queue.length > 0 && inFlight < getMaxConcurrent()) {
     const next = queue.shift()!;
     next.resolve();
   }
@@ -88,7 +103,7 @@ export function getConcurrencyStats(): {
   return {
     inFlight,
     queued: queue.length,
-    maxConcurrent: MAX_CONCURRENT,
-    maxQueue: MAX_QUEUE,
+    maxConcurrent: getMaxConcurrent(),
+    maxQueue: getMaxQueue(),
   };
 }

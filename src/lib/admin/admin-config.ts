@@ -56,6 +56,12 @@ export const __adminConfigCacheForTests = {
   clear(): void {
     clearCache();
   },
+  resetClients(): void {
+    _kv = null;
+    _pgKv = null;
+    _pgKvUrl = null;
+    clearCache();
+  },
 };
 
 export function createMemoryMockKV() {
@@ -68,14 +74,16 @@ export function createMemoryMockKV() {
       const keys = Array.isArray(keysOrArray[0]) ? keysOrArray[0] as string[] : keysOrArray as string[];
       return keys.map((key) => store.get(key) ?? null);
     },
-    async set(key: string, value: any) {
+    async set(key: string, value: any, _options?: { ex?: number }) {
       store.set(key, value);
       return 'OK';
     },
-    async del(key: string) {
-      const existed = store.has(key);
-      store.delete(key);
-      return existed ? 1 : 0;
+    async del(...keys: string[]) {
+      let deleted = 0;
+      for (const key of keys) {
+        if (store.delete(key)) deleted++;
+      }
+      return deleted;
     },
     async hgetall(key: string) {
       const val = store.get(key);
@@ -136,15 +144,20 @@ export function createMemoryMockKV() {
       store.set(key, next);
       return next;
     },
-    async sadd(key: string, member: string) {
+    async sadd(key: string, ...members: string[]) {
       let current = store.get(key);
       if (!(current instanceof Set)) {
         current = new Set();
         store.set(key, current);
       }
-      const existed = current.has(member);
-      current.add(member);
-      return existed ? 0 : 1;
+      let added = 0;
+      for (const member of members) {
+        if (!current.has(member)) {
+          current.add(member);
+          added++;
+        }
+      }
+      return added;
     },
     async smembers(key: string) {
       const current = store.get(key);
@@ -153,12 +166,14 @@ export function createMemoryMockKV() {
       }
       return [];
     },
-    async srem(key: string, member: string) {
+    async srem(key: string, ...members: string[]) {
       const current = store.get(key);
       if (current instanceof Set) {
-        const existed = current.has(member);
-        current.delete(member);
-        return existed ? 1 : 0;
+        let removed = 0;
+        for (const member of members) {
+          if (current.delete(member)) removed++;
+        }
+        return removed;
       }
       return 0;
     },
@@ -187,15 +202,77 @@ export function createMemoryMockKV() {
   return result;
 }
 
+let _pgKv: any = null;
+let _pgKvUrl: string | null = null;
+
+export type StorageBackendType =
+  | 'cloudflare-kv-d1'
+  | 'vercel-kv'
+  | 'postgres'
+  | 'file'
+  | 'memory'
+  | 'none';
+
+function isNextProductionBuildPhase(): boolean {
+  return process.env.NEXT_PHASE === 'phase-production-build';
+}
+
+function canUseSelfHostedPostgres(): boolean {
+  if (isNextProductionBuildPhase()) return false;
+  if (process.env.VERCEL || process.env.CF_PAGES) return false;
+  if (process.env.VITEST && process.env.RELAY_ENABLE_POSTGRES_IN_TEST !== '1') return false;
+  const url = process.env.DATABASE_URL?.trim() || '';
+  return /^postgres(ql)?:\/\//i.test(url);
+}
+
+function hasExplicitFileStorageEnv(): boolean {
+  return Boolean(process.env.RELAY_STORAGE_PATH?.trim() || process.env.RELAY_DATA_DIR?.trim());
+}
+
+function canUseDefaultSelfHostedFileStorage(): boolean {
+  if (isNextProductionBuildPhase()) return false;
+  if (process.env.VERCEL || process.env.CF_PAGES) return false;
+  if (process.env.VITEST) return false;
+  return process.env.NODE_ENV === 'production';
+}
+
+export async function detectStorageBackend(): Promise<StorageBackendType> {
+  if (isCloudflareSync()) {
+    const cfEnv = getCFEnvSync() || await getCFEnv();
+    return cfEnv?.KV ? 'cloudflare-kv-d1' : 'none';
+  }
+  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+    return 'vercel-kv';
+  }
+  if (!process.env.VERCEL && !process.env.CF_PAGES && hasExplicitFileStorageEnv()) {
+    return 'file';
+  }
+  if (canUseSelfHostedPostgres()) {
+    return 'postgres';
+  }
+  if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
+    return 'memory';
+  }
+  if (canUseDefaultSelfHostedFileStorage()) {
+    return 'file';
+  }
+  return 'none';
+}
+
 /**
  * Get KV client for the current environment.
- * Supports Cloudflare Pages KV binding, Vercel KV REST API, and in-memory mock for dev/test.
- * Exported for reuse by other modules that need environment-agnostic KV access (e.g. smart-routing).
+ * Supports:
+ * 1. Cloudflare Pages/Workers KV binding (`CFKVAdapter`)
+ * 2. Vercel KV / Upstash REST API (`@vercel/kv`)
+ * 3. Self-hosted explicit file storage (`RELAY_STORAGE_PATH` / `RELAY_DATA_DIR` -> `FileKVAdapter`)
+ * 4. Self-hosted PostgreSQL (`DATABASE_URL` -> `PostgresKVAdapter`)
+ * 5. Development / Test in-memory mock (`createMemoryMockKV`)
+ * 6. Self-hosted zero-dependency production default (`./data/kv-store.json` -> `FileKVAdapter`)
  */
 export async function getKV() {
   const g = global as any;
 
-  // Cloudflare Pages: use CF KV binding via CFKVAdapter
+  // 1. Cloudflare Pages/Workers: use CF KV binding via CFKVAdapter
   if (isCloudflareSync()) {
     try {
       const cfEnv = getCFEnvSync() || await getCFEnv();
@@ -207,20 +284,57 @@ export async function getKV() {
     return null;
   }
 
+  // 2. Vercel KV / Upstash REST API
   if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-    if (_kv && !_kv._isMock) return _kv;
+    if (_kv && _kv._backendType === 'vercel-kv') return _kv;
     try {
       const mod = await import('@vercel/kv');
       _kv = mod.kv || mod.createClient({
         url: process.env.KV_REST_API_URL,
         token: process.env.KV_REST_API_TOKEN,
       });
+      if (_kv && typeof _kv === 'object') {
+        _kv._backendType = 'vercel-kv';
+      }
       return _kv;
     } catch {
       return null;
     }
   }
 
+  // Avoid opening database sockets or writing local files during `next build` static generation
+  if (isNextProductionBuildPhase()) {
+    return null;
+  }
+
+  // 3. Explicit self-hosted persistent file storage (RELAY_STORAGE_PATH or RELAY_DATA_DIR)
+  if (!process.env.VERCEL && !process.env.CF_PAGES && hasExplicitFileStorageEnv()) {
+    try {
+      const { getFileKVAdapter } = await import('../storage/file-kv-adapter');
+      return getFileKVAdapter();
+    } catch {
+      return null;
+    }
+  }
+
+  // 4. Self-hosted PostgreSQL (multi-instance / Docker / VPS with DATABASE_URL)
+  if (canUseSelfHostedPostgres()) {
+    try {
+      const url = process.env.DATABASE_URL!.trim();
+      if (_pgKv && _pgKvUrl === url) return _pgKv;
+      const [{ getPostgresSql }, { PostgresKVAdapter }] = await Promise.all([
+        import('../db/client'),
+        import('../storage/postgres-kv-adapter'),
+      ]);
+      _pgKv = new PostgresKVAdapter(getPostgresSql());
+      _pgKvUrl = url;
+      return _pgKv;
+    } catch {
+      return null;
+    }
+  }
+
+  // 5. Development / Test in-memory mock
   if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
     if (!g._mockKVInstance) {
       g._mockKVInstance = createMemoryMockKV();
@@ -228,6 +342,16 @@ export async function getKV() {
     }
     _kv = g._mockKVInstance;
     return _kv;
+  }
+
+  // 6. Self-hosted single-node production default: persistent disk file (`./data/kv-store.json`)
+  if (canUseDefaultSelfHostedFileStorage()) {
+    try {
+      const { getFileKVAdapter } = await import('../storage/file-kv-adapter');
+      return getFileKVAdapter();
+    } catch {
+      return null;
+    }
   }
 
   return null;
@@ -239,10 +363,54 @@ const PREFIX = {
   fallbacks: 'admin:fallbacks:',   // admin:fallbacks:{provider} → JSON string[]
   keys: 'admin:keys:',             // admin:keys:{provider} → JSON string[] (raw API keys)
   keyVersion: 'admin:keys:version:', // admin:keys:version:{provider} → monotonically increasing number
+  configVersion: 'admin:config:version', // global monotonic version for config snapshots
   quota: 'admin:quota',            // admin:quota → Hash { dailyLimit, monthlyLimit }
   modelAliases: 'relay:models:aliases', // relay:models:aliases → JSON { aliases, hidden }
   priorityRules: 'relay:priority:rules', // relay:priority:rules → JSON PriorityRule[]
 } as const;
+
+export async function getGlobalConfigVersion(forceRefresh = false): Promise<number> {
+  const cacheKey = 'configVersion';
+  if (!forceRefresh) {
+    const cached = getCached<number>(cacheKey);
+    if (cached !== null) return cached;
+  }
+
+  const kv = await getKV();
+  if (!kv) return 0;
+
+  try {
+    const raw = await withTimeout(
+      kv.get(PREFIX.configVersion),
+      1000,
+      null,
+      'getGlobalConfigVersion'
+    );
+    const version = Number(raw || 0);
+    setCached(cacheKey, version, CONFIG_CACHE_TTL_MS);
+    return version;
+  } catch {
+    return 0;
+  }
+}
+
+async function bumpGlobalConfigVersion(kv?: any): Promise<number> {
+  const client = kv || await getKV();
+  if (!client) return 0;
+  try {
+    if (typeof client.incr === 'function') {
+      const next = Number(await client.incr(PREFIX.configVersion));
+      clearCache('configVersion');
+      return next;
+    }
+    const next = Number(await client.get(PREFIX.configVersion) || 0) + 1;
+    await client.set(PREFIX.configVersion, next);
+    clearCache('configVersion');
+    return next;
+  } catch {
+    return 0;
+  }
+}
 
 /**
  * Safely parses values retrieved from KV, handling both raw JSON strings
@@ -316,6 +484,7 @@ export async function savePriorityRules(rulesInput: unknown): Promise<PriorityRu
   }
   const store: PriorityRulesStore = { version: 1, rules, updatedAt: Date.now() };
   await kv.set(PREFIX.priorityRules, store);
+  await bumpGlobalConfigVersion(kv);
   clearCache('priorityRules');
   return rules;
 }
@@ -397,6 +566,7 @@ export async function saveModelAliasConfig(configInput: ModelAliasConfig): Promi
     throw new Error('KV storage not configured — cannot persist model aliases');
   }
   await kv.set(PREFIX.modelAliases, JSON.stringify(config));
+  await bumpGlobalConfigVersion(kv);
   clearCache('modelAliases');
   return config;
 }
@@ -533,6 +703,7 @@ export async function setFallbackChain(
     throw new Error('KV storage not configured — cannot persist fallback overrides');
   }
   await kv.set(`${PREFIX.fallbacks}${providerName}`, JSON.stringify(chain));
+  await bumpGlobalConfigVersion(kv);
   clearCache(`fallback:${providerName}`);
 }
 
@@ -543,6 +714,7 @@ export async function clearFallbackChain(providerName: string): Promise<void> {
   const kv = await getKV();
   if (!kv) return;
   await kv.del(`${PREFIX.fallbacks}${providerName}`);
+  await bumpGlobalConfigVersion(kv);
   clearCache(`fallback:${providerName}`);
 }
 
@@ -552,29 +724,39 @@ export async function clearFallbackChain(providerName: string): Promise<void> {
  * Get managed API keys for a provider.
  * Returns KV override if set, otherwise null (caller should use env vars).
  */
-export async function getManagedKeys(providerName: string, forceRefresh = false): Promise<string[] | null> {
+const TIMEOUT_OR_ERROR = Symbol('kv_timeout_or_error');
+
+export async function getManagedKeys(
+  providerName: string,
+  forceRefresh = false,
+  options?: { throwOnError?: boolean }
+): Promise<string[] | null> {
   const cacheKey = `keys:${providerName}`;
   const cached = forceRefresh ? { hit: false as const } : getCachedEntry<string[] | null>(cacheKey);
   if (cached.hit) return cached.data;
 
   const kv = await getKV();
   if (kv) {
-    try {
-      const raw = await withTimeout(
-        kv.get(`${PREFIX.keys}${providerName}`),
-        1000,
-        null,
-        `getManagedKeys:${providerName}`
-      );
-      if (raw) {
-        const parsed = parseJsonOrArray(raw);
-        if (parsed) {
-          setCached(cacheKey, parsed);
-          return parsed;
-        }
+    const raw = await withTimeout<unknown>(
+      kv.get(`${PREFIX.keys}${providerName}`),
+      1000,
+      TIMEOUT_OR_ERROR,
+      `getManagedKeys:${providerName}`
+    );
+    if (raw === TIMEOUT_OR_ERROR) {
+      // Do NOT poison configCache with `null` on transient KV errors/timeouts.
+      if (options?.throwOnError) {
+        throw new Error(`KV error reading managed keys for ${providerName}`);
       }
-    } catch {
-      // KV unavailable — fall through to return null
+      const stale = getCachedEntry<string[] | null>(cacheKey);
+      return stale.hit ? stale.data : null;
+    }
+    if (raw) {
+      const parsed = parseJsonOrArray(raw);
+      if (parsed) {
+        setCached(cacheKey, parsed);
+        return parsed;
+      }
     }
     setCached(cacheKey, null);
     return null;
@@ -582,22 +764,28 @@ export async function getManagedKeys(providerName: string, forceRefresh = false)
   return null;
 }
 
-export async function getManagedKeysVersion(providerName: string): Promise<number> {
+export async function getManagedKeysVersion(
+  providerName: string,
+  options?: { forceRefresh?: boolean; throwOnError?: boolean }
+): Promise<number> {
   const cacheKey = `keyVersion:${providerName}`;
-  const cached = getCached<number>(cacheKey);
-  if (cached !== null) return cached;
+  if (!options?.forceRefresh) {
+    const cached = getCached<number>(cacheKey);
+    if (cached !== null) return cached;
+  }
 
   const kv = await getKV();
   if (!kv) return 0;
-  let raw: any;
-  try {
-    raw = await withTimeout(
-      kv.get(`${PREFIX.keyVersion}${providerName}`),
-      1000,
-      null,
-      `getManagedKeysVersion:${providerName}`
-    );
-  } catch {
+  const raw = await withTimeout<unknown>(
+    kv.get(`${PREFIX.keyVersion}${providerName}`),
+    1000,
+    TIMEOUT_OR_ERROR,
+    `getManagedKeysVersion:${providerName}`
+  );
+  if (raw === TIMEOUT_OR_ERROR) {
+    if (options?.throwOnError) {
+      throw new Error(`KV error reading key version for ${providerName}`);
+    }
     return 0;
   }
   const version = Number(raw || 0);
@@ -652,16 +840,17 @@ export async function getAllManagedKeys(): Promise<Record<string, string[]>> {
       }
     } while (cursor !== 0);
 
+    const providerKeyNames = keys.filter((k) => !k.startsWith(PREFIX.keyVersion));
     const out: Record<string, string[]> = {};
-    if (keys.length > 0) {
+    if (providerKeyNames.length > 0) {
       const values = await withTimeout(
-        Promise.all(keys.map((k: string) => kv.get(k))),
+        Promise.all(providerKeyNames.map((k: string) => kv.get(k))),
         1000,
-        keys.map(() => null),
+        providerKeyNames.map(() => null),
         'getAllManagedKeys:getValues'
       );
-      for (let i = 0; i < keys.length; i++) {
-        const provider = keys[i].replace('admin:keys:', '');
+      for (let i = 0; i < providerKeyNames.length; i++) {
+        const provider = providerKeyNames[i].replace('admin:keys:', '');
         if (values[i]) {
           const parsed = parseJsonOrArray(values[i]);
           if (parsed) {
@@ -691,6 +880,7 @@ export async function setManagedKeys(
   }
   await kv.set(`${PREFIX.keys}${providerName}`, JSON.stringify(keys));
   const version = await bumpManagedKeysVersion(providerName, kv);
+  await bumpGlobalConfigVersion(kv);
   clearCache(`keys:${providerName}`);
   clearCache('keys:all');
   try {
@@ -970,6 +1160,7 @@ export async function saveCustomProvider(provider: ProviderConfig): Promise<void
     isCustom: true,
   };
   await kv.set('admin:custom_providers', JSON.stringify(custom));
+  await bumpGlobalConfigVersion(kv);
   clearCache('customProviders');
   try {
     const { clearProvidersCache } = await import('../providers/resolver');
@@ -1024,6 +1215,7 @@ export async function deleteCustomProvider(name: string): Promise<void> {
       clearCache(`fallback:${providerName}`);
     }));
   await bumpManagedKeysVersion(name, kv);
+  await bumpGlobalConfigVersion(kv);
   clearCache('customProviders');
   clearCache(`keys:${name}`);
   clearCache('keys:all');
@@ -1275,7 +1467,8 @@ export async function importBackupData(data: Record<string, any>): Promise<void>
     }
   }
 
-  // Clear all caches at the end
+  // Bump global config version and clear all caches at the end
+  await bumpGlobalConfigVersion(kv);
   clearCache();
 }
 
@@ -1570,5 +1763,62 @@ export async function importStatsData(payload: Record<string, any>): Promise<voi
     }
   } catch {
     // Non-critical: D1 write failure should not fail the whole import
+  }
+
+  // On self-hosted Postgres, also sync daily_usage rows so relational trend/report queries match
+  if (canUseSelfHostedPostgres()) {
+    try {
+      const [{ getPostgresSql }, { ensureSelfHostedPostgresSchema }] = await Promise.all([
+        import('../db/client'),
+        import('../db/self-hosted-schema'),
+      ]);
+      const sql = getPostgresSql();
+      await ensureSelfHostedPostgresSchema(sql);
+
+      for (const [date, raw] of Object.entries(usageDaily as Record<string, any>)) {
+        if (!raw || typeof raw !== 'object') continue;
+        await sql`
+          INSERT INTO daily_usage (date, provider, requests, tokens, prompt_tokens, completion_tokens)
+          VALUES (
+            ${date},
+            '',
+            ${Number(raw.requests || 0)},
+            ${Number(raw.tokens || 0)},
+            ${Number(raw.promptTokens || 0)},
+            ${Number(raw.completionTokens || 0)}
+          )
+          ON CONFLICT (date, provider) DO UPDATE SET
+            requests = EXCLUDED.requests,
+            tokens = EXCLUDED.tokens,
+            prompt_tokens = EXCLUDED.prompt_tokens,
+            completion_tokens = EXCLUDED.completion_tokens
+        `;
+      }
+
+      for (const [provider, datesData] of Object.entries(usageProviderDaily as Record<string, Record<string, any>>)) {
+        if (!datesData || typeof datesData !== 'object') continue;
+        for (const [date, raw] of Object.entries(datesData)) {
+          if (!raw || typeof raw !== 'object') continue;
+          await sql`
+            INSERT INTO daily_usage (date, provider, requests, tokens, prompt_tokens, completion_tokens)
+            VALUES (
+              ${date},
+              ${provider},
+              ${Number(raw.requests || 0)},
+              ${Number(raw.tokens || 0)},
+              ${Number(raw.promptTokens || 0)},
+              ${Number(raw.completionTokens || 0)}
+            )
+            ON CONFLICT (date, provider) DO UPDATE SET
+              requests = EXCLUDED.requests,
+              tokens = EXCLUDED.tokens,
+              prompt_tokens = EXCLUDED.prompt_tokens,
+              completion_tokens = EXCLUDED.completion_tokens
+          `;
+        }
+      }
+    } catch {
+      // Non-critical: Postgres relational sync failure should not fail KV backup import
+    }
   }
 }

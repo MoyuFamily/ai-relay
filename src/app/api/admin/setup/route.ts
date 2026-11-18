@@ -1,9 +1,10 @@
-// AI Relay v2.1 — Admin setup diagnostics
+// AI Relay — Admin setup diagnostics
 import { NextRequest } from 'next/server';
-import { requireAdminAuth } from '@/lib/admin';
+import { detectStorageBackend, getKV, requireAdminAuth } from '@/lib/admin';
 import { getAllProviders } from '@/lib/providers';
 import { getKeyPoolStats, initAllKeyPools } from '@/lib/relay';
-import { getCFEnv, isCloudflare } from '@/lib/cf-env';
+import { isCloudflare } from '@/lib/cf-env';
+import { detectRuntime } from '@/lib/runtime/capabilities';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -27,17 +28,23 @@ export async function GET(request: NextRequest) {
     models: provider.models || [],
   }));
 
-  const cfEnv = await getCFEnv();
-  const hasKv = cfEnv?.KV ? true : Boolean(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+  const [kv, storageBackend, isCf] = await Promise.all([
+    getKV(),
+    detectStorageBackend(),
+    isCloudflare(),
+  ]);
+  const runtimeInfo = detectRuntime();
 
   return Response.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    isCloudflare: await isCloudflare(),
+    isCloudflare: isCf,
+    runtime: runtimeInfo.runtime,
+    storageBackend,
     checks: {
       adminKey: Boolean(process.env.RELAY_ADMIN_KEY || process.env.RELAY_API_KEY),
       relayKey: Boolean(process.env.RELAY_API_KEY),
-      kv: hasKv,
+      kv: Boolean(kv),
       providerKeys: configuredProviders.some((p) => p.configured || p.keyCount > 0),
     },
     providers: configuredProviders,
