@@ -276,6 +276,12 @@ AI Relay 是采用 [MIT 许可证](LICENSE) 的开源项目。除了 Serverless 
 
 ---
 
+## 基础设施赞助
+
+[Hosted on CubePath](https://cubepath.com/?utm_source=open-source&utm_medium=referral&utm_campaign=hosted-on-cubepath)
+
+---
+
 ## 📚 项目文档索引
 
 - **[本地 CLI 使用指南](CLI_GUIDE.md)** — `airelay` 安装、云端绑定同步、离线配置与 Codex 自动接入
