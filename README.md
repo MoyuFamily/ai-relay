@@ -320,6 +320,12 @@ We welcome infrastructure sponsorship for this effort. Sponsors providing the en
 
 ---
 
+## Infrastructure Sponsors
+
+[Hosted on CubePath](https://cubepath.com/?utm_source=open-source&utm_medium=referral&utm_campaign=hosted-on-cubepath)
+
+---
+
 ## 📚 Documentation
 
 - **[CLI & Local Relay Guide](CLI_GUIDE.md)** — `airelay` installation, cloud sync, standalone config, and Codex integration
