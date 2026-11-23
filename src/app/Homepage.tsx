@@ -148,6 +148,7 @@ const content = {
       license: 'MIT License',
       powered: 'Powered by Edge Runtime (Vercel / Cloudflare)',
       docs: '文档',
+      sponsor: '基础设施赞助',
     },
   },
   en: {
@@ -268,6 +269,7 @@ const content = {
       license: 'MIT License',
       powered: 'Powered by Edge Runtime (Vercel / Cloudflare)',
       docs: 'Docs',
+      sponsor: 'Infrastructure sponsor',
     },
   },
 } satisfies Record<Language, {
@@ -716,6 +718,16 @@ export default function Homepage({ providers }: { providers: HomepageProvider[] 
           <a href={`${githubUrl}#readme`} target="_blank" rel="noreferrer">{t.footer.docs}</a>
           <span>{t.footer.license}</span>
           <span>{t.footer.powered}</span>
+        </div>
+        <div className={styles.footerSponsor}>
+          <span>{t.footer.sponsor}</span>
+          <a
+            href="https://cubepath.com/?utm_source=open-source&utm_medium=referral&utm_campaign=hosted-on-cubepath"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Hosted on CubePath
+          </a>
         </div>
       </footer>
     </main>

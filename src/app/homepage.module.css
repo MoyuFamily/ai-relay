@@ -1024,6 +1024,7 @@
 .footer {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 24px;
   margin-top: 108px;
@@ -1047,6 +1048,32 @@
 
 .footerLinks a:hover {
   color: var(--text);
+}
+
+.footerSponsor {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.footerSponsor a {
+  color: var(--cyan);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.footerSponsor a:hover {
+  color: var(--text);
+}
+
+.footerSponsor a:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 4px;
 }
 
 @keyframes gridDrift {
