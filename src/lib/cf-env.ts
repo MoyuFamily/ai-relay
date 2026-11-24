@@ -18,6 +18,14 @@ export interface CFEnv {
   DB: import('@cloudflare/workers-types').D1Database;
 }
 
+function isCloudflareWorkersRuntime(): boolean {
+  if (process.env.CF_PAGES === '1') return true;
+  if (typeof navigator !== 'undefined' && navigator.userAgent === 'Cloudflare-Workers') {
+    return true;
+  }
+  return false;
+}
+
 function shouldSkipCloudflareContext(): boolean {
   return (
     process.env.NEXT_PHASE === 'phase-production-build' ||
@@ -36,7 +44,11 @@ export function getCFEnvSync(): CFEnv | null {
     const { getCloudflareContext } = require('@opennextjs/cloudflare');
     const context = getCloudflareContext();
     if (context && context.env) {
-      return context.env as unknown as CFEnv;
+      const env = context.env as Partial<CFEnv>;
+      // Only treat context as Cloudflare if real CF bindings exist or we are in workerd/CF_PAGES.
+      if (env.KV || env.DB || isCloudflareWorkersRuntime()) {
+        return context.env as unknown as CFEnv;
+      }
     }
   } catch {}
   return null;
@@ -50,11 +62,21 @@ export async function getCFEnv(): Promise<CFEnv | null> {
     return null;
   }
 
+  // Avoid invoking @opennextjs/cloudflare's Wrangler dev fallback in standard Node.js
+  // servers (Docker / VPS `next start`), which writes an empty `{ env: {} }` onto
+  // globalThis.__cloudflare-context__ and breaks File/Postgres storage detection.
+  if (process.env.NEXT_RUNTIME === 'nodejs' && !isCloudflareWorkersRuntime()) {
+    return null;
+  }
+
   try {
     const { getCloudflareContext } = require('@opennextjs/cloudflare');
     const context = await getCloudflareContext({ async: true });
     if (context && context.env) {
-      return context.env as unknown as CFEnv;
+      const env = context.env as Partial<CFEnv>;
+      if (env.KV || env.DB || isCloudflareWorkersRuntime()) {
+        return context.env as unknown as CFEnv;
+      }
     }
   } catch {}
   return null;
