@@ -314,5 +314,30 @@ describe('Multi-platform storage & Cloudflare compatibility', () => {
       await setFallbackChain('openai', ['custom_gw']);
       expect(await getGlobalConfigVersion(true)).toBe(4);
     });
+
+    it('never triggers Node.js wrangler fallback or treats empty CF context as Cloudflare in self-hosted runtime', async () => {
+      vi.stubEnv('NEXT_RUNTIME', 'nodejs');
+      delete process.env.CF_PAGES;
+      delete process.env.VERCEL;
+      delete process.env.VERCEL_ENV;
+      delete process.env.VERCEL_URL;
+
+      const cfSymbol = Symbol.for('__cloudflare-context__');
+      const prev = (globalThis as any)[cfSymbol];
+      try {
+        // Simulate an empty non-CF context on globalThis (without KV or DB bindings)
+        (globalThis as any)[cfSymbol] = { env: {} };
+        const cfEnvMod = await import('@/lib/cf-env');
+        expect(cfEnvMod.getCFEnvSync()).toBeNull();
+        expect(cfEnvMod.isCloudflareSync()).toBe(false);
+        await expect(cfEnvMod.getCFEnv()).resolves.toBeNull();
+      } finally {
+        if (prev === undefined) {
+          delete (globalThis as any)[cfSymbol];
+        } else {
+          (globalThis as any)[cfSymbol] = prev;
+        }
+      }
+    });
   });
 });

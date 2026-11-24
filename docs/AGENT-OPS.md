@@ -386,7 +386,7 @@ All `/api/admin/*` routes authenticate with `Authorization: Bearer $ADMIN_KEY` (
 
 | Area | Endpoint | Methods | Purpose / Payload |
 |---|---|---|---|
-| **First-Time Bootstrap** | `/api/admin/bootstrap` | `GET`, `POST` | Check uninitialized status (`GET`) or atomically lock first-time key (`POST {key?}`) when env keys are unset |
+| **First-Time Bootstrap** | `/api/admin/bootstrap` | `GET`, `POST` | Check uninitialized status (`GET`) or atomically lock first-time key (`POST {apiKey?}`) when env keys are unset |
 | **Runtime Settings** | `/api/admin/settings` | `GET`, `PUT` | View/update live settings (`extraClientKeys`, `cronSecret`, `upstreamTimeoutMs`, `maxConcurrent`, `maxQueue`, `enableRequestLogs`, `allowLocalKeySync`, `defaultUserAgent`, `deployUrl`) |
 | **Diagnostics** | `/api/admin/setup?refresh=1` | `GET` | Runtime, storage backend, auth/KV checks, provider key counts |
 | **Provider Keys** | `/api/admin/providers/:provider/keys` | `GET`, `POST`, `DELETE` | List masked keys + `hash`; add `{key}` or `{keys:[...]}`; remove `{hash}` or `{key}` |
