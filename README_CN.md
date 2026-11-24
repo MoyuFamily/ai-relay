@@ -2,7 +2,7 @@
 
 <img src="docs/assets/logo-banner.svg" alt="AI Relay" width="360">
 
-**个人与团队的 AI API 统一网关 — 一个端点，统一路由所有大模型**
+**轻量、开箱即用的个人 AI API 网关 — 一个端点，统一路由所有大模型**
 
 [![Version](https://img.shields.io/badge/Version-2.15.0-green.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -60,7 +60,7 @@ https://github.com/user-attachments/assets/79ef3985-6ffa-4edc-aded-41b6e4db3bb3
 </details>
 
 <details>
-<summary><strong>🐳 Docker 自部署（VPS / NAS · 适合长耗时推理与团队共享）</strong></summary>
+<summary><strong>🐳 Docker 自部署（VPS / NAS · 无 Serverless 超时限制）</strong></summary>
 
 ```bash
 # 单机一条命令启动（数据持久化到 Docker Volume，无 Serverless 超时限制）
@@ -70,7 +70,7 @@ docker run -d --name ai-relay --restart unless-stopped \
   ghcr.io/moyufamily/ai-relay:latest
 ```
 
-需要多副本高可用（内置 PostgreSQL 自动建表）时，克隆仓库执行 `bash scripts/quick-start.sh --postgres`。启动后访问 `http://你的服务器:3000/admin` 完成首次初始化。
+如需挂载 PostgreSQL，克隆仓库执行 `bash scripts/quick-start.sh --postgres`。启动后访问 `http://你的服务器:3000/admin` 完成首次初始化。
 
 **🤖 或直接交给 AI Agent 部署**：
 

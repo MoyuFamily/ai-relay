@@ -2,7 +2,7 @@
 
 <img src="docs/assets/logo-banner.svg" alt="AI Relay" width="360">
 
-**Your personal & team AI API gateway — one endpoint for all your LLM providers**
+**Lightweight personal AI API gateway — one endpoint for all your LLM providers**
 
 [![Version](https://img.shields.io/badge/Version-2.15.0-green.svg)](CHANGELOG.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
@@ -70,7 +70,7 @@ docker run -d --name ai-relay --restart unless-stopped \
   ghcr.io/moyufamily/ai-relay:latest
 ```
 
-For multi-instance PostgreSQL mode (auto-creates tables on boot), clone the repo and run `bash scripts/quick-start.sh --postgres`. Then open `http://your-host:3000/admin` to finish first-time setup.
+To use PostgreSQL storage instead, clone the repo and run `bash scripts/quick-start.sh --postgres`. Then open `http://your-host:3000/admin` to finish first-time setup.
 
 **🤖 Or let your AI Agent deploy it**:
 
