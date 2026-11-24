@@ -69,9 +69,10 @@ export function requireAdminAuth(request: Request): Response | null {
  * 1. `CRON_SECRET` via `Authorization: Bearer <CRON_SECRET>` (Vercel Cron standard)
  *    or `x-cron-secret: <CRON_SECRET>` (GitHub Actions / external schedulers),
  *    compared in constant time.
- * 2. `x-vercel-cron: 1` ONLY when running on Vercel (`VERCEL=1`) and `CRON_SECRET`
- *    is not set, preventing header spoofing on Cloudflare/Docker/VPS deployments.
- * 3. Standard admin bearer authentication (`RELAY_ADMIN_KEY` / `RELAY_API_KEY`).
+ * 2. Standard admin bearer authentication (`RELAY_ADMIN_KEY` / `RELAY_API_KEY`).
+ *
+ * Note: Bare `x-vercel-cron: 1` is intentionally NEVER trusted because Vercel does
+ * not strip client-supplied `x-vercel-cron` headers when `CRON_SECRET` is unset.
  */
 export function requireCronOrAdminAuth(request: Request): Response | null {
   const cronSecret = process.env.CRON_SECRET?.trim();
@@ -85,11 +86,6 @@ export function requireCronOrAdminAuth(request: Request): Response | null {
     if (bearer && constantTimeEqual(bearer, cronSecret)) {
       return null;
     }
-  } else if (
-    process.env.VERCEL === '1' &&
-    request.headers.get('x-vercel-cron') === '1'
-  ) {
-    return null;
   }
 
   return requireAdminAuth(request);

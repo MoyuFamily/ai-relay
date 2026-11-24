@@ -113,21 +113,29 @@ describe('Install & Usage Hardening Regressions', () => {
       expect(body.error.type).toBe('server_not_configured');
     });
 
-    it('blocks forged x-vercel-cron off-Vercel and accepts Authorization Bearer CRON_SECRET', () => {
+    it('blocks forged x-vercel-cron everywhere (including on Vercel without CRON_SECRET) and accepts Bearer CRON_SECRET', () => {
       delete process.env.VERCEL;
       delete process.env.CRON_SECRET;
       vi.stubEnv('RELAY_ADMIN_KEY', 'admin-secret');
 
       // Forged x-vercel-cron off Vercel must be rejected
-      const spoofed = requireCronOrAdminAuth(
+      const spoofedOffVercel = requireCronOrAdminAuth(
         new Request('http://localhost/api/cron/probe', {
           headers: { 'x-vercel-cron': '1' },
         })
       );
-      expect(spoofed?.status).toBe(401);
+      expect(spoofedOffVercel?.status).toBe(401);
+
+      // Forged x-vercel-cron ON Vercel without CRON_SECRET must ALSO be rejected
+      vi.stubEnv('VERCEL', '1');
+      const spoofedOnVercel = requireCronOrAdminAuth(
+        new Request('http://localhost/api/cron/probe', {
+          headers: { 'x-vercel-cron': '1' },
+        })
+      );
+      expect(spoofedOnVercel?.status).toBe(401);
 
       // With CRON_SECRET set, Bearer <CRON_SECRET> and x-cron-secret both pass, while bare x-vercel-cron fails
-      vi.stubEnv('VERCEL', '1');
       vi.stubEnv('CRON_SECRET', 'cron-secret-xyz');
 
       expect(

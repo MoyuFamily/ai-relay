@@ -5,7 +5,7 @@
 **Your personal & team AI API gateway — deploy serverless, self-host with Docker, or run locally**
 
 <p>
-  <a href="https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY&envDescription=Client%20and%20Admin%20authentication%20key%20(RELAY_ADMIN_KEY%20is%20optional%20and%20falls%20back%20to%20RELAY_API_KEY)&envLink=https://github.com/MoyuFamily/ai-relay#-quick-start">
+  <a href="https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY&envDescription=Client%20and%20Admin%20authentication%20key%20(RELAY_ADMIN_KEY%20is%20optional%20and%20falls%20back%20to%20RELAY_API_KEY)&envLink=https://github.com/MoyuFamily/ai-relay#-quick-start&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22upstash%22%2C%22productSlug%22%3A%22upstash-kv%22%2C%22protocol%22%3A%22storage%22%7D%5D">
     <img src="https://vercel.com/button" alt="Deploy with Vercel" height="36">
   </a>
   &nbsp;
@@ -55,8 +55,8 @@
 
 ### ☁️ 1. Deploy to Vercel (Fastest Start)
 
-1. Click **Deploy with Vercel** above and set `RELAY_API_KEY` (`RELAY_ADMIN_KEY` and `RELAY_SIGNING_SECRET` are optional and automatically fall back to `RELAY_API_KEY`).
-2. In Vercel Dashboard → **Storage** → attach **Upstash for Redis** (both `UPSTASH_REDIS_REST_*` and `KV_REST_API_*` are supported automatically), then trigger a **Redeploy** under **Deployments** so the injected variables take effect.
+1. Click **Deploy with Vercel** above, attach the free **Upstash for Redis** integration right inside the clone wizard, and set `RELAY_API_KEY` (`RELAY_ADMIN_KEY` and `RELAY_SIGNING_SECRET` are optional and automatically fall back to `RELAY_API_KEY`; add `CRON_SECRET` if you want Vercel Cron daily probes/reports enabled).
+2. If you skipped storage during clone, attach **Upstash for Redis** under Vercel Dashboard → **Storage** (both `KV_REST_API_*` and `UPSTASH_REDIS_REST_*` are supported automatically), then trigger a **Redeploy**.
 3. Visit `/admin` (sign in with `RELAY_API_KEY`) to add upstream provider keys and copy client snippets:
 
 ```bash

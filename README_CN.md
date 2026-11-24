@@ -5,7 +5,7 @@
 **个人与团队的 AI API 统一网关 — 支持 Serverless 云端部署、Docker 自托管与本地 CLI 运行**
 
 <p>
-  <a href="https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY&envDescription=Client%20and%20Admin%20authentication%20key%20(RELAY_ADMIN_KEY%20is%20optional%20and%20falls%20back%20to%20RELAY_API_KEY)&envLink=https://github.com/MoyuFamily/ai-relay/blob/main/README_CN.md#-快速开始">
+  <a href="https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY&envDescription=Client%20and%20Admin%20authentication%20key%20(RELAY_ADMIN_KEY%20is%20optional%20and%20falls%20back%20to%20RELAY_API_KEY)&envLink=https://github.com/MoyuFamily/ai-relay/blob/main/README_CN.md#-快速开始&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22upstash%22%2C%22productSlug%22%3A%22upstash-kv%22%2C%22protocol%22%3A%22storage%22%7D%5D">
     <img src="https://vercel.com/button" alt="Deploy with Vercel" height="36">
   </a>
   &nbsp;
@@ -55,8 +55,8 @@
 
 ### ☁️ 1. 一键部署到 Vercel（最快体验）
 
-1. 点击上方 **Deploy with Vercel** 按钮，只需填写 `RELAY_API_KEY` 即可一键完成创建（`RELAY_ADMIN_KEY` 与 `RELAY_SIGNING_SECRET` 均为可选，未设置时自动回退到 `RELAY_API_KEY`）。
-2. 部署完成后进入 Vercel Dashboard → **Storage** → 创建并关联 **Upstash for Redis**（同时自动兼容 `UPSTASH_REDIS_REST_*` 与 `KV_REST_API_*` 环境变量），然后进入 **Deployments** 点击 **Redeploy** 使存储生效。
+1. 点击上方 **Deploy with Vercel** 按钮，在向导中直接关联免费版 **Upstash for Redis** 并填写 `RELAY_API_KEY` 即可一键完成创建（`RELAY_ADMIN_KEY` 与 `RELAY_SIGNING_SECRET` 均为可选，未设置时自动回退到 `RELAY_API_KEY`；如需启用每日 Vercel Cron 自动探测/汇总，可在环境变量中补充 `CRON_SECRET`）。
+2. 如在向导中跳过了存储，部署后进入 Vercel Dashboard → **Storage** → 创建并关联 **Upstash for Redis**（自动兼容 `KV_REST_API_*` 与 `UPSTASH_REDIS_REST_*`），然后 **Redeploy** 即可。
 3. 打开 `/admin`（用 `RELAY_API_KEY` 登录）添加上游 Provider Key，即可直接复制客户端配置开始调用：
 
 ```bash

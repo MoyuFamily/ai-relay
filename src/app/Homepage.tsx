@@ -22,7 +22,7 @@ export interface HomepageProvider {
   models: HomepageModel[];
 }
 
-const deployUrl = 'https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY&envDescription=Client%20and%20Admin%20authentication%20key%20(RELAY_ADMIN_KEY%20is%20optional%20and%20falls%20back%20to%20RELAY_API_KEY)&envLink=https://github.com/MoyuFamily/ai-relay#-quick-start';
+const deployUrl = 'https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY&envDescription=Client%20and%20Admin%20authentication%20key%20(RELAY_ADMIN_KEY%20is%20optional%20and%20falls%20back%20to%20RELAY_API_KEY)&envLink=https://github.com/MoyuFamily/ai-relay#-quick-start&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22upstash%22%2C%22productSlug%22%3A%22upstash-kv%22%2C%22protocol%22%3A%22storage%22%7D%5D';
 const githubUrl = 'https://github.com/MoyuFamily/ai-relay';
 
 const copyText = {
