@@ -4,8 +4,8 @@ import { ToastProvider } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 export const metadata: Metadata = {
-  title: 'AI Relay — Serverless AI API Relay Gateway',
-  description: '无服务器 AI API 中转网关。Vercel 一键部署；Cloudflare 通过 GitHub Actions 推送即部署。2 分钟拥有多 Provider 路由、Key 轮换、Fallback、Admin 后台与用量追踪。',
+  title: 'AI Relay — Personal AI API Gateway',
+  description: '轻量、开箱即用的个人 AI API 网关。支持 Cloudflare Workers / Vercel 一键部署、Docker 自部署与本地 CLI，无需预设环境变量，打开 /admin 即可初始化使用。',
   icons: {
     icon: '/favicon.svg',
   },

@@ -8,8 +8,8 @@ AI Relay 在不引入外部重型中间件的前提下，针对不同部署平�
 
 | 部署运行环境 | 触发条件（自动检测优先级） | 配置与状态存储 (`getKV` / `ConfigStore`) | 用量与配额存储 (`UsageStorage`) | 请求追踪日志 (`RequestLogStore`) |
 |---|---|---|---|---|
-| **Cloudflare Pages / Workers** | 请求级 OpenNext Context 存在 `env.KV` / `env.DB` | `CFKVAdapter`（Cloudflare Workers KV） | `D1UsageStorage`（Cloudflare D1 SQLite，请求内直写） | `KVRequestLogStore`（CF KV，游标分页 + 24h TTL） |
-| **Vercel Serverless** | 设置了 `KV_REST_API_URL` 与 `KV_REST_API_TOKEN` | `@vercel/kv`（Upstash Redis REST） | `KVUsageStorage`（内存环形缓冲聚合 + Lua 脚本） | `KVRequestLogStore`（Redis `SCAN` + `MGET`） |
+| **Cloudflare Workers（含旧版 Pages）** | 请求级 OpenNext Context 存在 `env.KV` / `env.DB` | `CFKVAdapter`（Cloudflare Workers KV） | `D1UsageStorage`（Cloudflare D1 SQLite，首次访问自动建表） | `KVRequestLogStore`（CF KV，游标分页 + 24h TTL） |
+| **Vercel Serverless** | 设置了 `UPSTASH_REDIS_REST_*` 或 `KV_REST_API_*` | `@vercel/kv`（Upstash Redis REST） | `KVUsageStorage`（内存环形缓冲聚合 + Lua 脚本） | `KVRequestLogStore`（Redis `SCAN` + `MGET`） |
 | **自部署 — 单机持久化磁盘** | 设置了 `RELAY_STORAGE_PATH` / `RELAY_DATA_DIR`，或非云端 `NODE_ENV=production` 默认状态 | `FileKVAdapter`（`./data/kv-store.json`） | `KVUsageStorage`（直写内存态 + 40ms 防抖原子落盘，默认全量精确统计） | `KVRequestLogStore`（持久化至本地磁盘，自动 TTL 淘汰） |
 | **自部署 — 多实例 PostgreSQL** | 非 Vercel/CF 环境设置了 `DATABASE_URL=postgres://...` | `PostgresKVAdapter` + `PostgresConfigStore`（`kv_store` JSONB 表） | `PostgresUsageStorage`（关系型表实时原子累加） | `PostgresRequestLogStore`（Drizzle ORM + 自动条数裁剪） |
 | **本地 CLI (`airelay`)** | `airelay local:start` | `SnapshotConfigStore`（云端快照同步 / 本地 JSON / 环境变量） | 内存批量缓冲并定时上报 `/api/local/usage/batch` | 本机标准输出与状态统计 |
@@ -24,7 +24,7 @@ AI Relay 在不引入外部重型中间件的前提下，针对不同部署平�
 ### 2.1 Cloudflare KV + D1 (`src/lib/admin/cf-kv-adapter.ts`, `src/lib/usage/storage/d1-usage-storage.ts`)
 - **并发与一致性保护**：`CFKVAdapter` 对单 Key 读改写操作（`hset`、`hincrby`、`sadd`、`srem`、`incrby`）内置进程内异步互斥锁，并在 `pipeline()` 中按 Key 分组顺序执行、全局限制最多 6 个并发请求，严格匹配 Cloudflare Workers 出站连接限制。
 - **TTL 下限适配**：Cloudflare KV 要求 `expirationTtl >= 60` 秒，`CFKVAdapter` 会自动将小于 60 秒的过期时间安全钳制为 60 秒。
-- **D1 关系表结构**：迁移文件位于 `migrations/`（`0001_usage_schema.sql`、`0002_error_key_stats.sql`），包含 `daily_usage`、`key_usage`、`quota_counters`、`error_stats` 与 `error_key_stats`，由 `worker.ts` 每日定时清理过期分区。
+- **D1 自动幂等建表 (`src/lib/db/d1-schema.ts`)**：首次访问 D1 时通过 `ensureD1Schema()` 自动幂等执行 `CREATE TABLE IF NOT EXISTS` 创建全部 6 张表与索引（`daily_usage`、`key_usage`、`quota_counters`、`error_stats`、`error_key_stats`、`config_flags`），无需手动跑 `wrangler d1 migrations`；仓库同时保留 `migrations/` 增量 SQL 兼容旧部署。由 `worker.ts` 每日定时清理过期分区。
 
 ### 2.2 自部署单机磁盘存储 (`src/lib/storage/file-kv-adapter.ts`)
 - **零外部依赖**：无需安装 Redis、PostgreSQL 或编译原生 C++ SQLite 模块，单容器挂载 `/app/data` 即可持久化所有后台配置、密钥池、设备授权与统计报表。

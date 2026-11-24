@@ -4,7 +4,7 @@ This file provides repository-level instructions for AI coding and operations ag
 
 ## Key Documentation
 
-- **Deployment, Verification & Maintenance Runbook**: [docs/AGENT-OPS.md](docs/AGENT-OPS.md) — **Read this first** before deploying, rotating keys, migrating storage, or troubleshooting Vercel, Cloudflare Pages, Docker/VPS, or Local CLI (`airelay`).
+- **Deployment, Verification & Maintenance Runbook**: [docs/AGENT-OPS.md](docs/AGENT-OPS.md) — **Read this first** before deploying, rotating keys, migrating storage, or troubleshooting Cloudflare Workers, Vercel, Docker/VPS, or Local CLI (`airelay`).
 - **Release & CI Flow**: [docs/RELEASE-FLOW.md](docs/RELEASE-FLOW.md)
 - **Technical Architecture & Storage**: [docs/TECH-DESIGN.md](docs/TECH-DESIGN.md), [docs/storage-architecture.md](docs/storage-architecture.md)
 - **Local CLI Guide**: [CLI_GUIDE.md](CLI_GUIDE.md)

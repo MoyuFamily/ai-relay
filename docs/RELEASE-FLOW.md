@@ -12,7 +12,7 @@ feature/* (或小改动直接提交) ──▶ main ──▶ CI 验证 & 自动
 2. **CI 验证**：[ci.yml](../.github/workflows/ci.yml) 在每次 PR / push 到 `main` 时通过单 Job 依次执行 `lint → type-check → test → build`。
 3. **自动部署**：合并或推送到 `main` 后，各平台自动发布：
    - **Vercel**：自动从 `main` 构建上线。
-   - **Cloudflare Pages**：[deploy-cf.yml](../.github/workflows/deploy-cf.yml) 自动同步 D1/KV、密钥并部署到 `main` 生产环境（也可手动 `workflow_dispatch` 在任意分支部署 Preview）。
+   - **Cloudflare Workers**：通过一键部署关联 GitHub 仓库后，由 Cloudflare Workers Builds 自动执行 `pnpm run build`（自动识别 `WORKERS_CI=1` 走 OpenNext 构建）与 `npx wrangler deploy` 上线；旧版 Cloudflare Pages 用户继续兼容 [deploy-cf.yml](../.github/workflows/deploy-cf.yml)。
    - **Docker (GHCR)**：[docker-publish.yml](../.github/workflows/docker-publish.yml) 自动构建并推送 `latest` 多架构镜像。
 
 ## 版本号发布（可选）
