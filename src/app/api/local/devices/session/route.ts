@@ -33,8 +33,11 @@ function parseSession(raw: unknown): DeviceSessionRecord | null {
   return null;
 }
 
-function resolvePublicOrigin(request: NextRequest): string {
-  const configuredDeployUrl = process.env.DEPLOY_URL?.trim();
+import { getRuntimeSettings } from '@/lib/admin/runtime-settings';
+
+async function resolvePublicOrigin(request: NextRequest): Promise<string> {
+  const runtimeDeployUrl = (await getRuntimeSettings()).deployUrl?.trim();
+  const configuredDeployUrl = runtimeDeployUrl || process.env.DEPLOY_URL?.trim();
   if (configuredDeployUrl && /^https?:\/\//i.test(configuredDeployUrl)) {
     return configuredDeployUrl.replace(/\/+$/, '');
   }
@@ -96,7 +99,8 @@ export async function POST(request: NextRequest) {
   // Store with native TTL (supported on both Vercel KV and CFKVAdapter)
   await kv.set(`device_session:${deviceCode}`, JSON.stringify(record), { ex: 600 });
 
-  const verificationUrl = `${resolvePublicOrigin(request)}/admin/local-relay/verify?code=${encodeURIComponent(deviceCode)}`;
+  const publicOrigin = await resolvePublicOrigin(request);
+  const verificationUrl = `${publicOrigin}/admin/local-relay/verify?code=${encodeURIComponent(deviceCode)}`;
 
   return Response.json({
     device_code: deviceCode,

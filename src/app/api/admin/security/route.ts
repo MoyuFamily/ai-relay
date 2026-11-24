@@ -20,7 +20,7 @@ export const maxDuration = 30;
  * Returns security overview + per-key health data for the Security Tab.
  */
 export async function GET(request: NextRequest) {
-  const authResponse = requireAdminAuth(request);
+  const authResponse = await requireAdminAuth(request);
   if (authResponse) return authResponse;
 
   const usageStorage = await createUsageStorage();

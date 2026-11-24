@@ -14,7 +14,7 @@ export const runtime = 'nodejs';
  * Update alert thresholds. Body: { thresholds: WebhookAlertThreshold[] }
  */
 export async function PUT(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   let body: Record<string, unknown>;

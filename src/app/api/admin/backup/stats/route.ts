@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
  * Query params: ?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
  */
 export async function GET(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   const { searchParams } = new URL(request.url);
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
  * Imports statistics backup payload into KV.
  */
 export async function POST(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   let body: any;

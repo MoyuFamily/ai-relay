@@ -21,7 +21,7 @@ export const maxDuration = 30;
  * Returns usage stats per provider (today) with key pool info.
  */
 export async function GET(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   const usageStorage = await createUsageStorage();

@@ -40,3 +40,23 @@ export {
   getRelayApiKeys,
   getRelayAdminKeys,
 } from './auth';
+
+export {
+  getBootstrapStatus,
+  initializeBootstrapApiKey,
+  getBootstrappedApiKey,
+  getEffectiveRelayApiKeys,
+  getEffectiveRelayAdminKeys,
+  generateSecureRelayApiKey,
+  hasEnvAuthConfigured,
+  BootstrapError,
+  type BootstrapStatus,
+  type BootstrapAuthRecord,
+} from './bootstrap-auth';
+
+export {
+  getRuntimeSettings,
+  saveRuntimeSettings,
+  getCachedRuntimeSettingsSync,
+  type RuntimeSettings,
+} from './runtime-settings';

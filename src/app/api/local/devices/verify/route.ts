@@ -26,7 +26,7 @@ function parseSession(raw: unknown): Record<string, any> | null {
 
 // POST /api/local/devices/verify - Approve device from Admin UI
 export async function POST(request: NextRequest) {
-  const authResponse = requireAdminAuth(request);
+  const authResponse = await requireAdminAuth(request);
   if (authResponse) return authResponse;
 
   const kv = await getKV();

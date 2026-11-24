@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { requireAdminAuth, getRelayApiKeys, getAllManagedKeys } from '@/lib/admin';
+import { requireAdminAuth, getEffectiveRelayApiKeys, getAllManagedKeys, getRuntimeSettings } from '@/lib/admin';
 import { getAllProviders } from '@/lib/providers';
 import { hashKey } from '@/lib/relay';
 import { buildCcSwitchExport, CC_SWITCH_APPS, isCcSwitchApp } from '@/lib/admin/cc-switch-export';
@@ -7,9 +7,10 @@ import { buildCcSwitchExport, CC_SWITCH_APPS, isCcSwitchApp } from '@/lib/admin/
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-function getRelayBaseUrl(request: NextRequest): string {
+async function getRelayBaseUrl(request: NextRequest): Promise<string> {
   const url = new URL(request.url);
-  const configured = process.env.DEPLOY_URL || process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL;
+  const runtimeDeployUrl = (await getRuntimeSettings()).deployUrl?.trim();
+  const configured = runtimeDeployUrl || process.env.DEPLOY_URL || process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL;
   if (configured) {
     const withProtocol = /^https?:\/\//i.test(configured) ? configured : `https://${configured}`;
     return withProtocol.replace(/\/+$/, '');
@@ -26,7 +27,7 @@ function getEnvKeys(field?: string): string[] {
 }
 
 export async function GET(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   const url = new URL(request.url);
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
     }
 
     const providers = await getAllProviders(true);
-    const relayKeys = getRelayApiKeys();
+    const relayKeys = await getEffectiveRelayApiKeys();
     const providerKeys = mode !== 'relay' ? await getAllManagedKeys() : {};
     if (mode !== 'relay') {
       for (const [providerId, provider] of Object.entries(providers)) {
@@ -70,7 +71,7 @@ export async function GET(request: NextRequest) {
     const payload = buildCcSwitchExport({
       mode,
       app: isCcSwitchApp(app) ? app : undefined,
-      relayBaseUrl: getRelayBaseUrl(request),
+      relayBaseUrl: await getRelayBaseUrl(request),
       relayApiKey: relayKeys[0] || '',
       providers,
       providerKeys,

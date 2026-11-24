@@ -15,7 +15,7 @@ export const runtime = 'nodejs';
  * Body: { dailyLimit: number | null, monthlyLimit: number | null }
  */
 export async function PUT(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   let body: { dailyLimit?: unknown; monthlyLimit?: unknown };
@@ -67,7 +67,7 @@ export async function PUT(request: NextRequest) {
  * Clears custom limits from KV and reverts to env variables.
  */
 export async function DELETE(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   await clearCustomQuota();

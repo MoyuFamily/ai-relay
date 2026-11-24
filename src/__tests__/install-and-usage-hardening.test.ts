@@ -107,19 +107,19 @@ describe('Install & Usage Hardening Regressions', () => {
       delete process.env.RELAY_ADMIN_KEY;
       delete process.env.RELAY_API_KEY;
 
-      const res = requireAdminAuth(new Request('http://localhost/api/admin'));
+      const res = await requireAdminAuth(new Request('http://localhost/api/admin'));
       expect(res?.status).toBe(503);
       const body = await res!.json();
       expect(body.error.type).toBe('server_not_configured');
     });
 
-    it('blocks forged x-vercel-cron everywhere (including on Vercel without CRON_SECRET) and accepts Bearer CRON_SECRET', () => {
+    it('blocks forged x-vercel-cron everywhere (including on Vercel without CRON_SECRET) and accepts Bearer CRON_SECRET', async () => {
       delete process.env.VERCEL;
       delete process.env.CRON_SECRET;
       vi.stubEnv('RELAY_ADMIN_KEY', 'admin-secret');
 
       // Forged x-vercel-cron off Vercel must be rejected
-      const spoofedOffVercel = requireCronOrAdminAuth(
+      const spoofedOffVercel = await requireCronOrAdminAuth(
         new Request('http://localhost/api/cron/probe', {
           headers: { 'x-vercel-cron': '1' },
         })
@@ -128,7 +128,7 @@ describe('Install & Usage Hardening Regressions', () => {
 
       // Forged x-vercel-cron ON Vercel without CRON_SECRET must ALSO be rejected
       vi.stubEnv('VERCEL', '1');
-      const spoofedOnVercel = requireCronOrAdminAuth(
+      const spoofedOnVercel = await requireCronOrAdminAuth(
         new Request('http://localhost/api/cron/probe', {
           headers: { 'x-vercel-cron': '1' },
         })
@@ -139,15 +139,17 @@ describe('Install & Usage Hardening Regressions', () => {
       vi.stubEnv('CRON_SECRET', 'cron-secret-xyz');
 
       expect(
-        requireCronOrAdminAuth(
-          new Request('http://localhost/api/cron/probe', {
-            headers: { 'x-vercel-cron': '1' },
-          })
+        (
+          await requireCronOrAdminAuth(
+            new Request('http://localhost/api/cron/probe', {
+              headers: { 'x-vercel-cron': '1' },
+            })
+          )
         )?.status
       ).toBe(401);
 
       expect(
-        requireCronOrAdminAuth(
+        await requireCronOrAdminAuth(
           new Request('http://localhost/api/cron/probe', {
             headers: { Authorization: 'Bearer cron-secret-xyz' },
           })
@@ -155,7 +157,7 @@ describe('Install & Usage Hardening Regressions', () => {
       ).toBeNull();
 
       expect(
-        requireCronOrAdminAuth(
+        await requireCronOrAdminAuth(
           new Request('http://localhost/api/cron/probe', {
             headers: { 'x-cron-secret': 'cron-secret-xyz' },
           })

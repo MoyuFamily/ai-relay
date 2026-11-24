@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import RuntimeSettingsPanel from './RuntimeSettingsPanel';
 import TempKeyGenerator from './TempKeyGenerator';
 import ModelKeyTest from './ModelKeyTest';
 import BackupRestore from './BackupRestore';
@@ -28,6 +29,11 @@ export default function ToolsTab({ apiKey, lang, t, providers, onRefreshData }: 
           padding-right: 2rem !important;
         }
       `}} />
+
+      <RuntimeSettingsPanel
+        apiKey={apiKey}
+        lang={lang}
+      />
 
       <TempKeyGenerator
         apiKey={apiKey}

@@ -18,7 +18,7 @@ type Params = Promise<{ provider: string }>;
  * Returns the current fallback chain for a provider.
  */
 export async function GET(request: NextRequest, { params }: { params: Params }) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   const { provider } = await params;
@@ -64,7 +64,7 @@ export async function GET(request: NextRequest, { params }: { params: Params }) 
  * Pass empty array to clear all fallbacks.
  */
 export async function PUT(request: NextRequest, { params }: { params: Params }) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   const { provider } = await params;
@@ -146,7 +146,7 @@ export async function PUT(request: NextRequest, { params }: { params: Params }) 
  * Reset fallback chain to static defaults.
  */
 export async function DELETE(request: NextRequest, { params }: { params: Params }) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   const { provider } = await params;

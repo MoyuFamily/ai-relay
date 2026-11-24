@@ -91,8 +91,14 @@ function isBlockedUserAgent(ua: string): boolean {
   return BLOCKED_USER_AGENT_PATTERNS.some(p => lower.includes(p));
 }
 
+import { getCachedRuntimeSettingsSync } from '../admin/runtime-settings';
+
 function defaultUserAgent(headerFormat: 'openai' | 'anthropic' | 'azure'): string {
-  return process.env.RELAY_DEFAULT_USER_AGENT?.trim() || DEFAULT_USER_AGENTS[headerFormat];
+  return (
+    getCachedRuntimeSettingsSync().defaultUserAgent?.trim() ||
+    process.env.RELAY_DEFAULT_USER_AGENT?.trim() ||
+    DEFAULT_USER_AGENTS[headerFormat]
+  );
 }
 
 function setHeaderCaseInsensitive(

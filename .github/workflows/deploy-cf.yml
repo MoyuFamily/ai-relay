@@ -66,9 +66,22 @@ jobs:
           PROJECT_NAME="${CLOUDFLARE_PAGES_PROJECT_NAME}"
           D1_NAME="${PROJECT_NAME}"
 
-          # Keep wrangler.toml project & D1 names aligned with CLOUDFLARE_PAGES_PROJECT_NAME
-          sed -i "s|^name = .*|name = \"${PROJECT_NAME}\"|" wrangler.toml
-          sed -i "s|^database_name = .*|database_name = \"${D1_NAME}\"|" wrangler.toml
+          # Write Pages-compatible wrangler.toml (tracked wrangler.toml targets Workers one-click deploy)
+          cat > wrangler.toml <<EOF
+          name = "${PROJECT_NAME}"
+          compatibility_date = "2024-09-23"
+          compatibility_flags = ["nodejs_compat"]
+          pages_build_output_dir = ".open-next"
+
+          [[kv_namespaces]]
+          binding = "KV"
+
+          [[d1_databases]]
+          binding = "DB"
+          database_name = "${D1_NAME}"
+          migrations_dir = "migrations"
+          EOF
+          sed -i 's/^          //' wrangler.toml
 
           # ─── D1 Database ───────────────────────────────────────────
           echo "=== Provisioning D1 database (${D1_NAME}) ==="

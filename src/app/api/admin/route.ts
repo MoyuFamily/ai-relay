@@ -27,7 +27,7 @@ export const maxDuration = 30;
  */
 export async function GET(request: NextRequest) {
   // Auth check — require RELAY_ADMIN_KEY (falls back to RELAY_API_KEY)
-  const authResponse = requireAdminAuth(request);
+  const authResponse = await requireAdminAuth(request);
   if (authResponse) return authResponse;
 
   const usageStorage = await createUsageStorage();

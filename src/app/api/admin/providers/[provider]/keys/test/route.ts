@@ -79,7 +79,7 @@ function getUserAgentCandidates(provider: ProviderConfig): Array<string | undefi
  * Body: { key: "sk-..." } or { hash: "djb2hash" }
  */
 export async function POST(request: NextRequest, { params }: { params: Params }) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   const { provider: providerName } = await params;

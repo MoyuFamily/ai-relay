@@ -3,10 +3,11 @@
 // ============================================================
 
 import { getKV } from '@/lib/admin/admin-config';
+import { getBootstrappedApiKey } from '@/lib/admin/bootstrap-auth';
 import { validateAuth } from '@/lib/relay/auth';
 import { requireAdminAuth } from '@/lib/admin/auth';
 
-function resolveDeviceTokenSecret(): string | null {
+async function resolveDeviceTokenSecret(): Promise<string | null> {
   const explicit = process.env.DEVICE_TOKEN_SECRET?.trim();
   if (explicit) return explicit;
 
@@ -27,6 +28,9 @@ function resolveDeviceTokenSecret(): string | null {
     .filter(Boolean)[0];
   if (apiKey) return `ai-relay:device-token:v1:${apiKey}`;
 
+  const bootstrapped = await getBootstrappedApiKey();
+  if (bootstrapped) return `ai-relay:device-token:v1:${bootstrapped}`;
+
   return null;
 }
 
@@ -35,7 +39,7 @@ function resolveDeviceTokenSecret(): string | null {
  * Used for storing device credentials securely in KV/database.
  */
 export async function hashDeviceToken(token: string): Promise<string> {
-  const secret = resolveDeviceTokenSecret();
+  const secret = await resolveDeviceTokenSecret();
 
   if (!secret) {
     throw new Error(
@@ -92,7 +96,7 @@ export async function requireLocalSyncAuth(request: Request): Promise<Response |
     if (deviceId) return null;
   }
 
-  if (requireAdminAuth(request) === null) {
+  if ((await requireAdminAuth(request)) === null) {
     return null;
   }
 

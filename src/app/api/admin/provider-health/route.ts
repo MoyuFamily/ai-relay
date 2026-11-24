@@ -21,7 +21,7 @@ function legacyStatus(status?: string, fallback: LegacyHealthStatus = 'available
 }
 
 export async function GET(request: NextRequest) {
-  const authResponse = requireAdminAuth(request);
+  const authResponse = await requireAdminAuth(request);
   if (authResponse) return authResponse;
 
   const usageStorage = await createUsageStorage();

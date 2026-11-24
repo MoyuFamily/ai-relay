@@ -7,6 +7,7 @@ import { NextRequest } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin';
 import { getUsageDailyReportsWithGaps, reportsToTrend, enumerateDateKeys, createEmptyUsageDailyReport, type UsageDailyReport } from '@/lib/usage/daily-report-store';
 import { getCFEnv, isCloudflareSync } from '@/lib/cf-env';
+import { ensureD1Schema } from '@/lib/db/d1-schema';
 import { shouldUseSelfHostedPostgres } from '@/lib/config/env';
 
 export const runtime = 'nodejs';
@@ -74,7 +75,7 @@ function canQuerySelfHostedPostgres(): boolean {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = requireAdminAuth(request);
+  const auth = await requireAdminAuth(request);
   if (auth) return auth;
 
   const url = new URL(request.url);
@@ -84,6 +85,7 @@ export async function GET(request: NextRequest) {
   try {
     const cfEnv = await getCFEnv();
     if (cfEnv?.DB) {
+      await ensureD1Schema(cfEnv.DB).catch(() => {});
       const dates = enumerateDateKeys(from, to);
       const rows = await cfEnv.DB.prepare(
         `SELECT date, provider, requests, tokens, prompt_tokens, completion_tokens

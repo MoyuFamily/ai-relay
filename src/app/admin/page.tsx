@@ -21,9 +21,33 @@ import type { AdminData, PriorityRule, PriorityRuleConflict } from './types';
 import { TRANSLATIONS } from './translations';
 import { useAdminHandlers } from './adminHandlers';
 
+function generateClientRandomKey(): string {
+  const bytes = new Uint8Array(24);
+  if (typeof window !== 'undefined' && window.crypto?.getRandomValues) {
+    window.crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  const hex = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  return `sk-relay-${hex}`;
+}
+
 export default function AdminPage() {
   const [apiKey, setApiKey] = useState('');
   const [lang, setLang] = useState<'zh' | 'en'>('zh');
+  const [bootstrapStatus, setBootstrapStatus] = useState<{
+    checked: boolean;
+    initialized: boolean;
+    canBootstrap: boolean;
+    storageBackend: string;
+  }>({ checked: false, initialized: true, canBootstrap: false, storageBackend: 'none' });
+  const [bootstrapKey, setBootstrapKey] = useState('');
+  const [bootstrapCopied, setBootstrapCopied] = useState(false);
+  const [bootstrapSubmitting, setBootstrapSubmitting] = useState(false);
+  const [justBootstrappedKey, setJustBootstrappedKey] = useState<string | null>(null);
+  const [bannerCopied, setBannerCopied] = useState(false);
   // Default to 'overview' if user has configured admin key before; otherwise show 'setup' for first-time deployment
   const [activeTab, setActiveTab] = useState<TabId>(() => {
     if (typeof window !== 'undefined') {
@@ -90,8 +114,31 @@ export default function AdminPage() {
     localStorage.setItem('airelay_lang', newLang);
   };
 
-  // Restore cached API key from localStorage on mount
+  // Restore cached API key from localStorage on mount & check first-time bootstrap status
   useEffect(() => {
+    const checkBootstrap = () => {
+      fetch('/api/admin/bootstrap', { cache: 'no-store' })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((status) => {
+          if (status && typeof status.initialized === 'boolean') {
+            setBootstrapStatus({
+              checked: true,
+              initialized: status.initialized,
+              canBootstrap: Boolean(status.canBootstrap),
+              storageBackend: String(status.storageBackend || 'none'),
+            });
+            if (!status.initialized && status.canBootstrap) {
+              setBootstrapKey((prev) => prev || generateClientRandomKey());
+            }
+          } else {
+            setBootstrapStatus((prev) => ({ ...prev, checked: true }));
+          }
+        })
+        .catch(() => {
+          setBootstrapStatus((prev) => ({ ...prev, checked: true }));
+        });
+    };
+
     const cached = localStorage.getItem('airelay_admin_key');
     if (cached) {
       setApiKey(cached);
@@ -101,8 +148,9 @@ export default function AdminPage() {
         cache: 'no-store',
       })
         .then((res) => {
-          if (res.status === 401) {
+          if (res.status === 401 || res.status === 503) {
             localStorage.removeItem('airelay_admin_key');
+            checkBootstrap();
             return;
           }
           return res.json();
@@ -111,14 +159,60 @@ export default function AdminPage() {
           if (json) {
             setData(json);
             setAuthenticated(true);
+            setBootstrapStatus((prev) => ({ ...prev, checked: true, initialized: true }));
           }
         })
         .catch(() => {
           localStorage.removeItem('airelay_admin_key');
+          checkBootstrap();
         })
         .finally(() => setLoading(false));
+    } else {
+      checkBootstrap();
     }
   }, [setData, setAuthenticated, setLoading]);
+
+  const handleBootstrapSubmit = async () => {
+    setError('');
+    setBootstrapSubmitting(true);
+    try {
+      const res = await fetch('/api/admin/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: bootstrapKey.trim() || undefined }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        if (res.status === 409) {
+          setBootstrapStatus((prev) => ({ ...prev, initialized: true, canBootstrap: false }));
+        }
+        setError(json.error?.message || t.failedFetch);
+        return;
+      }
+
+      const finalKey = String(json.apiKey || bootstrapKey.trim());
+      setApiKey(finalKey);
+      localStorage.setItem('airelay_admin_key', finalKey);
+      setJustBootstrappedKey(finalKey);
+      setBootstrapStatus((prev) => ({ ...prev, initialized: true, canBootstrap: false }));
+      setActiveTab('setup');
+
+      // Immediately authenticate into Admin console with the newly initialized key
+      const adminRes = await fetch('/api/admin', {
+        headers: { Authorization: `Bearer ${finalKey}` },
+        cache: 'no-store',
+      });
+      if (adminRes.ok) {
+        const adminJson = await adminRes.json();
+        setData(adminJson);
+        setAuthenticated(true);
+      }
+    } catch {
+      setError('failed_fetch');
+    } finally {
+      setBootstrapSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     if (!authenticated) return;
@@ -298,42 +392,130 @@ export default function AdminPage() {
           </button>
         </div>
 
-        <div className="glass-panel" style={{ maxWidth: '400px', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.5rem', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
+        <div className="glass-panel" style={{ maxWidth: !bootstrapStatus.initialized ? '480px' : '400px', width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.35rem', boxShadow: '0 10px 40px rgba(0,0,0,0.5)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.6rem', textAlign: 'center' }}>
             <LogoIcon size={48} />
-            <h1 style={{ fontSize: '1.75rem', margin: 0, fontWeight: 700, color: '#fff' }}>{t.adminLogin}</h1>
+            <h1 style={{ fontSize: '1.75rem', margin: 0, fontWeight: 700, color: '#fff' }}>
+              {bootstrapStatus.checked && !bootstrapStatus.initialized
+                ? (bootstrapStatus.canBootstrap ? t.bootstrapTitle : t.bootstrapNoStorageTitle)
+                : t.adminLogin}
+            </h1>
+            {bootstrapStatus.checked && !bootstrapStatus.initialized && bootstrapStatus.canBootstrap && (
+              <p style={{ margin: 0, fontSize: '0.88rem', color: '#94a3b8', lineHeight: 1.55 }}>
+                {t.bootstrapSubtitle}
+              </p>
+            )}
           </div>
-          <div style={{
-            display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%',
-          }}>
-            <input
-              type="password"
-              placeholder={t.enterAdminKey}
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && fetchData(true)}
-              style={{
-                width: '100%', padding: '0.75rem 1rem', borderRadius: '8px',
-                border: '1px solid rgba(255, 255, 255, 0.08)', backgroundColor: 'rgba(0, 0, 0, 0.25)', color: '#e5e7eb',
-                fontSize: '1rem', outline: 'none', transition: 'border-color 0.2s', boxSizing: 'border-box'
-              }}
-              onFocus={(e) => e.target.style.borderColor = 'rgba(59, 130, 246, 0.5)'}
-              onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.08)'}
-            />
-            <button
-              onClick={() => fetchData(true)}
-              disabled={loading || !apiKey}
-              style={{
-                width: '100%', padding: '0.75rem 1.5rem', borderRadius: '8px', border: 'none',
-                backgroundColor: '#2563eb', color: 'white', fontSize: '1rem', fontWeight: 'bold',
-                cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.6 : 1, transition: 'all 0.2s'
-              }}
-              onMouseEnter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = '#1d4ed8'; }}
-              onMouseLeave={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = '#2563eb'; }}
-            >
-              {loading ? '...' : t.login}
-            </button>
-          </div>
+
+          {bootstrapStatus.checked && !bootstrapStatus.initialized && bootstrapStatus.canBootstrap ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', width: '100%' }}>
+              <label style={{ fontSize: '0.82rem', color: '#cbd5e1', fontWeight: 600 }}>
+                {t.bootstrapKeyLabel}
+              </label>
+              <input
+                type="text"
+                value={bootstrapKey}
+                onChange={(e) => setBootstrapKey(e.target.value)}
+                spellCheck={false}
+                autoComplete="off"
+                style={{
+                  width: '100%', padding: '0.75rem 0.9rem', borderRadius: '8px',
+                  border: '1px solid rgba(96, 165, 250, 0.35)', backgroundColor: 'rgba(0, 0, 0, 0.35)', color: '#e2e8f0',
+                  fontSize: '0.88rem', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  outline: 'none', boxSizing: 'border-box'
+                }}
+              />
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBootstrapKey(generateClientRandomKey());
+                    setBootstrapCopied(false);
+                  }}
+                  style={{
+                    flex: 1, padding: '0.55rem 0.75rem', borderRadius: '8px',
+                    border: '1px solid rgba(255, 255, 255, 0.12)', backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    color: '#e2e8f0', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 500
+                  }}
+                >
+                  🎲 {t.bootstrapRegenerate}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(bootstrapKey).catch(() => {});
+                    setBootstrapCopied(true);
+                    setTimeout(() => setBootstrapCopied(false), 2500);
+                  }}
+                  style={{
+                    flex: 1, padding: '0.55rem 0.75rem', borderRadius: '8px',
+                    border: '1px solid rgba(59, 130, 246, 0.35)', backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                    color: '#93c5fd', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600
+                  }}
+                >
+                  📋 {bootstrapCopied ? t.bootstrapCopied : t.bootstrapCopy}
+                </button>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: '#94a3b8', lineHeight: 1.5 }}>
+                {t.bootstrapKeyHint}
+              </p>
+              <button
+                type="button"
+                onClick={handleBootstrapSubmit}
+                disabled={bootstrapSubmitting || bootstrapKey.trim().length < 12}
+                style={{
+                  width: '100%', padding: '0.82rem 1.5rem', borderRadius: '8px', border: 'none',
+                  background: 'linear-gradient(135deg, #2563eb, #7c3aed)', color: 'white',
+                  fontSize: '0.98rem', fontWeight: 700,
+                  cursor: bootstrapSubmitting ? 'wait' : 'pointer',
+                  opacity: bootstrapSubmitting || bootstrapKey.trim().length < 12 ? 0.6 : 1,
+                  transition: 'all 0.2s'
+                }}
+              >
+                {bootstrapSubmitting ? t.bootstrapConfirming : t.bootstrapConfirm}
+              </button>
+            </div>
+          ) : bootstrapStatus.checked && !bootstrapStatus.initialized && !bootstrapStatus.canBootstrap ? (
+            <div style={{
+              width: '100%', padding: '1rem', borderRadius: '10px',
+              backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)',
+              color: '#fcd34d', fontSize: '0.88rem', lineHeight: 1.6, boxSizing: 'border-box'
+            }}>
+              {t.bootstrapNoStorageDesc}
+            </div>
+          ) : (
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: '0.75rem', width: '100%',
+            }}>
+              <input
+                type="password"
+                placeholder={t.enterAdminKey}
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && fetchData(true)}
+                style={{
+                  width: '100%', padding: '0.75rem 1rem', borderRadius: '8px',
+                  border: '1px solid rgba(255, 255, 255, 0.08)', backgroundColor: 'rgba(0, 0, 0, 0.25)', color: '#e5e7eb',
+                  fontSize: '1rem', outline: 'none', transition: 'border-color 0.2s', boxSizing: 'border-box'
+                }}
+                onFocus={(e) => e.target.style.borderColor = 'rgba(59, 130, 246, 0.5)'}
+                onBlur={(e) => e.target.style.borderColor = 'rgba(255, 255, 255, 0.08)'}
+              />
+              <button
+                onClick={() => fetchData(true)}
+                disabled={loading || !apiKey}
+                style={{
+                  width: '100%', padding: '0.75rem 1.5rem', borderRadius: '8px', border: 'none',
+                  backgroundColor: '#2563eb', color: 'white', fontSize: '1rem', fontWeight: 'bold',
+                  cursor: loading ? 'wait' : 'pointer', opacity: loading ? 0.6 : 1, transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = '#1d4ed8'; }}
+                onMouseLeave={(e) => { if (!e.currentTarget.disabled) e.currentTarget.style.backgroundColor = '#2563eb'; }}
+              >
+                {loading ? '...' : t.login}
+              </button>
+            </div>
+          )}
           {error && (
             <p style={{ color: '#f87171', margin: 0, fontSize: '0.9rem', fontWeight: 500, textAlign: 'center', lineHeight: 1.5 }}>
               {error === 'unauthorized'
@@ -415,6 +597,63 @@ export default function AdminPage() {
           /* Page content container */
         }
       `}} />
+
+      {/* Post-Bootstrap One-Time Key Reminder Banner */}
+      {justBootstrappedKey && (
+        <div style={{
+          marginBottom: '1.25rem',
+          padding: '0.9rem 1.1rem',
+          borderRadius: '12px',
+          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.14), rgba(59, 130, 246, 0.14))',
+          border: '1px solid rgba(52, 211, 153, 0.35)',
+          display: 'flex',
+          flexWrap: 'wrap',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.75rem',
+        }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', minWidth: 0, flex: 1 }}>
+            <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#6ee7b7' }}>
+              {t.bootstrapBannerTitle}
+            </span>
+            <code style={{
+              fontSize: '0.84rem', color: '#f8fafc', backgroundColor: 'rgba(0,0,0,0.35)',
+              padding: '0.35rem 0.6rem', borderRadius: '6px', wordBreak: 'break-all',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            }}>
+              {justBootstrappedKey}
+            </code>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard?.writeText(justBootstrappedKey).catch(() => {});
+                setBannerCopied(true);
+                setTimeout(() => setBannerCopied(false), 2500);
+              }}
+              style={{
+                padding: '0.45rem 0.85rem', borderRadius: '8px',
+                border: '1px solid rgba(59, 130, 246, 0.4)', backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                color: '#bfdbfe', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 600,
+              }}
+            >
+              📋 {bannerCopied ? t.bootstrapCopied : t.bootstrapCopy}
+            </button>
+            <button
+              type="button"
+              onClick={() => setJustBootstrappedKey(null)}
+              style={{
+                padding: '0.45rem 0.85rem', borderRadius: '8px',
+                border: '1px solid rgba(255, 255, 255, 0.15)', backgroundColor: 'rgba(255, 255, 255, 0.06)',
+                color: '#e5e7eb', cursor: 'pointer', fontSize: '0.82rem',
+              }}
+            >
+              {t.bootstrapBannerDismiss}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Header */}
       <div style={{

@@ -12,6 +12,7 @@ import { D1UsageStorage } from './storage/d1-usage-storage';
 import type { UsageStorage } from './sdk';
 import { getCFEnvSync, getCFEnv, isCloudflareSync } from '@/lib/cf-env';
 import { shouldUseSelfHostedPostgres } from '@/lib/config/env';
+import { ensureD1Schema } from '@/lib/db/d1-schema';
 
 function canUseSelfHostedPostgresUsage(): boolean {
   if (isCloudflareSync()) return false;
@@ -21,6 +22,7 @@ function canUseSelfHostedPostgresUsage(): boolean {
 export async function createUsageStorage(): Promise<UsageStorage> {
   const cfEnv = getCFEnvSync() || await getCFEnv();
   if (cfEnv?.DB) {
+    await ensureD1Schema(cfEnv.DB).catch(() => {});
     return new D1UsageStorage(cfEnv.DB);
   }
 
