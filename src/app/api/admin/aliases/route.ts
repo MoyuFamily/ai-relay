@@ -67,13 +67,13 @@ async function responsePayload() {
 }
 
 export async function GET(request: NextRequest) {
-  const authResponse = requireAdminAuth(request);
+  const authResponse = await requireAdminAuth(request);
   if (authResponse) return authResponse;
   return Response.json(await responsePayload(), { headers: { 'Cache-Control': 'no-store, max-age=0' } });
 }
 
 export async function PUT(request: NextRequest) {
-  const authResponse = requireAdminAuth(request);
+  const authResponse = await requireAdminAuth(request);
   if (authResponse) return authResponse;
   const body = await request.json();
   const inputAliases = body.aliases || {};
@@ -93,7 +93,7 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const authResponse = requireAdminAuth(request);
+  const authResponse = await requireAdminAuth(request);
   if (authResponse) return authResponse;
   const body = await request.json();
   const alias = normalizeAlias(body.alias);
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const authResponse = requireAdminAuth(request);
+  const authResponse = await requireAdminAuth(request);
   if (authResponse) return authResponse;
   const alias = normalizeAlias(new URL(request.url).searchParams.get('alias'));
   const validation = validateAlias(alias);

@@ -8,15 +8,25 @@
 // request-scoped env vars and runtime overrides take effect.
 // ============================================================
 
+import { getCachedRuntimeSettingsSync } from '../admin/runtime-settings';
+
 const DEFAULT_MAX_CONCURRENT = 3;
 const DEFAULT_MAX_QUEUE = 10;
 
 function getMaxConcurrent(): number {
+  const configured = getCachedRuntimeSettingsSync().maxConcurrent;
+  if (typeof configured === 'number' && Number.isFinite(configured) && configured >= 1) {
+    return Math.floor(configured);
+  }
   const parsed = parseInt(process.env.RELAY_MAX_CONCURRENT || '', 10);
   return Number.isFinite(parsed) && parsed >= 1 ? parsed : DEFAULT_MAX_CONCURRENT;
 }
 
 function getMaxQueue(): number {
+  const configured = getCachedRuntimeSettingsSync().maxQueue;
+  if (typeof configured === 'number' && Number.isFinite(configured) && configured >= 0) {
+    return Math.floor(configured);
+  }
   const parsed = parseInt(process.env.RELAY_MAX_QUEUE || '', 10);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_MAX_QUEUE;
 }

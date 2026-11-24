@@ -1,6 +1,13 @@
 // AI Relay — Admin setup diagnostics
 import { NextRequest } from 'next/server';
-import { detectStorageBackend, getKV, requireAdminAuth } from '@/lib/admin';
+import {
+  detectStorageBackend,
+  getEffectiveRelayAdminKeys,
+  getEffectiveRelayApiKeys,
+  getKV,
+  hasEnvAuthConfigured,
+  requireAdminAuth,
+} from '@/lib/admin';
 import { getAllProviders } from '@/lib/providers';
 import { getKeyPoolStats, initAllKeyPools } from '@/lib/relay';
 import { isCloudflare } from '@/lib/cf-env';
@@ -10,7 +17,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
-  const authResponse = requireAdminAuth(request);
+  const authResponse = await requireAdminAuth(request);
   if (authResponse) return authResponse;
 
   const url = new URL(request.url);
@@ -31,10 +38,12 @@ export async function GET(request: NextRequest) {
     models: provider.models || [],
   }));
 
-  const [kv, storageBackend, isCf] = await Promise.all([
+  const [kv, storageBackend, isCf, effectiveAdminKeys, effectiveRelayKeys] = await Promise.all([
     getKV(),
     detectStorageBackend(),
     isCloudflare(),
+    getEffectiveRelayAdminKeys(),
+    getEffectiveRelayApiKeys(),
   ]);
   const runtimeInfo = detectRuntime();
 
@@ -44,9 +53,10 @@ export async function GET(request: NextRequest) {
     isCloudflare: isCf,
     runtime: runtimeInfo.runtime,
     storageBackend,
+    authSource: hasEnvAuthConfigured() ? 'env' : effectiveRelayKeys.length > 0 ? 'storage' : 'none',
     checks: {
-      adminKey: Boolean(process.env.RELAY_ADMIN_KEY || process.env.RELAY_API_KEY),
-      relayKey: Boolean(process.env.RELAY_API_KEY),
+      adminKey: effectiveAdminKeys.length > 0,
+      relayKey: effectiveRelayKeys.length > 0,
       kv: Boolean(kv),
       providerKeys: configuredProviders.some((p) => p.configured || p.keyCount > 0),
     },

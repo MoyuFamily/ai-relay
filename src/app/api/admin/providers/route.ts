@@ -14,7 +14,7 @@ export const runtime = 'nodejs';
  * Create or update a custom provider.
  */
 export async function POST(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   let body: any;
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
  * Delete a custom provider.
  */
 export async function DELETE(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   let body: any;

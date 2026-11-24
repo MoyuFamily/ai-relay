@@ -20,7 +20,7 @@ const VALID_PLATFORMS = ['wecom', 'feishu', 'dingtalk', 'slack', 'generic'];
  * Returns the full webhook settings (webhooks list + alert thresholds + report config).
  */
 export async function GET(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   try {
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
  * Add a new webhook. Body: { name, url, platform, enabled?, template? }
  */
 export async function POST(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   let body: Record<string, unknown>;
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
  * Update a webhook. Body: { id, name?, url?, platform?, enabled?, template? }
  */
 export async function PUT(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   let body: Record<string, unknown>;
@@ -159,7 +159,7 @@ export async function PUT(request: NextRequest) {
  * Delete a webhook. Body: { id }
  */
 export async function DELETE(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   let body: Record<string, unknown>;
@@ -201,7 +201,7 @@ export async function DELETE(request: NextRequest) {
  * Body: { reportTime?: string, reportTimezone?: string }
  */
 export async function PATCH(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   let body: Record<string, unknown>;

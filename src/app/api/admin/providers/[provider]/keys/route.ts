@@ -27,7 +27,7 @@ function maskKey(key: string): string {
  * Returns managed keys from KV if set, otherwise shows env var keys.
  */
 export async function GET(request: NextRequest, { params }: { params: Params }) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   const { provider } = await params;
@@ -79,7 +79,7 @@ export async function GET(request: NextRequest, { params }: { params: Params }) 
  * Body: { key: "sk-..." } or { keys: ["sk-...", "sk-..."] }
  */
 export async function POST(request: NextRequest, { params }: { params: Params }) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   const { provider } = await params;
@@ -210,7 +210,7 @@ export async function POST(request: NextRequest, { params }: { params: Params })
  * Body: { key: "full-key-value" } or { hash: "djb2hash" }
  */
 export async function DELETE(request: NextRequest, { params }: { params: Params }) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   const { provider } = await params;

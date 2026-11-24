@@ -16,7 +16,7 @@ export const runtime = 'nodejs';
  * Body: { webhookId: string }
  */
 export async function POST(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   let body: Record<string, unknown>;

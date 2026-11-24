@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 export async function GET(request: NextRequest) {
-  const auth = requireCronOrAdminAuth(request);
+  const auth = await requireCronOrAdminAuth(request);
   if (auth) return auth;
 
   const refresh = request.nextUrl.searchParams.get('refresh') === '1';

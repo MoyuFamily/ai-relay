@@ -25,7 +25,7 @@ function esc(value: string): string {
 }
 
 export async function GET(request: NextRequest) {
-  const authResponse = requireAdminAuth(request);
+  const authResponse = await requireAdminAuth(request);
   if (authResponse) return authResponse;
   const config = await getModelAliasConfig(true);
   const hidden = new Set(config.hidden);

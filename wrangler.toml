@@ -1,7 +1,11 @@
 name = "ai-relay"
+main = ".open-next/worker.js"
 compatibility_date = "2024-09-23"
-compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = ".open-next"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
 
 [[kv_namespaces]]
 binding = "KV"
@@ -10,4 +14,3 @@ binding = "KV"
 binding = "DB"
 database_name = "ai-relay"
 migrations_dir = "migrations"
-

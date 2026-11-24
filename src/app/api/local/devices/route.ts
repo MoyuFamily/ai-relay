@@ -35,7 +35,7 @@ async function scanDeviceKeys(kv: any): Promise<string[]> {
 
 // GET /api/local/devices - List devices
 export async function GET(request: NextRequest) {
-  const authResponse = requireAdminAuth(request);
+  const authResponse = await requireAdminAuth(request);
   if (authResponse) return authResponse;
 
   const kv = await getKV();

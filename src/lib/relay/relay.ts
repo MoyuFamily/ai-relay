@@ -106,7 +106,14 @@ function getDefaultUpstreamTimeoutMs(): number {
   return DEFAULT_SELF_HOSTED_UPSTREAM_TIMEOUT_MS;
 }
 
+import { getCachedRuntimeSettingsSync, getRuntimeSettings } from '../admin/runtime-settings';
+
 function getUpstreamTimeoutMs(): number {
+  const settingsTimeout = getCachedRuntimeSettingsSync().upstreamTimeoutMs;
+  if (typeof settingsTimeout === 'number' && Number.isFinite(settingsTimeout)) {
+    if (settingsTimeout <= 0) return 0;
+    return Math.max(1_000, Math.floor(settingsTimeout));
+  }
   const defaultTimeout = getDefaultUpstreamTimeoutMs();
   const raw = process.env.RELAY_UPSTREAM_TIMEOUT_MS;
   if (raw === undefined || raw.trim() === '') return defaultTimeout;
@@ -234,6 +241,9 @@ export async function relayRequest(
   rawBody?: string,
   passthroughHeaders?: Record<string, string>
 ): Promise<RelayResult> {
+  // Warm runtime settings cache (60s TTL; near-zero cost after first request)
+  await getRuntimeSettings().catch(() => {});
+
   const provider = await resolveProvider(body.model);
   if (!provider) {
     throw new RelayError(

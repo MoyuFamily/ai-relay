@@ -6,6 +6,7 @@ import { withTimeout } from '@/lib/utils/timeout';
 import { getAllProviders } from '@/lib/providers';
 import type { TrendPoint } from '@/lib/usage';
 import { getCFEnvSync, getCFEnv, isCloudflareSync } from '@/lib/cf-env';
+import { ensureD1Schema } from '@/lib/db/d1-schema';
 import { getKV as getSharedKV } from '@/lib/admin/admin-config';
 import { shouldUseSelfHostedPostgres } from '@/lib/config/env';
 
@@ -80,6 +81,7 @@ export async function aggregateUsageDailyReport(date: string): Promise<UsageDail
   const cfEnv = getCFEnvSync() || await getCFEnv();
   if (cfEnv?.DB) {
     try {
+      await ensureD1Schema(cfEnv.DB).catch(() => {});
       const [usageRows, errorRows] = await cfEnv.DB.batch([
         cfEnv.DB.prepare(
           `SELECT provider, requests, tokens, prompt_tokens, completion_tokens

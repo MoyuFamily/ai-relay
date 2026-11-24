@@ -4,13 +4,26 @@
 
 export const TRANSLATIONS = {
   zh: {
-    // Login
+    // Login & First-Time Bootstrap
     adminLogin: '🔐 后台登录',
     enterAdminKey: '请输入管理员密钥 (RELAY_ADMIN_KEY / RELAY_API_KEY)',
     login: '登录',
     invalidKey: '无效的 API 密钥',
     serverNotConfigured: '服务端尚未配置 RELAY_API_KEY（或 RELAY_ADMIN_KEY），请先在环境变量中配置并重新部署。',
     failedFetch: '获取后台数据失败',
+    bootstrapTitle: '✨ 首次初始化',
+    bootstrapSubtitle: '已为你自动生成高强度随机访问密钥。请先复制保存，确认后初始化入口将永久锁定。',
+    bootstrapKeyLabel: '你的专属访问密钥（RELAY_API_KEY）',
+    bootstrapKeyHint: '用于登录此管理后台和客户端调用 /v1 接口（不是 OpenAI / Claude 的上游 Key），可自定义修改（12-128 位）。',
+    bootstrapRegenerate: '换一个',
+    bootstrapCopy: '复制密钥',
+    bootstrapCopied: '已复制 ✓',
+    bootstrapConfirm: '确认并锁定，进入后台',
+    bootstrapConfirming: '正在锁定初始化...',
+    bootstrapNoStorageTitle: '需要先关联持久化存储',
+    bootstrapNoStorageDesc: '未检测到 RELAY_API_KEY 环境变量，也未检测到可用持久化存储。如使用 Vercel，请在 Dashboard → Storage 关联免费版 Upstash for Redis 后 Redeploy；或直接设置 RELAY_API_KEY 环境变量。',
+    bootstrapBannerTitle: '🎉 初始化完成！请妥善保存你的访问密钥：',
+    bootstrapBannerDismiss: '我已保存',
 
     // Header & Global
     title: 'AI Relay 后台管理',
@@ -385,13 +398,26 @@ export const TRANSLATIONS = {
     alertAddFromTestFailed: '添加密钥失败',
   },
   en: {
-    // Login
+    // Login & First-Time Bootstrap
     adminLogin: '🔐 Admin Login',
     enterAdminKey: 'Enter Admin Key (RELAY_ADMIN_KEY / RELAY_API_KEY)',
     login: 'Login',
     invalidKey: 'Invalid API key',
     serverNotConfigured: 'Server authentication is not configured. Set RELAY_API_KEY (or RELAY_ADMIN_KEY) in environment variables and redeploy.',
     failedFetch: 'Failed to fetch admin data',
+    bootstrapTitle: '✨ First-Time Setup',
+    bootstrapSubtitle: 'A strong random access key has been generated for your instance. Copy and save it — once confirmed, this setup screen locks permanently.',
+    bootstrapKeyLabel: 'Your Relay Access Key (RELAY_API_KEY)',
+    bootstrapKeyHint: 'Used to sign in to /admin and call /v1 endpoints (NOT your OpenAI/Claude key). Editable (12–128 chars).',
+    bootstrapRegenerate: 'Regenerate',
+    bootstrapCopy: 'Copy Key',
+    bootstrapCopied: 'Copied ✓',
+    bootstrapConfirm: 'Confirm & Lock, Enter Admin',
+    bootstrapConfirming: 'Initializing...',
+    bootstrapNoStorageTitle: 'Persistent Storage Required',
+    bootstrapNoStorageDesc: 'No RELAY_API_KEY environment variable or persistent storage was detected. On Vercel, attach free Upstash for Redis under Dashboard → Storage and Redeploy — or set RELAY_API_KEY in Environment Variables.',
+    bootstrapBannerTitle: '🎉 Setup complete! Save your access key in a safe place:',
+    bootstrapBannerDismiss: 'I saved it',
 
     // Header & Global
     title: 'AI Relay Admin',

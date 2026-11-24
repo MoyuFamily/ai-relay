@@ -37,7 +37,7 @@ function blockingConflictResponse(rules: Awaited<ReturnType<typeof savePriorityR
 }
 
 export async function GET(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
   const forceRefresh = request.nextUrl.searchParams.get('refresh') === '1';
   const rules = await getPriorityRules(forceRefresh);
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
   try {
     const body = await request.json();
@@ -62,7 +62,7 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
   try {
     const body = await request.json();
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
   try {
     const body = await request.json();

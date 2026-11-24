@@ -15,7 +15,7 @@ export const runtime = 'nodejs';
  */
 export async function POST(request: NextRequest) {
   // Auth check — require RELAY_ADMIN_KEY (falls back to RELAY_API_KEY)
-  const authResponse = requireAdminAuth(request);
+  const authResponse = await requireAdminAuth(request);
   if (authResponse) return authResponse;
 
   let body;

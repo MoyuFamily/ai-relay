@@ -16,7 +16,7 @@ export const maxDuration = 30;
 const LAST_CRON_WEBHOOK_REPORT_KEY = 'cron:usage:last_webhook_report_date';
 
 export async function GET(request: NextRequest) {
-  const auth = requireCronOrAdminAuth(request);
+  const auth = await requireCronOrAdminAuth(request);
   if (auth) return auth;
 
   const url = new URL(request.url);

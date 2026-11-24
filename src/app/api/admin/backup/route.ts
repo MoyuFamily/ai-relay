@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
  * Exports all configuration-related data from Vercel KV.
  */
 export async function GET(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   try {
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
  * Imports configuration-related data back into Vercel KV from a backup payload.
  */
 export async function POST(request: NextRequest) {
-  const authErr = requireAdminAuth(request);
+  const authErr = await requireAdminAuth(request);
   if (authErr) return authErr;
 
   let body: any;

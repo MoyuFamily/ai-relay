@@ -59,12 +59,15 @@ function base64urlDecode(str: string): string {
   return new TextDecoder().decode(bytes);
 }
 
+import { getBootstrappedApiKey, getEffectiveRelayApiKeys } from '../admin/bootstrap-auth';
+
 /**
  * Get the signing secret for generating/validating temporary keys.
+ * Falls back to the bootstrapped storage key when env vars are unset.
  * Returns null if no secret is configured — never falls back to a hardcoded
  * public constant, preventing forged temporary tokens on misconfigured instances.
  */
-function getSigningSecret(): string | null {
+async function getSigningSecret(): Promise<string | null> {
   const secret = process.env.RELAY_SIGNING_SECRET?.trim();
   if (secret) return secret;
 
@@ -81,6 +84,10 @@ function getSigningSecret(): string | null {
     .map((k) => k.trim())
     .filter(Boolean);
   if (apiKeys.length > 0) return apiKeys[0];
+
+  // Fallback to one-time bootstrapped key stored in KV/D1/Disk/Postgres
+  const bootstrapped = await getBootstrappedApiKey();
+  if (bootstrapped) return bootstrapped;
 
   return null;
 }
@@ -111,7 +118,7 @@ async function signPayload(payloadStr: string, secret: string): Promise<string> 
  * Generate a cryptographically signed temporary request key.
  */
 export async function generateTempKey(durationSeconds: number): Promise<{ key: string; expiresAt: string }> {
-  const secret = getSigningSecret();
+  const secret = await getSigningSecret();
   if (!secret) {
     throw new Error(
       'Signing secret is not configured. Set RELAY_SIGNING_SECRET, RELAY_ADMIN_KEY, or RELAY_API_KEY.'
@@ -137,7 +144,7 @@ export async function generateTempKey(durationSeconds: number): Promise<{ key: s
  */
 export async function validateTempKey(token: string): Promise<boolean> {
   try {
-    const secret = getSigningSecret();
+    const secret = await getSigningSecret();
     if (!secret) return false;
 
     const prefix = 'sk-relay-temp-';
@@ -182,7 +189,7 @@ export async function validateAuth(request: Request): Promise<boolean> {
     return await validateTempKey(token);
   }
 
-  const validKeys = getRelayApiKeys();
+  const validKeys = await getEffectiveRelayApiKeys();
   if (validKeys.length === 0) return false;
   return constantTimeIncludes(validKeys, token);
 }

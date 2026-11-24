@@ -48,8 +48,12 @@ export interface RequestLogListResult {
   source: 'postgres' | 'kv' | 'memory';
 }
 
+import { getRuntimeSettings } from '@/lib/admin/runtime-settings';
+
 // ── Configuration ────────────────────────────────────────────
-function isRequestLogsEnabled(): boolean {
+async function isRequestLogsEnabled(): Promise<boolean> {
+  const settings = await getRuntimeSettings().catch(() => ({} as { enableRequestLogs?: boolean | null }));
+  if (typeof settings.enableRequestLogs === 'boolean') return settings.enableRequestLogs;
   return process.env.ENABLE_REQUEST_LOGS === 'true';
 }
 
@@ -127,7 +131,7 @@ function applyTraceIdFilter(items: RequestLogEntry[], traceId?: string): Request
  * Record a request log entry (persistent backend: Postgres/KV/D1/Memory).
  */
 export async function recordRequestLog(input: RequestLogEntry): Promise<void> {
-  if (!isRequestLogsEnabled()) return;
+  if (!(await isRequestLogsEnabled())) return;
 
   const store = getDefaultRequestLogStore();
   const sanitized = sanitizeEntry(input);
@@ -138,7 +142,7 @@ export async function recordRequestLog(input: RequestLogEntry): Promise<void> {
  * List request logs from persistent backend.
  */
 export async function listRequestLogs(filters: RequestLogFilters = {}): Promise<RequestLogListResult> {
-  if (!isRequestLogsEnabled()) {
+  if (!(await isRequestLogsEnabled())) {
     return { items: [], degraded: false, source: 'memory' };
   }
 

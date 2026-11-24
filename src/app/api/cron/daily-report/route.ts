@@ -18,7 +18,7 @@ export const runtime = 'nodejs';
  * Protected by CRON_SECRET, Vercel cron (on Vercel without CRON_SECRET), or admin auth.
  */
 export async function GET(request: NextRequest) {
-  const authErr = requireCronOrAdminAuth(request);
+  const authErr = await requireCronOrAdminAuth(request);
   if (authErr) return authErr;
 
   const usageStorage = await createUsageStorage();

@@ -28,7 +28,12 @@ export async function GET(request: NextRequest) {
     const allProviderDefs = { ...PROVIDERS, ...customProviders };
     const fallbackChains: Record<string, string[]> = {};
     const providerKeys: Record<string, string[]> = {};
-    const allowKeySync = process.env.ALLOW_LOCAL_KEY_SYNC !== 'false';
+    const { getRuntimeSettings } = await import('@/lib/admin/runtime-settings');
+    const runtimeSettings = await getRuntimeSettings();
+    const allowKeySync =
+      typeof runtimeSettings.allowLocalKeySync === 'boolean'
+        ? runtimeSettings.allowLocalKeySync
+        : process.env.ALLOW_LOCAL_KEY_SYNC !== 'false';
 
     await Promise.all(
       Object.entries(allProviderDefs).map(async ([providerName, cfg]) => {

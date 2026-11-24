@@ -33,7 +33,7 @@ const DEFAULT_RANGES: Record<string, string> = {
  */
 export async function GET(request: NextRequest) {
   // Auth check
-  const authResponse = requireAdminAuth(request);
+  const authResponse = await requireAdminAuth(request);
   if (authResponse) return authResponse;
 
   const usageStorage = await createUsageStorage();
