@@ -35,10 +35,10 @@ Before executing any deployment or maintenance command, follow these non-negotia
 
 | Mode | When to choose | Runtime | Persistent Storage | Cron / Background Tasks | Hard Limits |
 |---|---|---|---|---|---|
-| **Vercel** | Fast cloud deploy, light personal/team usage | Node.js Serverless (`60s` max) | Upstash Redis (`UPSTASH_REDIS_REST_*` or `KV_REST_API_*`) | `vercel.json` Cron (requires `CRON_SECRET`) | 60s timeout (`RELAY_UPSTREAM_TIMEOUT_MS=50000`), Hobby bandwidth & Redis cmd caps |
-| **Cloudflare Pages** | Free-tier high-frequency coding relay | Workers (`@opennextjs/cloudflare`) | Cloudflare `KV` (config) + `D1` (usage/logs) | GitHub Actions `.github/workflows/cron.yml` (`DEPLOY_URL` + `CRON_SECRET`) | ~10ms Free CPU budget, 6 concurrent subrequests, KV 60s edge negative cache |
+| **Cloudflare Workers** | Recommended free-tier personal gateway | Workers + Static Assets (`@opennextjs/cloudflare`) | Cloudflare `KV` (config) + `D1` (usage/logs, auto-migrated on first request) | Native `worker.ts` `scheduled()` or GitHub Actions `cron.yml` | ~10ms Free CPU budget, 6 concurrent subrequests, KV 60s edge negative cache |
+| **Vercel** | Fast cloud deploy, light personal usage | Node.js Serverless (`60s` max) | Upstash Redis (`UPSTASH_REDIS_REST_*` or `KV_REST_API_*`) | `vercel.json` Cron (requires `CRON_SECRET`) | 60s timeout (`RELAY_UPSTREAM_TIMEOUT_MS=50000`), Hobby bandwidth & Redis cmd caps |
 | **Docker / VPS (Disk)** | Single-node self-hosted, zero serverless limits | Standalone Node.js (`next start`) | Atomic JSON on disk (`/app/data/kv-store.json`) | Built-in Node scheduler (`ENABLE_SELF_HOSTED_CRON=true`) | Bound only by host |
-| **Docker / VPS (Postgres)** | Multi-replica HA self-hosted | Standalone Node.js (`next start`) | PostgreSQL (`DATABASE_URL`, auto-migrates on boot) | Built-in Node scheduler (`ENABLE_SELF_HOSTED_CRON=true`) | Bound only by host/DB |
+| **Docker / VPS (Postgres)** | Self-hosted with external PostgreSQL | Standalone Node.js (`next start`) | PostgreSQL (`DATABASE_URL`, auto-migrates on boot) | Built-in Node scheduler (`ENABLE_SELF_HOSTED_CRON=true`) | Bound only by host/DB |
 | **Local CLI (`airelay`)** | Laptop coding agents (`codex`, `claude-code`) | Local HTTP (`127.0.0.1:3147`) | Local JSON / env / cloud snapshot sync | 30s config poll + 60s heartbeat | Localhost only by default |
 
 ### 1.2 Storage Auto-Detection Precedence (`src/lib/config/env.ts`)
@@ -50,11 +50,15 @@ Understand this exact order before debugging storage issues:
 3. **Self-Hosted PostgreSQL** → selected when **not** on Vercel/CF/Redis, `DATABASE_URL` matches `^postgres(ql)?://`, and not forced to file (`RELAY_STORAGE_BACKEND=file` or explicit `RELAY_STORAGE_PATH` without `RELAY_STORAGE_BACKEND=postgres`). **Takes precedence over Docker's default `RELAY_DATA_DIR=/app/data`.**
 4. **Self-Hosted Persistent Disk** → `RELAY_STORAGE_PATH` or `${RELAY_DATA_DIR}/kv-store.json` (default `./data/kv-store.json`).
 
-### 1.3 Core Environment Variables
+### 1.3 Core Environment Variables & Runtime Settings
+
+> **Zero-Env First-Time Setup & Live Runtime Settings**:
+> - When `RELAY_API_KEY` / `RELAY_ADMIN_KEY` are **unset** and persistent storage (Cloudflare KV/D1, Upstash Redis, Disk, or Postgres) is attached, `/admin` exposes a one-time atomic bootstrap flow (`GET/POST /api/admin/bootstrap`) that locks a generated key permanently (`409 already_initialized` thereafter). Environment variables always override bootstrapped keys.
+> - Operational settings (`extraClientKeys`, `cronSecret`, `upstreamTimeoutMs`, `maxConcurrent`, `maxQueue`, `enableRequestLogs`, `allowLocalKeySync`, `defaultUserAgent`, `deployUrl`) can be updated live without redeploying via `/admin` → **Tools → Runtime Settings** (`GET/PUT /api/admin/settings`).
 
 | Variable | Required | Default / Fallback | Purpose |
 |---|---|---|---|
-| `RELAY_API_KEY` | **Yes** | — | Comma-separated client keys for `/v1/*` (`Bearer` or `x-api-key`). Also fallback for Admin & Signing keys. |
+| `RELAY_API_KEY` | Optional if bootstrapped | Bootstrapped key in storage | Comma-separated client keys for `/v1/*` (`Bearer` or `x-api-key`). Overrides bootstrapped key; also fallback for Admin & Signing keys. |
 | `RELAY_ADMIN_KEY` | No | Falls back to `RELAY_API_KEY` | Comma-separated Admin keys for `/admin` & `/api/admin/*`. |
 | `RELAY_SIGNING_SECRET` | No | Falls back to Admin/Relay key | HMAC secret for temporary keys (`/api/admin/temp-keys`). |
 | `DEVICE_TOKEN_SECRET` | No | Falls back to Admin/Relay key | Hashing secret for Local CLI device login (`airelay login`). |
@@ -106,7 +110,7 @@ DEVICE_TOKEN_SECRET="$(openssl rand -hex 32)"
   ```bash
   CI=true WRANGLER_SEND_METRICS=false pnpm exec wrangler whoami
   ```
-  - Best for automation: set `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`. Required token permissions: `Account:Cloudflare Pages:Edit`, `Account:D1:Edit`, `Account:Workers KV Storage:Edit`, `Account:Account Settings:Read`.
+  - Best for automation: set `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`. Required token permissions: `Account:Workers Scripts:Edit`, `Account:D1:Edit`, `Account:Workers KV Storage:Edit`, `Account:Account Settings:Read` (add `Account:Cloudflare Pages:Edit` only for legacy Pages deployments).
   - If using OAuth on a headless machine or when the user approves on a phone:
     1. Start `XDG_CONFIG_HOME=<auth-dir> pnpm exec wrangler login --browser=false` in the background (listens on `http://localhost:8976/oauth/callback`).
     2. Send the printed `https://dash.cloudflare.com/oauth2/auth?...` URL to the user.
@@ -158,21 +162,15 @@ echo "Production URL: $DEPLOY_URL"
 
 ---
 
-### 3.2 Cloudflare Pages (OpenNext + KV + D1)
+### 3.2 Cloudflare Workers (OpenNext + KV + D1, Recommended)
 
-#### Option A: GitHub Actions Automated Deploy (Recommended for Ongoing Maintenance)
+Tracked `wrangler.toml` targets **Cloudflare Workers + Static Assets** (`main = ".open-next/worker.js"`, `[assets]`) with auto-provisioned `KV` + `DB` (D1) bindings, and `src/lib/db/d1-schema.ts` creates all 6 D1 tables idempotently on first request (no manual `wrangler d1 migrations` needed). `scripts/build.mjs` automatically runs `opennextjs-cloudflare build` when `WORKERS_CI=1`.
 
-1. Ensure the user has forked or owns the repo and enabled **Actions** (GitHub disables workflows by default on forks).
-2. Configure Repository Secrets (`gh secret set` or Settings → Secrets and variables → Actions):
-   - Required: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `RELAY_API_KEY`
-   - Recommended: `CRON_SECRET`, `DEPLOY_URL` (e.g. `https://ai-relay.pages.dev`, activates `.github/workflows/cron.yml`)
-   - Optional variable: `CLOUDFLARE_PAGES_PROJECT_NAME` (defaults to `ai-relay`)
-3. Trigger deploy:
-   ```bash
-   gh workflow run deploy-cf.yml --ref main
-   gh run watch
-   ```
-   `deploy-cf.yml` automatically provisions D1 + KV, runs D1 migrations, builds OpenNext, materializes static HTML (`index.html`, `admin.html`, `404.html`), syncs secrets via `wrangler pages secret bulk` **before** deploy, and deploys to `main`.
+#### Option A: Official One-Click Deploy (Workers Builds)
+
+Direct the user to `https://deploy.workers.cloudflare.com/?url=https://github.com/MoyuFamily/ai-relay`:
+- Cloudflare auto-creates KV & D1, sets `Build command: pnpm run build` + `Deploy command: npx wrangler deploy` (`WORKERS_CI=1`), and deploys with zero env vars.
+- After deploy, open `/admin` to auto-generate and lock the access key.
 
 #### Option B: Direct CLI Deploy (Verified OpenNext + Wrangler Pipeline)
 
@@ -208,9 +206,13 @@ fi
 # 3. Write temporary wrangler.toml (never commit real IDs to git)
 cat > wrangler.toml <<EOF
 name = "${PROJECT_NAME}"
+main = ".open-next/worker.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
-pages_build_output_dir = ".open-next"
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
 
 [[kv_namespaces]]
 binding = "KV"
@@ -223,51 +225,29 @@ database_id = "${D1_ID}"
 migrations_dir = "migrations"
 EOF
 
-# 4. Create Pages project (idempotent)
-pnpm exec wrangler pages project create "$PROJECT_NAME" --production-branch main || true
+# 4. Build with OpenNext for Cloudflare
+NODE_ENV=production pnpm run cf:build
 
-# 5. Apply all D1 migrations (migrations/0001..0005)
-pnpm exec wrangler d1 migrations apply "$PROJECT_NAME" --remote
+# 5. Deploy Worker + Static Assets (D1 schema auto-initializes on first request)
+pnpm exec wrangler deploy
 
-# 6. Build with OpenNext for Cloudflare
-NODE_ENV=production pnpm exec opennextjs-cloudflare build --dangerouslyUseUnsupportedNextVersion
-
-# 7. Adapt .open-next for Cloudflare Pages (static assets + materialized / and /admin + _routes.json + _worker.js)
-[ -d ".open-next/assets" ] && cp -r .open-next/assets/* .open-next/
-CACHE_DIR="$(find .open-next/cache -mindepth 1 -maxdepth 1 -type d | head -1)"
-CACHE_DIR="$CACHE_DIR" node -e '
-  const fs = require("fs"), path = require("path");
-  const cacheDir = process.env.CACHE_DIR, out = ".open-next";
-  const entries = [["index.cache","index.html","/"],["admin.cache","admin.html","/admin"],["_not-found.cache","404.html",null]];
-  const exclude = ["/_next/static/*","/favicon.ico","/*.png","/*.ico","/*.txt","/*.svg"];
-  for (const [src, dst, route] of entries) {
-    const p = path.join(cacheDir, src);
-    if (!fs.existsSync(p)) continue;
-    const html = JSON.parse(fs.readFileSync(p, "utf8"))?.html;
-    if (!html) continue;
-    fs.writeFileSync(path.join(out, dst), html);
-    if (route) exclude.unshift(route);
-  }
-  fs.writeFileSync(path.join(out, "_routes.json"), JSON.stringify({ version: 1, include: ["/*"], exclude }));
-'
-[ -f ".open-next/worker.js" ] && mv .open-next/worker.js .open-next/_worker.js
-
-# 8. Upload secrets BEFORE deploying (Pages binds secrets only to subsequent deployments!)
-SECRETS_FILE="$(mktemp)"
-trap 'rm -f "$SECRETS_FILE"' EXIT
-chmod 600 "$SECRETS_FILE"
-jq -n \
-  --arg relay "$RELAY_API_KEY" \
-  --arg cron "$CRON_SECRET" \
-  '{RELAY_API_KEY: $relay, CRON_SECRET: $cron}' > "$SECRETS_FILE"
-pnpm exec wrangler pages secret bulk "$SECRETS_FILE" --project-name="$PROJECT_NAME" --env production
-
-# 9. Deploy to Cloudflare Pages
-pnpm exec wrangler pages deploy .open-next --project-name="$PROJECT_NAME" --branch=main
+# 6. Optional: set RELAY_API_KEY / CRON_SECRET via Worker secrets (otherwise user can bootstrap on /admin)
+if [ -n "${RELAY_API_KEY:-}" ]; then
+  SECRETS_FILE="$(mktemp)"
+  trap 'rm -f "$SECRETS_FILE"' EXIT
+  chmod 600 "$SECRETS_FILE"
+  jq -n \
+    --arg relay "$RELAY_API_KEY" \
+    --arg cron "${CRON_SECRET:-}" \
+    'if $cron != "" then {RELAY_API_KEY: $relay, CRON_SECRET: $cron} else {RELAY_API_KEY: $relay} end' > "$SECRETS_FILE"
+  pnpm exec wrangler secret bulk "$SECRETS_FILE"
+fi
 ```
 
+> **Legacy Cloudflare Pages (`deploy-cf.yml`)**: Existing Cloudflare Pages deployments remain supported via `.github/workflows/deploy-cf.yml`, which generates a Pages-compatible `wrangler.toml` at CI runtime, runs D1 migrations, materializes static HTML, and syncs secrets via `wrangler pages secret bulk`.
+
 **Cloudflare-specific notes**:
-- **Secret ordering**: Always run `wrangler pages secret bulk` **before** `wrangler pages deploy`; changing secrets never affects already-deployed builds retroactively.
+- **Zero-env bootstrap**: If you omit Step 6 (`RELAY_API_KEY`), leave `/admin` un-bootstrapped for the user or bootstrap via `POST /api/admin/bootstrap` and return the generated key.
 - **KV edge negative cache**: Cloudflare KV may cache a `null` miss at edge PoPs for up to 60 seconds across *different* Worker isolates. Same-isolate writes are immediate via write-through `globalThis` caches; if smoke-testing immediately after a cold miss across routes, allow a short retry window or verify via `GET /api/admin/setup?refresh=1`.
 
 ---
@@ -406,6 +386,8 @@ All `/api/admin/*` routes authenticate with `Authorization: Bearer $ADMIN_KEY` (
 
 | Area | Endpoint | Methods | Purpose / Payload |
 |---|---|---|---|
+| **First-Time Bootstrap** | `/api/admin/bootstrap` | `GET`, `POST` | Check uninitialized status (`GET`) or atomically lock first-time key (`POST {key?}`) when env keys are unset |
+| **Runtime Settings** | `/api/admin/settings` | `GET`, `PUT` | View/update live settings (`extraClientKeys`, `cronSecret`, `upstreamTimeoutMs`, `maxConcurrent`, `maxQueue`, `enableRequestLogs`, `allowLocalKeySync`, `defaultUserAgent`, `deployUrl`) |
 | **Diagnostics** | `/api/admin/setup?refresh=1` | `GET` | Runtime, storage backend, auth/KV checks, provider key counts |
 | **Provider Keys** | `/api/admin/providers/:provider/keys` | `GET`, `POST`, `DELETE` | List masked keys + `hash`; add `{key}` or `{keys:[...]}`; remove `{hash}` or `{key}` |
 | **Key Connectivity Test** | `/api/admin/providers/:provider/keys/test` | `POST` | Test `{hash?, key?, model?, prompt?}` against live upstream |
@@ -470,7 +452,7 @@ rm -f relay-config-backup.json relay-stats-backup.json
 #### C. Upgrading an Existing Deployment
 
 - **Vercel**: Push/merge to `main` (auto-deploys) or run `vercel deploy --prod --yes`.
-- **Cloudflare Pages**: Push/merge to `main` (runs `deploy-cf.yml`, automatically applying any new `migrations/*.sql` files before deploy). For manual CLI upgrades, always re-run `wrangler d1 migrations apply <db> --remote` before `wrangler pages deploy`.
+- **Cloudflare Workers**: Push/merge to `main` (Workers Builds auto-runs `pnpm run build` → OpenNext + `npx wrangler deploy`) or run `pnpm run cf:deploy`. Legacy Cloudflare Pages users continue using `deploy-cf.yml`.
 - **Docker Compose**:
   - From source: `git pull origin main && docker compose up -d --build` (add `--profile postgres` if using bundled Postgres).
   - From GHCR: `docker compose pull && docker compose up -d`.
@@ -496,7 +478,8 @@ When adding or refreshing built-in provider models:
   ```
 - **Cloudflare**:
   ```bash
-  CI=true WRANGLER_SEND_METRICS=false pnpm exec wrangler pages project delete "$PROJECT_NAME" --yes
+  CI=true WRANGLER_SEND_METRICS=false pnpm exec wrangler delete --name "$PROJECT_NAME" --force
+  # (For legacy Pages projects: pnpm exec wrangler pages project delete "$PROJECT_NAME" --yes)
   CI=true WRANGLER_SEND_METRICS=false pnpm exec wrangler d1 delete "$PROJECT_NAME" --skip-confirmation
   CI=true WRANGLER_SEND_METRICS=false pnpm exec wrangler kv namespace delete --namespace-id "$KV_ID" --skip-confirmation
   ```
@@ -508,13 +491,12 @@ When adding or refreshing built-in provider models:
 
 | Symptom | Likely Root Cause | Deterministic Fix |
 |---|---|---|
-| `503` `server_not_configured` on `/api/admin/*` | `RELAY_API_KEY` (and `RELAY_ADMIN_KEY`) unset in runtime env | Set `RELAY_API_KEY` and **redeploy** (required on both Vercel & CF Pages). |
-| `503` `storage_not_configured` when saving keys/aliases | No persistent KV/Redis/Disk/DB bound | Vercel: attach Upstash for Redis & Redeploy. CF: bind `KV` in `wrangler.toml` & redeploy. Self-host: verify `RELAY_DATA_DIR` is writable or set `DATABASE_URL`. |
+| `503` `server_not_configured` on `/api/admin/*` | No `RELAY_API_KEY`/`RELAY_ADMIN_KEY` env var and `/admin` not bootstrapped yet | Open `/admin` to run one-time bootstrap (requires persistent storage), or set `RELAY_API_KEY` env var and redeploy. |
+| `503` `storage_not_configured` when saving keys/aliases | No persistent KV/Redis/Disk/DB bound | Vercel: attach Upstash for Redis & Redeploy. CF: bind `KV` & `DB` in `wrangler.toml` & redeploy. Self-host: verify `RELAY_DATA_DIR` is writable or set `DATABASE_URL`. |
 | `GET /health` returns `503` (`status: "degraded"`) | Normal on fresh deploy with 0 upstream provider keys | Check `GET /health?liveness=1` (`200`), then add at least one key via `POST /api/admin/providers/:provider/keys` or env vars. |
-| `401` on `/api/cron/probe` or `/api/cron/usage` | `CRON_SECRET` unset or caller sent only `x-vercel-cron: 1` | Set `CRON_SECRET` in runtime env (and GitHub Secrets for CF `cron.yml`) and send `Authorization: Bearer $CRON_SECRET` or `x-cron-secret: $CRON_SECRET`. |
-| CF Pages `GET /admin` returns `308` or `404` | `admin.cache` not materialized to `admin.html` or excluded blindly in `_routes.json` | Follow Step 7 of Section 3.2 (exact logic in `.github/workflows/deploy-cf.yml`). |
-| CF Pages newly written alias/key briefly unseen by next request | Cloudflare KV edge negative-cache (up to 60s across different isolates after cold miss) | Retry after a brief delay or query `GET /api/admin/setup?refresh=1`. |
-| `GET /api/admin/request-logs` returns `"source": "memory"` | `ENABLE_REQUEST_LOGS` is unset or `false` (default to save KV/D1 writes) | Set `ENABLE_REQUEST_LOGS=true` and redeploy if persistent request logs are needed. |
+| `401` on `/api/cron/probe` or `/api/cron/usage` | `CRON_SECRET` unset or caller sent only `x-vercel-cron: 1` | Set `cronSecret` via `PUT /api/admin/settings` (or `CRON_SECRET` env var) and send `Authorization: Bearer $CRON_SECRET` or `x-cron-secret: $CRON_SECRET`. |
+| CF Workers newly written alias/key briefly unseen by next request | Cloudflare KV edge negative-cache (up to 60s across different isolates after cold miss) | Retry after a brief delay or query `GET /api/admin/setup?refresh=1`. |
+| `GET /api/admin/request-logs` returns `"source": "memory"` | `enableRequestLogs` is `false` (default to save KV/D1 writes) | Toggle `enableRequestLogs: true` via `/admin` → Tools → Runtime Settings (`PUT /api/admin/settings`) or set `ENABLE_REQUEST_LOGS=true`. |
 | Vercel Preview URL returns SSO login HTML / `401` | Vercel Deployment Protection enabled on preview URLs by default | Test against the Production domain (`https://<project>.vercel.app`). |
-| `504 Gateway Timeout` on long reasoning models | Serverless `50000ms` default timeout (60s platform cap) | Switch heavy/long-reasoning workloads to Docker self-hosted (`300000ms` default) or set `RELAY_UPSTREAM_TIMEOUT_MS`. |
+| `504 Gateway Timeout` on long reasoning models | Serverless `50000ms` default timeout (60s platform cap) | Switch long-reasoning workloads to Docker self-hosted (`300000ms` default) or update `upstreamTimeoutMs` via `/admin` → Tools → Runtime Settings. |
 | `wrangler` hangs indefinitely in agent shell | Interactive telemetry or AI skills prompt | Always prefix with `CI=true WRANGLER_SEND_METRICS=false`. |

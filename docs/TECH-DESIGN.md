@@ -1,6 +1,6 @@
 # AI Relay — 技术架构设计
 
-> 对应代码基线：`v2.15.0`（多平台统一内核：Vercel / Cloudflare Pages / Docker & VPS 自部署 / 本地 CLI）
+> 对应代码基线：`v2.15.0`（多平台统一内核：Cloudflare Workers / Vercel / Docker & VPS 自部署 / 本地 CLI）
 
 ---
 
@@ -65,9 +65,9 @@ ai-relay/
 │   │       ├── cron/*                    # 外部定时触发端点（probe / usage / daily-report）
 │   │       └── local/*                   # 本地 CLI 设备授权、配置快照同步与用量批量上报
 │   └── lib/
-│       ├── admin/                        # 统一配置中心 (admin-config.ts)、CFKVAdapter、鉴权
+│       ├── admin/                        # 统一配置中心 (admin-config.ts)、首次初始化 (bootstrap-auth.ts)、运行时配置 (runtime-settings.ts)、CFKVAdapter、鉴权
 │       ├── config-store/                 # ConfigStore 接口与 VercelKV / Postgres 实现
-│       ├── db/                           # PostgreSQL 连接池与自部署幂等自动建表 Schema
+│       ├── db/                           # PostgreSQL 与 Cloudflare D1 幂等自动建表 Schema (d1-schema.ts / self-hosted-schema.ts)
 │       ├── health/                       # 上游 Provider 健康探针执行器与存储
 │       ├── local/                        # 设备授权令牌哈希与鉴权 (device-auth.ts)
 │       ├── observability/                # 按需请求追踪日志（Memory / KV / Postgres）
@@ -81,7 +81,9 @@ ai-relay/
 ├── migrations/                           # Cloudflare D1 SQLite 增量迁移脚本
 ├── worker.ts                             # Cloudflare Workers 入口包装（注入 scheduled 定时任务）
 ├── Dockerfile & docker-compose.yml       # 自部署多阶段容器构建与磁盘/PostgreSQL 编排
-└── scripts/ci-local.sh                   # 本地全链路 CI 验收脚本（lint + tsc + vitest + build）
+├── scripts/
+│   ├── build.mjs                         # 跨平台构建入口（WORKERS_CI=1 自动走 OpenNext，其余走 next build）
+│   └── ci-local.sh                       # 本地全链路 CI 验收脚本（lint + tsc + vitest + build）
 ```
 
 ---
@@ -128,7 +130,7 @@ ai-relay/
 
 | 平台维度 | 关键约束 | 项目内的针对性工程实现 |
 |---|---|---|
-| **Cloudflare Pages / Workers** | 免费层单请求 ~10ms CPU 预算；单请求最多 6 个并发出站连接；50 次子请求上限；无全局持久环境引用 | 1. 通过请求级 `getCloudflareContext()` 动态获取 `KV` / `DB` 绑定；<br>2. `CFKVAdapter` 实现单 Key 互斥锁、按 Key 归并的 6 并发上限队列以及 `<60s` TTL 自动抬升至 `60s`；<br>3. 流式传输采用零 `JSON.parse` 字节扫描器提取末尾 `usage`；<br>4. 每次错误重试前显式 `res.body.cancel()` 防止占满 6 个并发 Socket；<br>5. `worker.ts` 注入 `scheduled()` 执行健康探测与 D1 历史表清理。 |
+| **Cloudflare Workers（含旧版 Pages）** | 免费层单请求 ~10ms CPU 预算；单请求最多 6 个并发出站连接；50 次子请求上限；无全局持久环境引用 | 1. 通过请求级 `getCloudflareContext()` 动态获取 `KV` / `DB` 绑定；<br>2. `ensureD1Schema()` 在首次请求时幂等自动建表，一键部署无需手动执行迁移；<br>3. `CFKVAdapter` 实现单 Key 互斥锁、按 Key 归并的 6 并发上限队列以及 `<60s` TTL 自动抬升至 `60s`；<br>4. 流式传输采用零 `JSON.parse` 字节扫描器提取末尾 `usage`；<br>5. 每次错误重试前显式 `res.body.cancel()` 防止占满 6 个并发 Socket；<br>6. `worker.ts` 注入 `scheduled()` 执行健康探测与 D1 历史表清理。 |
 | **Vercel Serverless** | 函数最大执行时长 60s；Upstash 免费 Redis 每日命令数有限 | 1. `BatchUsageRecorder` 内存环形缓冲区聚合写入 + Lua 脚本单次原子更新多维计数；<br>2. 支持 `RELAY_KV_USAGE_SAMPLE_RATE` 与错误明细采样率；<br>3. KV 读取瞬时超时返回 `TIMEOUT_OR_ERROR` 哨兵值，保留上一次健康内存缓存而不误覆盖为空。 |
 | **Docker / VPS 自部署** | 无平台托管 Cron；编排器在未配 Key 时易因健康检查 503 重启容器；单机与多实例存储需求分化 | 1. 单机默认启用 `FileKVAdapter`（内存 O(1) 读写 + `0600` 临时文件原子 `rename` 落盘，零外部依赖）；<br>2. 配置 `DATABASE_URL` 时自动切换 `PostgresKVAdapter` + `PostgresUsageStorage`，首次连接幂等自动建表；<br>3. `src/instrumentation.ts` 自动拉起 `self-hosted-scheduler`（定时健康探针、UTC 日报聚合、过期清理、Webhook 推送）；<br>4. `/health?liveness=1` 专供容器编排存活探针。 |
 | **本地 CLI (`airelay`)** | 离线可用性、云端配置安全同步、开发机零配置体验 | 1. 支持 `--config` 本地文件、环境变量、云端 Device Code 授权同步四种模式；<br>2. 设备令牌经 SHA-256 哈希存储，换取令牌强制一次性消费；<br>3. 内置 `CodexAdapter` 自动备份并注入 `~/.codex/config.toml`。 |

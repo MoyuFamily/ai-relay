@@ -104,7 +104,7 @@ airelay login https://your-relay.example.com
 airelay local:start
 ```
 
-> 默认自动同步上游 Provider Key；如服务端希望禁止向本地设备下发明文 Key，可在服务端设置 `ALLOW_LOCAL_KEY_SYNC=false`。也可以访问后台的 `/admin/local-relay` 页面查看当前在线设备列表与最近心跳时间。
+> 默认自动同步上游 Provider Key；如服务端希望禁止向本地设备下发明文 Key，可直接在 `/admin` → **辅助工具 → 运行时配置** 中关闭「允许本地 CLI 同步上游密钥」（或设置环境变量 `ALLOW_LOCAL_KEY_SYNC=false`）。也可以访问后台的 `/admin/local-relay` 页面查看当前在线设备列表与最近心跳时间。
 
 ### 方式 5：纯环境变量内联 Key（零配置文件最快启动）
 

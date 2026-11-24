@@ -22,7 +22,8 @@ export interface HomepageProvider {
   models: HomepageModel[];
 }
 
-const deployUrl = 'https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22upstash%22%2C%22productSlug%22%3A%22upstash-kv%22%2C%22protocol%22%3A%22storage%22%7D%5D';
+const cfDeployUrl = 'https://deploy.workers.cloudflare.com/?url=https://github.com/MoyuFamily/ai-relay';
+const vercelDeployUrl = 'https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22upstash%22%2C%22productSlug%22%3A%22upstash-kv%22%2C%22protocol%22%3A%22storage%22%7D%5D';
 const githubUrl = 'https://github.com/MoyuFamily/ai-relay';
 
 const copyText = {
@@ -41,13 +42,14 @@ const content = {
       admin: '管理后台',
     },
     hero: {
-      badge: 'Vercel 一键部署 · Cloudflare Pages · Docker 自部署 · 本地 CLI · OpenAI / Anthropic 兼容',
+      badge: 'Cloudflare Workers 一键部署 · Vercel · Docker 自部署 · 本地 CLI · OpenAI / Anthropic 兼容',
       title: 'AI Relay',
-      subtitle: '个人与团队的 AI API 统一网关 — Serverless 云端部署、Docker 自部署与本地 CLI 一体化',
-      description: '支持 Vercel 一键部署、Cloudflare Pages 推送即部署、Docker / PostgreSQL 自托管与本机 CLI 运行。只需配置 RELAY_API_KEY，2 分钟拥有多 Provider 路由、多 Key 轮换、OpenAI ↔ Anthropic 跨协议转换、Fallback 与 Admin 后台。',
+      subtitle: '轻量、开箱即用的个人 AI API 网关 — 一个端点，统一路由所有大模型',
+      description: '支持 Cloudflare Workers 与 Vercel 一键部署、Docker 自托管与本机 CLI 运行。部署后打开 /admin 自动生成并锁定访问密钥，2 分钟拥有多 Provider 路由、多 Key 轮换、OpenAI ↔ Anthropic 跨协议转换、Fallback 与可视化管理后台。',
       quickstart: '2 分钟部署',
       github: 'GitHub',
-      deploy: '一键部署',
+      deployCf: 'Cloudflare 一键部署',
+      deployVercel: 'Vercel 一键部署',
     },
     stats: [
       { value: '0', label: '服务器运维' },
@@ -60,7 +62,7 @@ const content = {
       featuresDescription: '从请求入口到 Provider、Key Pool、Fallback 和告警，AI Relay 负责把不稳定的上游变成稳定的统一接口。',
       quickstartEyebrow: 'QUICK START',
       quickstartTitle: '四步部署并开始调用',
-      quickstartDescription: '沿用 README 的最短路径：先部署，再验证健康状态，进入 Admin 添加 Provider Key，最后直接调用 OpenAI 兼容接口。',
+      quickstartDescription: '最快上线路径：一键部署 → 打开 /admin 自动生成并锁定访问密钥 → 添加上游 Key → 直接调用。',
       apiEyebrow: 'API',
       apiTitle: '精简但完整的 OpenAI 兼容端点',
       modelsEyebrow: 'MODELS',
@@ -79,7 +81,7 @@ const content = {
       { icon: '↪', title: '多级 Fallback', description: 'Provider 到 Key Pool 的链式故障转移，让上游异常不直接暴露给客户端。', tier: 'p0' },
       { icon: '▣', title: '100% OpenAI 兼容', description: '保留 /v1/chat/completions 与 /v1/models 习惯，现有 SDK 几乎零改动接入。', tier: 'p0' },
       { icon: '▤', title: 'Admin 后台', description: '集中管理密钥、配额、用量统计、模型测试和 Provider 配置。', tier: 'p0' },
-      { icon: '⚡', title: '一键部署', description: 'Vercel 一键部署即开即用，Cloudflare 通过 GitHub Actions 推送即部署。免费层也能快速跑起个人或团队中转站。', tier: 'p0' },
+      { icon: '⚡', title: '一键部署', description: 'Cloudflare Workers 与 Vercel 均支持一键部署并自动创建存储绑定，免费层即可轻松运行个人 AI 网关。', tier: 'p0' },
       { icon: '≋', title: '流式响应', description: 'SSE 透明透传，兼容实时输出、长文本生成和 Agent 工具调用。', tier: 'p1' },
       { icon: '◈', title: 'Webhook 通知', description: '支持企微、飞书、钉钉、Slack，推送日报、异常和额度告警。', tier: 'p1' },
       { icon: '◇', title: '临时 API Key', description: 'HMAC 签名的无状态临时密钥，可设置过期时间和调用配额。', tier: 'p1' },
@@ -94,27 +96,27 @@ const content = {
     quickstartSteps: [
       {
         title: '部署',
-        description: 'Vercel 填 1 个 RELAY_API_KEY 即可一键部署（并关联 Upstash Redis 后 Redeploy）；Cloudflare Fork 后开启 Actions 配置 Secrets；或直接 Docker 一条命令自托管。',
-        label: 'Vercel / CF / Docker',
-        code: 'RELAY_API_KEY=your-strong-secret\n# Docker 一键运行:\ndocker run -d --name ai-relay -p 3000:3000 -e RELAY_API_KEY=your-strong-secret -v ai-relay-data:/app/data ghcr.io/moyufamily/ai-relay:latest',
+        description: '点击下方按钮一键部署到 Cloudflare Workers（推荐，自动创建 KV 与 D1）或 Vercel（关联免费版 Upstash Redis），也支持 Docker 一条命令自托管。',
+        label: 'Docker',
+        code: '# Docker 单机一条命令启动（数据持久化到 Docker Volume）\ndocker run -d --name ai-relay --restart unless-stopped \\\n  -p 3000:3000 -v ai-relay-data:/app/data \\\n  ghcr.io/moyufamily/ai-relay:latest',
       },
       {
-        title: '验证存活',
-        description: '部署完成后调用存活探针确认服务已启动（未添加上游 Key 前 `/health?liveness=1` 返回 200）。',
-        label: 'bash',
-        code: 'curl https://你的项目.vercel.app/health?liveness=1\n# {"status":"unconfigured","relayReady":false,...}',
-      },
-      {
-        title: '添加密钥',
-        description: '进入 Admin 后台（默认用 RELAY_API_KEY 或 RELAY_ADMIN_KEY 登录），添加 OpenAI、Claude、Gemini、DeepSeek、OpenRouter 或自定义 Provider Key，并可当场发一句测试对话。',
+        title: '首次初始化',
+        description: '部署完成后直接打开 /admin，页面会自动生成一个高强度随机访问密钥，复制保存并点击锁定即可进入后台。',
         label: 'URL',
-        code: 'https://你的项目.vercel.app/admin\n# 添加上游 Key 后，GET /health 返回 {"status":"healthy"}',
+        code: 'https://你的域名/admin\n# 复制自动生成的 sk-relay-... 密钥并点击“确认并锁定”',
+      },
+      {
+        title: '添加上游密钥',
+        description: '在后台添加 OpenAI、Claude、Gemini、DeepSeek、OpenRouter 或自定义服务商 API Key，并可在初始化向导里当场发一句测试对话验证连通。',
+        label: 'Admin',
+        code: 'GET https://你的域名/health\n# 添加任意一个上游 Key 后返回 {"status":"healthy"}',
       },
       {
         title: '开始调用',
-        description: '把客户端 base URL 指向你的 Relay，同时兼容 OpenAI SDK、Claude Code、Codex 与 Cursor。',
+        description: '把客户端 Base URL 指向你的 AI Relay，同时兼容 OpenAI SDK、Claude Code、Codex、Cursor 与 Cherry Studio。',
         label: 'bash',
-        code: 'curl -X POST https://你的项目.vercel.app/v1/chat/completions \\\n  -H "Authorization: Bearer YOUR_RELAY_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"gpt-6-luna","messages":[{"role":"user","content":"你好！"}]}\'',
+        code: 'curl -X POST https://你的域名/v1/chat/completions \\\n  -H "Authorization: Bearer 你的访问密钥" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"gpt-6-luna","messages":[{"role":"user","content":"你好！"}]}\'',
       },
     ],
     endpoints: {
@@ -149,7 +151,7 @@ const content = {
     footer: {
       version: `AI Relay v${pkg.version}`,
       license: 'MIT License',
-      powered: 'Vercel · Cloudflare Pages · Docker · Local CLI',
+      powered: 'Cloudflare Workers · Vercel · Docker · Local CLI',
       docs: '文档',
       sponsor: '基础设施赞助',
     },
@@ -164,13 +166,14 @@ const content = {
       admin: 'Admin',
     },
     hero: {
-      badge: 'Vercel One-Click · Cloudflare Pages · Self-Hosted Docker · Local CLI · OpenAI & Anthropic',
+      badge: 'Cloudflare Workers One-Click · Vercel · Docker Self-Host · Local CLI · OpenAI & Anthropic',
       title: 'AI Relay',
-      subtitle: 'Unified AI API gateway — deploy serverless, self-host with Docker, or run locally',
-      description: 'Deploy to Vercel in one click, push-to-deploy on Cloudflare Pages with D1 + KV, self-host with Docker / PostgreSQL, or run the local CLI. Set a single RELAY_API_KEY and get multi-provider routing, key rotation, OpenAI ↔ Anthropic protocol translation, fallback, and an Admin console in 2 minutes.',
+      subtitle: 'Lightweight personal AI API gateway — one endpoint for all your LLM providers',
+      description: 'One-click deploy to Cloudflare Workers or Vercel, self-host with Docker, or run the local CLI. Open /admin after deploy to auto-generate and lock your access key — multi-provider routing, key rotation, OpenAI ↔ Anthropic translation, fallback, and a visual Admin console ready in 2 minutes.',
       quickstart: 'Deploy in 2 minutes',
       github: 'GitHub',
-      deploy: 'One-click deploy',
+      deployCf: 'Deploy to Cloudflare',
+      deployVercel: 'Deploy to Vercel',
     },
     stats: [
       { value: '0', label: 'Server ops' },
@@ -183,7 +186,7 @@ const content = {
       featuresDescription: 'AI Relay turns unstable upstream providers into one predictable endpoint with routing, key rotation, fallback, and alerting built in.',
       quickstartEyebrow: 'QUICK START',
       quickstartTitle: 'Deploy and call it in four steps',
-      quickstartDescription: 'Follow the README path: deploy, verify health, add Provider keys in Admin, then call the OpenAI-compatible endpoint.',
+      quickstartDescription: 'Fastest path to live: one-click deploy → open /admin to auto-generate & lock your access key → add an upstream key → start calling.',
       apiEyebrow: 'API',
       apiTitle: 'A compact OpenAI-compatible API surface',
       modelsEyebrow: 'MODELS',
@@ -202,7 +205,7 @@ const content = {
       { icon: '↪', title: 'Multi-level fallback', description: 'Chained Provider and Key Pool failover keeps upstream faults away from client code.', tier: 'p0' },
       { icon: '▣', title: '100% OpenAI-compatible', description: 'Keep /v1/chat/completions and /v1/models semantics, with almost no SDK changes.', tier: 'p0' },
       { icon: '▤', title: 'Admin console', description: 'Manage keys, quotas, usage analytics, model tests, and Provider configuration in one place.', tier: 'p0' },
-      { icon: '⚡', title: 'One-click deploy', description: 'Vercel: one-click deploy and go. Cloudflare: fork + configure Secrets + push to main. Practical for personal or team relays on the free tier.', tier: 'p0' },
+      { icon: '⚡', title: 'One-click deploy', description: 'One-click deploy on Cloudflare Workers or Vercel with automatic storage provisioning — run your personal AI gateway on the free tier.', tier: 'p0' },
       { icon: '≋', title: 'Streaming pass-through', description: 'Transparent SSE forwarding for realtime output, long generations, and tool calling.', tier: 'p1' },
       { icon: '◈', title: 'Webhook alerts', description: 'Send daily reports, incidents, and quota alerts to WeCom, Feishu, DingTalk, or Slack.', tier: 'p1' },
       { icon: '◇', title: 'Temporary API keys', description: 'Stateless HMAC-signed keys with expiration windows and quota limits.', tier: 'p1' },
@@ -217,27 +220,27 @@ const content = {
     quickstartSteps: [
       {
         title: 'Deploy',
-        description: 'Vercel: one-click deploy with just RELAY_API_KEY (then attach Upstash Redis & Redeploy). Cloudflare: fork, enable Actions, add Secrets. Or run a single Docker command.',
-        label: 'Vercel / CF / Docker',
-        code: 'RELAY_API_KEY=your-strong-secret\n# One-line Docker self-host:\ndocker run -d --name ai-relay -p 3000:3000 -e RELAY_API_KEY=your-strong-secret -v ai-relay-data:/app/data ghcr.io/moyufamily/ai-relay:latest',
+        description: 'Click below to one-click deploy to Cloudflare Workers (recommended, auto-provisions KV & D1) or Vercel (with free Upstash Redis), or run a single Docker container.',
+        label: 'Docker',
+        code: '# Single-container Docker quick start (persists to Docker volume)\ndocker run -d --name ai-relay --restart unless-stopped \\\n  -p 3000:3000 -v ai-relay-data:/app/data \\\n  ghcr.io/moyufamily/ai-relay:latest',
       },
       {
-        title: 'Verify liveness',
-        description: 'Confirm the service booted cleanly with the liveness probe (returns 200 even before provider keys are added).',
-        label: 'bash',
-        code: 'curl https://your-project.vercel.app/health?liveness=1\n# {"status":"unconfigured","relayReady":false,...}',
-      },
-      {
-        title: 'Add keys',
-        description: 'Open /admin (sign in with RELAY_API_KEY or RELAY_ADMIN_KEY), add OpenAI, Claude, Gemini, DeepSeek, OpenRouter, or custom Provider keys, and run a 10-second live test.',
+        title: 'First-time setup',
+        description: 'Open /admin after deploy. A strong random access key is generated automatically — copy it and click Confirm & Lock to enter the console.',
         label: 'URL',
-        code: 'https://your-project.vercel.app/admin\n# Once a key is added, GET /health returns {"status":"healthy"}',
+        code: 'https://your-domain/admin\n# Copy your auto-generated sk-relay-... key and click Confirm & Lock',
+      },
+      {
+        title: 'Add upstream keys',
+        description: 'Add OpenAI, Claude, Gemini, DeepSeek, OpenRouter, or custom provider API keys in Admin, and run a 10-second live test right inside the Setup tab.',
+        label: 'Admin',
+        code: 'GET https://your-domain/health\n# Once a provider key is added, returns {"status":"healthy"}',
       },
       {
         title: 'Call it',
-        description: 'Point OpenAI SDK, Claude Code, Codex CLI, or Cursor at your relay endpoint.',
+        description: 'Point OpenAI SDK, Claude Code, Codex CLI, Cursor, or Cherry Studio at your AI Relay endpoint.',
         label: 'bash',
-        code: 'curl -X POST https://your-project.vercel.app/v1/chat/completions \\\n  -H "Authorization: Bearer YOUR_RELAY_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"gpt-6-luna","messages":[{"role":"user","content":"Hello!"}]}\'',
+        code: 'curl -X POST https://your-domain/v1/chat/completions \\\n  -H "Authorization: Bearer YOUR_ACCESS_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"gpt-6-luna","messages":[{"role":"user","content":"Hello!"}]}\'',
       },
     ],
     endpoints: {
@@ -272,7 +275,7 @@ const content = {
     footer: {
       version: `AI Relay v${pkg.version}`,
       license: 'MIT License',
-      powered: 'Vercel · Cloudflare Pages · Docker · Local CLI',
+      powered: 'Cloudflare Workers · Vercel · Docker · Local CLI',
       docs: 'Docs',
       sponsor: 'Infrastructure sponsor',
     },
@@ -483,8 +486,8 @@ export default function Homepage({ providers }: { providers: HomepageProvider[] 
               <span className={styles.btnIcon}><GitHubIcon /></span>
               <span className={styles.btnText}>{t.hero.github}</span>
             </a>
-            <a className={styles.ghostButton} href={deployUrl} target="_blank" rel="noreferrer">
-              {t.hero.deploy}
+            <a className={styles.ghostButton} href={cfDeployUrl} target="_blank" rel="noreferrer">
+              {t.hero.deployCf}
             </a>
           </div>
           <div className={styles.heroStats} aria-label="AI Relay highlights">
@@ -564,10 +567,16 @@ export default function Homepage({ providers }: { providers: HomepageProvider[] 
                   <h3>{step.title}</h3>
                   <p>{step.description}</p>
                   {index === 0 ? (
-                    <a className={styles.deployLink} href={deployUrl} target="_blank" rel="noreferrer">
-                      {t.hero.deploy}
-                      <ArrowIcon />
-                    </a>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                      <a className={styles.deployLink} href={cfDeployUrl} target="_blank" rel="noreferrer">
+                        {t.hero.deployCf}
+                        <ArrowIcon />
+                      </a>
+                      <a className={styles.deployLink} href={vercelDeployUrl} target="_blank" rel="noreferrer">
+                        {t.hero.deployVercel}
+                        <ArrowIcon />
+                      </a>
+                    </div>
                   ) : null}
                   <CodeBlock id={`step-${index}`} label={step.label} code={step.code} language={language} copiedId={copiedId} onCopy={handleCopy} />
                 </div>
