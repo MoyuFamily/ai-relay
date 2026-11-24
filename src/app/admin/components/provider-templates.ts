@@ -48,35 +48,57 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
   {
     id: 'openai',
     label: 'OpenAI',
-    description: 'GPT / o-series / embeddings / audio models',
+    description: 'GPT-6 / GPT-6.2 / embeddings / audio models',
     name: 'openai',
     displayName: 'OpenAI',
     baseUrl: 'https://api.openai.com/v1',
     headerFormat: 'openai',
-    modelPrefixes: ['gpt-', 'dall-e-', 'whisper-', 'tts-', 'text-embedding-'],
+    modelPrefixes: ['gpt-', 'chatgpt-', 'whisper-', 'tts-', 'text-embedding-'],
     envKeyField: 'OPENAI_KEYS',
   },
   {
     id: 'anthropic',
     label: 'Anthropic',
-    description: 'Claude family via x-api-key auth',
+    description: 'Claude 5.5 / Fable 5.2 via x-api-key auth',
     name: 'anthropic',
     displayName: 'Anthropic',
-    baseUrl: 'https://api.anthropic.com',
+    baseUrl: 'https://api.anthropic.com/v1',
     headerFormat: 'anthropic',
     modelPrefixes: ['claude-'],
-    envKeyField: 'ANTHROPIC_KEYS',
+    envKeyField: 'CLAUDE_KEYS',
   },
   {
     id: 'google',
     label: 'Google Gemini',
-    description: 'Gemini models through OpenAI-compatible relay headers',
+    description: 'Gemini 4 (Neon / Argon / Hydrogen) & 3.8 Flash OpenAI-compatible endpoint',
     name: 'google',
     displayName: 'Google Gemini',
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     headerFormat: 'openai',
     modelPrefixes: ['gemini-'],
-    envKeyField: 'GOOGLE_KEYS',
+    envKeyField: 'GEMINI_KEYS',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    description: 'Unified aggregator for 300+ models via one key',
+    name: 'openrouter',
+    displayName: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    headerFormat: 'openai',
+    modelPrefixes: ['openrouter/', 'openai/', 'anthropic/', 'google/', 'deepseek/', 'meta-llama/', 'x-ai/', 'qwen/', 'mistralai/'],
+    envKeyField: 'OPENROUTER_KEYS',
+  },
+  {
+    id: 'siliconflow',
+    label: '硅基流动 SiliconFlow',
+    description: 'DeepSeek / Qwen / GLM high-speed OpenAI-compatible API',
+    name: 'siliconflow',
+    displayName: '硅基流动 SiliconFlow',
+    baseUrl: 'https://api.siliconflow.cn/v1',
+    headerFormat: 'openai',
+    modelPrefixes: ['deepseek-ai/', 'Qwen/', 'THUDM/', 'Pro/'],
+    envKeyField: 'SILICONFLOW_KEYS',
   },
   {
     id: 'aliyun',
@@ -90,6 +112,28 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     envKeyField: 'ALIYUN_KEYS',
   },
   {
+    id: 'volcengine',
+    label: '火山方舟 Ark',
+    description: '豆包 Doubao & DeepSeek via Volcengine Ark OpenAI API',
+    name: 'volcengine',
+    displayName: '火山方舟 Ark',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    headerFormat: 'openai',
+    modelPrefixes: ['doubao-', 'ep-'],
+    envKeyField: 'VOLCENGINE_KEYS',
+  },
+  {
+    id: 'zhipu',
+    label: '智谱清言 Zhipu',
+    description: 'GLM models via BigModel OpenAI-compatible API',
+    name: 'zhipu',
+    displayName: '智谱清言 Zhipu',
+    baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+    headerFormat: 'openai',
+    modelPrefixes: ['glm-'],
+    envKeyField: 'ZHIPU_KEYS',
+  },
+  {
     id: 'baidu',
     label: '百度文心',
     description: 'ERNIE / 文心大模型 via Qianfan OpenAI-compatible API',
@@ -99,6 +143,17 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     headerFormat: 'openai',
     modelPrefixes: ['ernie-'],
     envKeyField: 'BAIDU_KEYS',
+  },
+  {
+    id: 'xai',
+    label: 'xAI (Grok)',
+    description: 'Grok models via xAI OpenAI-compatible API',
+    name: 'xai',
+    displayName: 'xAI (Grok)',
+    baseUrl: 'https://api.x.ai/v1',
+    headerFormat: 'openai',
+    modelPrefixes: ['grok-'],
+    envKeyField: 'XAI_KEYS',
   },
   {
     id: 'azure',
@@ -145,6 +200,17 @@ export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
     headerFormat: 'openai',
     modelPrefixes: ['deepseek-'],
     envKeyField: 'DEEPSEEK_KEYS',
+  },
+  {
+    id: 'ollama',
+    label: 'Ollama (本地)',
+    description: 'Local Ollama / LM Studio OpenAI-compatible endpoint',
+    name: 'ollama',
+    displayName: 'Ollama Local',
+    baseUrl: 'http://127.0.0.1:11434/v1',
+    headerFormat: 'openai',
+    modelPrefixes: ['llama', 'qwen', 'mistral', 'gemma'],
+    envKeyField: 'OLLAMA_KEYS',
   },
   {
     id: 'custom',
@@ -227,6 +293,30 @@ export function validateApiKeyInput(apiKey: string, minLength = 20): string | nu
   return null;
 }
 
+function isAllowedBaseUrl(rawUrl: string): boolean {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('https://')) return true;
+  // Allow plain HTTP only for local/LAN model servers (Ollama, LM Studio, vLLM, Docker host)
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:') return false;
+    const host = parsed.hostname.toLowerCase();
+    return (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '[::1]' ||
+      host === '::1' ||
+      host === 'host.docker.internal' ||
+      host.startsWith('192.168.') ||
+      host.startsWith('10.') ||
+      /^172\.(1[6-9]|2\d|3[0-1])\./.test(host)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function validateDraftProvider(provider: DraftProviderPayload): string | null {
   if (!provider.name.trim() || !/^[a-zA-Z0-9_]+$/.test(provider.name.trim())) {
     return 'invalid-provider-id';
@@ -234,7 +324,7 @@ export function validateDraftProvider(provider: DraftProviderPayload): string | 
   if (!provider.displayName.trim()) {
     return 'missing-display-name';
   }
-  if (!provider.baseUrl.trim() || !provider.baseUrl.trim().startsWith('https://')) {
+  if (!isAllowedBaseUrl(provider.baseUrl)) {
     return 'invalid-base-url';
   }
   if (!provider.modelPrefixes.length) {

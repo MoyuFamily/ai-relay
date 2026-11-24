@@ -86,7 +86,8 @@ const BROWSER_COMPAT_USER_AGENTS = [
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36',
   'Mozilla/5.0',
 ];
-const DEFAULT_UPSTREAM_TIMEOUT_MS = 50_000;
+const DEFAULT_SERVERLESS_UPSTREAM_TIMEOUT_MS = 50_000;
+const DEFAULT_SELF_HOSTED_UPSTREAM_TIMEOUT_MS = 300_000;
 
 class UpstreamTimeoutError extends Error {
   public readonly timeoutMs: number;
@@ -98,11 +99,19 @@ class UpstreamTimeoutError extends Error {
   }
 }
 
+function getDefaultUpstreamTimeoutMs(): number {
+  if (process.env.VERCEL || process.env.VERCEL_ENV || process.env.CF_PAGES || isCloudflareSync()) {
+    return DEFAULT_SERVERLESS_UPSTREAM_TIMEOUT_MS;
+  }
+  return DEFAULT_SELF_HOSTED_UPSTREAM_TIMEOUT_MS;
+}
+
 function getUpstreamTimeoutMs(): number {
+  const defaultTimeout = getDefaultUpstreamTimeoutMs();
   const raw = process.env.RELAY_UPSTREAM_TIMEOUT_MS;
-  if (raw === undefined || raw.trim() === '') return DEFAULT_UPSTREAM_TIMEOUT_MS;
+  if (raw === undefined || raw.trim() === '') return defaultTimeout;
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed)) return DEFAULT_UPSTREAM_TIMEOUT_MS;
+  if (!Number.isFinite(parsed)) return defaultTimeout;
   if (parsed <= 0) return 0;
   return Math.max(1_000, Math.floor(parsed));
 }
@@ -494,7 +503,7 @@ async function tryProviderWithRetries(
     // Resolve target model and its alias for the current provider
     const targetModel = await resolveFallbackModel(body.model, provider.name);
     const resolvedAlias = await resolveModelAlias(targetModel);
-    // Map virtual model name to real upstream model ID (e.g. mimo-v2.5-pro-coding → mimo-v2.5-pro)
+    // Map virtual model name to real upstream model ID (e.g. mimo-v2.6-pro-coding → mimo-v2.6-pro)
     const resolvedModel = resolveUpstreamModel(resolvedAlias, provider);
 
     // On Cloudflare, streaming usage is estimated from byte counts (see the

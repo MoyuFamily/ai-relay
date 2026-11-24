@@ -143,9 +143,9 @@ describe('CC Switch export', () => {
     expect(payload.links[0]).toMatchObject({
       providerId: 'ai-relay',
       app: 'codex',
-      model: 'gpt-5.4',
+      model: 'gpt-6.2-sol',
     });
-    expect(linkParams(payload.links[0].url).get('model')).toBe('gpt-5.4');
+    expect(linkParams(payload.links[0].url).get('model')).toBe('gpt-6.2-sol');
   });
 
   it('keeps bulk provider export as a JSON-file payload', () => {

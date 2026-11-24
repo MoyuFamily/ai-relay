@@ -304,7 +304,7 @@ describe('OpenAI Chat to Anthropic Fallback Transparency', () => {
 
     const fallbackCall = (fetchMock.mock.calls as any[])[1];
     expect(String(fallbackCall[0])).toBe('https://api.anthropic.com/v1/messages');
-    expect(JSON.parse(fallbackCall[1].body as string).model).toBe('claude-sonnet-4-6');
+    expect(JSON.parse(fallbackCall[1].body as string).model).toBe('claude-sonnet-5-5');
   });
 
   it('should return OpenAI SSE chunks when a streaming GPT request falls back to Anthropic', async () => {
@@ -422,7 +422,7 @@ describe('Anthropic-to-OpenAI End-to-End Routing', () => {
 
     const fetchCallArgs = (fetchMock.mock.calls as any[])[0];
     const bodySent = JSON.parse(fetchCallArgs[1].body as string);
-    expect(bodySent.model).toBe('gpt-5.4');
+    expect(bodySent.model).toBe('gpt-6.2-sol');
     expect(bodySent.messages).toEqual([{ role: 'user', content: 'hi' }]);
 
     // Confirm the returned response is translated back to Anthropic format

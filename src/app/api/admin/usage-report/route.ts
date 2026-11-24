@@ -7,6 +7,7 @@ import { NextRequest } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin';
 import { getUsageDailyReportsWithGaps, reportsToTrend, enumerateDateKeys, createEmptyUsageDailyReport, type UsageDailyReport } from '@/lib/usage/daily-report-store';
 import { getCFEnv, isCloudflareSync } from '@/lib/cf-env';
+import { shouldUseSelfHostedPostgres } from '@/lib/config/env';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -69,13 +70,7 @@ function buildReportsFromRelationalRows(
 
 function canQuerySelfHostedPostgres(): boolean {
   if (isCloudflareSync()) return false;
-  if (process.env.NEXT_PHASE === 'phase-production-build') return false;
-  if (process.env.VERCEL || process.env.CF_PAGES) return false;
-  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) return false;
-  if (process.env.RELAY_STORAGE_PATH?.trim() || process.env.RELAY_DATA_DIR?.trim()) return false;
-  if (process.env.VITEST && process.env.RELAY_ENABLE_POSTGRES_IN_TEST !== '1') return false;
-  const url = process.env.DATABASE_URL?.trim() || '';
-  return /^postgres(ql)?:\/\//i.test(url);
+  return shouldUseSelfHostedPostgres();
 }
 
 export async function GET(request: NextRequest) {

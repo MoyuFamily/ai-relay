@@ -2,9 +2,10 @@
 // AI Relay CLI — Local Commands
 // ============================================================
 
-import { loadProfile, loadOrCreateProfile, createDefaultProfile } from './profile.js';
+import { loadProfile, loadOrCreateProfile } from './profile.js';
 import { startLocalServer } from './server.js';
 import { resolveConfigSource } from '../lib/config-resolver.js';
+import { interactiveConfigSetup } from '../lib/interactive-config.js';
 
 export interface StartCommandOptions {
   config?: string;
@@ -36,20 +37,32 @@ export async function startCommand(options: StartCommandOptions = {}) {
   }
 
   // Resolve config source
-  const configSource = resolveConfigSource({
+  let configSource = resolveConfigSource({
     configArg: options.config,
     profile,
     env: process.env,
   });
 
   if (!configSource) {
-    console.error('❌ No configuration source found.\n');
-    console.log('You can:');
-    console.log('  1. Login to cloud: airelay login <cloud-url>');
-    console.log('  2. Use local config: airelay local:start --config ./config.json');
-    console.log('  3. Set environment: export RELAY_CONFIG_PATH=./config.json');
-    console.log('  4. Use inline keys: export OPENAI_KEYS=sk-xxx\n');
-    process.exit(1);
+    if (process.stdin.isTTY && process.stdout.isTTY) {
+      const configured = await interactiveConfigSetup();
+      if (configured) {
+        configSource = resolveConfigSource({
+          configArg: options.config,
+          profile,
+          env: process.env,
+        });
+      }
+    }
+    if (!configSource) {
+      console.error('❌ No configuration source found.\n');
+      console.log('You can:');
+      console.log('  1. Run setup wizard: airelay init');
+      console.log('  2. Login to cloud:   airelay login <cloud-url>');
+      console.log('  3. Use local config: airelay local:start --config ./relay-config.json');
+      console.log('  4. Use inline keys:  OPENAI_KEYS=sk-xxx airelay local:start\n');
+      process.exit(1);
+    }
   }
 
   console.log('🚀 Starting AI Relay Local Server...\n');
@@ -64,10 +77,11 @@ export async function startCommand(options: StartCommandOptions = {}) {
   });
 
   console.log('✅ Server started!\n');
-  console.log(`   Health: http://${profile.listenHost}:${server.port}/health`);
-  console.log(`   Endpoint: http://${profile.listenHost}:${server.port}/v1`);
+  console.log(`   Health:   http://${profile.listenHost}:${server.port}/health`);
+  console.log(`   OpenAI:   http://${profile.listenHost}:${server.port}/v1`);
+  console.log(`   Claude:   http://${profile.listenHost}:${server.port}`);
 
-  if (profile.cloudUrl) {
+  if (configSource.describe().startsWith('Cloud API')) {
     console.log('\n🔄 Syncing config from cloud every 30s, heartbeat every 60s');
   } else {
     console.log('\n📋 Running in standalone mode (no cloud sync)');
@@ -75,13 +89,18 @@ export async function startCommand(options: StartCommandOptions = {}) {
 
   console.log('   Press Ctrl+C to stop\n');
 
-  // Handle shutdown
-  process.on('SIGINT', async () => {
+  // Handle graceful shutdown on both SIGINT and SIGTERM
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     console.log('\n\n🛑 Stopping server...');
     await server.stop();
     console.log('✅ Server stopped');
     process.exit(0);
-  });
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
 export async function statusCommand() {

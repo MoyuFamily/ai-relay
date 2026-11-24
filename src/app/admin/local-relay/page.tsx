@@ -4,6 +4,7 @@
 
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 interface Device {
@@ -14,6 +15,25 @@ interface Device {
   last_heartbeat: number;
 }
 
+const panelStyle: React.CSSProperties = {
+  background: 'rgba(30, 41, 59, 0.5)',
+  border: '1px solid rgba(255, 255, 255, 0.09)',
+  borderRadius: '14px',
+  padding: '1.5rem',
+  marginBottom: '1.5rem',
+  boxShadow: '0 6px 24px rgba(0, 0, 0, 0.35)',
+};
+
+const codePillStyle: React.CSSProperties = {
+  background: 'rgba(0, 0, 0, 0.45)',
+  border: '1px solid rgba(255, 255, 255, 0.1)',
+  borderRadius: '6px',
+  padding: '0.2rem 0.5rem',
+  color: '#93c5fd',
+  fontSize: '0.85rem',
+  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+};
+
 export default function LocalRelayPage() {
   const [devices, setDevices] = useState<Device[]>([]);
   const [adminKey, setAdminKey] = useState('');
@@ -21,7 +41,7 @@ export default function LocalRelayPage() {
   const [showKey, setShowKey] = useState(false);
   const [authError, setAuthError] = useState('');
   const [authenticated, setAuthenticated] = useState(false);
-  const [origin, setOrigin] = useState('https://your-relay.vercel.app');
+  const [origin, setOrigin] = useState('https://your-relay.example.com');
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -39,6 +59,11 @@ export default function LocalRelayPage() {
         headers: { Authorization: `Bearer ${tokenToUse}` },
         cache: 'no-store',
       });
+      if (res.status === 503) {
+        setAuthenticated(false);
+        setAuthError('Server auth is not configured. Set RELAY_API_KEY or RELAY_ADMIN_KEY first.');
+        return;
+      }
       if (res.status === 401) {
         setAuthenticated(false);
         setAuthError('Invalid admin token. Please sign in with your RELAY_ADMIN_KEY or RELAY_API_KEY.');
@@ -73,20 +98,41 @@ export default function LocalRelayPage() {
   };
 
   return (
-    <div className="container mx-auto p-8 max-w-4xl">
-      <h1 className="text-3xl font-bold mb-6">Local Relay</h1>
+    <main style={{ maxWidth: '880px', margin: '0 auto', padding: '2rem 1.25rem', color: '#e5e7eb' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+        <div>
+          <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: 700, color: '#fff' }}>💻 Local Relay</h1>
+          <p style={{ margin: '0.3rem 0 0', color: '#9ca3af', fontSize: '0.9rem' }}>
+            Run AI Relay locally for Codex, Claude Code, and local scripts with automatic config sync.
+          </p>
+        </div>
+        <Link
+          href="/admin"
+          style={{
+            padding: '0.5rem 1rem',
+            borderRadius: '8px',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            background: 'rgba(255, 255, 255, 0.05)',
+            color: '#d1d5db',
+            textDecoration: 'none',
+            fontSize: '0.85rem',
+          }}
+        >
+          ← Back to Admin
+        </Link>
+      </div>
 
       {!authenticated && (
-        <section className="mb-8 bg-white shadow rounded p-6" aria-labelledby="local-relay-auth-heading">
-          <h2 id="local-relay-auth-heading" className="text-xl font-semibold mb-4">
+        <section style={panelStyle} aria-labelledby="local-relay-auth-heading">
+          <h2 id="local-relay-auth-heading" style={{ margin: '0 0 1rem', fontSize: '1.15rem', color: '#fff' }}>
             Sign in to view connected devices
           </h2>
-          <form onSubmit={handleAuthSubmit} method="post" action="/admin/local-relay" className="space-y-4">
-            <div className="flex flex-col gap-1">
-              <label htmlFor="local-relay-admin-password" className="font-medium text-gray-800">
+          <form onSubmit={handleAuthSubmit} method="post" action="/admin/local-relay" style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+              <label htmlFor="local-relay-admin-password" style={{ fontSize: '0.9rem', fontWeight: 500, color: '#d1d5db' }}>
                 Admin API Key <span aria-hidden="true">*</span>
               </label>
-              <div className="flex gap-2">
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <input
                   id="local-relay-admin-password"
                   name="password"
@@ -104,25 +150,53 @@ export default function LocalRelayPage() {
                     setKeyInput(ev.target.value);
                     if (authError) setAuthError('');
                   }}
-                  className="flex-1 border border-gray-400 rounded px-3 py-2 text-base min-h-12"
+                  style={{
+                    flex: 1,
+                    padding: '0.65rem 0.9rem',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255, 255, 255, 0.14)',
+                    background: 'rgba(0, 0, 0, 0.3)',
+                    color: '#f9fafb',
+                    fontSize: '0.95rem',
+                    outline: 'none',
+                  }}
                 />
                 <button
                   type="button"
                   aria-pressed={showKey}
                   onClick={() => setShowKey((prev) => !prev)}
-                  className="px-4 py-2 border border-gray-400 rounded text-sm font-medium text-gray-700 hover:bg-gray-100 min-h-12"
+                  style={{
+                    padding: '0.65rem 1rem',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(255, 255, 255, 0.14)',
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    color: '#e5e7eb',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                  }}
                 >
                   {showKey ? 'Hide key' : 'Show key'}
                 </button>
               </div>
-              <span id="local-relay-auth-hint" className="text-sm text-gray-600">
+              <span id="local-relay-auth-hint" style={{ fontSize: '0.8rem', color: '#9ca3af' }}>
                 Enter your configured RELAY_ADMIN_KEY or RELAY_API_KEY.
               </span>
             </div>
 
             <div role="status" aria-live="polite">
               {authError && (
-                <p id="local-relay-auth-error" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded p-3">
+                <p
+                  id="local-relay-auth-error"
+                  style={{
+                    margin: 0,
+                    padding: '0.65rem 0.9rem',
+                    borderRadius: '8px',
+                    background: 'rgba(239, 68, 68, 0.15)',
+                    border: '1px solid rgba(239, 68, 68, 0.35)',
+                    color: '#fca5a5',
+                    fontSize: '0.85rem',
+                  }}
+                >
                   Error: {authError}
                 </p>
               )}
@@ -130,7 +204,17 @@ export default function LocalRelayPage() {
 
             <button
               type="submit"
-              className="bg-blue-600 text-white font-medium px-5 py-2.5 rounded hover:bg-blue-700 min-h-12"
+              style={{
+                alignSelf: 'flex-start',
+                padding: '0.65rem 1.4rem',
+                borderRadius: '8px',
+                border: 'none',
+                background: '#2563eb',
+                color: '#fff',
+                fontWeight: 600,
+                fontSize: '0.95rem',
+                cursor: 'pointer',
+              }}
             >
               Sign in
             </button>
@@ -138,55 +222,75 @@ export default function LocalRelayPage() {
         </section>
       )}
 
-      <section className="mb-8">
-        <h2 className="text-2xl font-semibold mb-4">Quick Start</h2>
-        <div className="bg-gray-100 p-4 rounded">
-          <ol className="list-decimal list-inside space-y-2">
-            <li>Install CLI: <code className="bg-gray-200 px-2 py-1 rounded">npm install -g ai-relay</code></li>
-            <li>Login: <code className="bg-gray-200 px-2 py-1 rounded">airelay login {origin}</code></li>
-            <li>Start: <code className="bg-gray-200 px-2 py-1 rounded">airelay local:start</code></li>
-            <li>Configure Agent: <code className="bg-gray-200 px-2 py-1 rounded">airelay agent:install codex</code></li>
-          </ol>
-        </div>
+      <section style={panelStyle}>
+        <h2 style={{ margin: '0 0 0.85rem', fontSize: '1.15rem', color: '#fff' }}>Quick Start</h2>
+        <ol style={{ margin: 0, paddingLeft: '1.35rem', display: 'flex', flexDirection: 'column', gap: '0.7rem', lineHeight: 1.6 }}>
+          <li>
+            Clone &amp; link CLI:{' '}
+            <code style={codePillStyle}>git clone https://github.com/MoyuFamily/ai-relay.git &amp;&amp; cd ai-relay &amp;&amp; pnpm install &amp;&amp; pnpm link --global</code>
+          </li>
+          <li>
+            Bind this machine to Admin:{' '}
+            <code style={codePillStyle}>airelay login {origin}</code>
+          </li>
+          <li>
+            Start local relay:{' '}
+            <code style={codePillStyle}>airelay local:start</code>
+          </li>
+          <li>
+            Connect coding agents:{' '}
+            <code style={codePillStyle}>airelay agent:install codex</code>{' '}or{' '}
+            <code style={codePillStyle}>airelay agent:install claude-code</code>
+          </li>
+        </ol>
       </section>
 
       {authenticated && (
-        <section className="mb-8">
-          <h2 className="text-2xl font-semibold mb-4">Devices</h2>
-          <div className="bg-white shadow rounded p-4">
-            {devices.length === 0 ? (
-              <p className="text-gray-600">No devices connected yet.</p>
-            ) : (
-              <table className="w-full">
+        <section style={panelStyle}>
+          <h2 style={{ margin: '0 0 0.85rem', fontSize: '1.15rem', color: '#fff' }}>Connected Devices</h2>
+          {devices.length === 0 ? (
+            <p style={{ margin: 0, color: '#9ca3af', fontSize: '0.9rem' }}>No devices connected yet.</p>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
                 <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-2">Name</th>
-                    <th className="text-left py-2">Platform</th>
-                    <th className="text-left py-2">Status</th>
-                    <th className="text-left py-2">Last Seen</th>
+                  <tr style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.1)', color: '#9ca3af' }}>
+                    <th style={{ textAlign: 'left', padding: '0.6rem 0.5rem' }}>Name</th>
+                    <th style={{ textAlign: 'left', padding: '0.6rem 0.5rem' }}>Platform</th>
+                    <th style={{ textAlign: 'left', padding: '0.6rem 0.5rem' }}>Status</th>
+                    <th style={{ textAlign: 'left', padding: '0.6rem 0.5rem' }}>Last Seen</th>
                   </tr>
                 </thead>
                 <tbody>
                   {devices.map((device) => (
-                    <tr key={device.id} className="border-b">
-                      <td className="py-2">{device.name}</td>
-                      <td className="py-2">{device.platform}</td>
-                      <td className="py-2">
-                        <span className={`px-2 py-1 rounded text-xs ${device.status === 'online' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                    <tr key={device.id} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.06)' }}>
+                      <td style={{ padding: '0.65rem 0.5rem', color: '#f3f4f6', fontWeight: 500 }}>{device.name}</td>
+                      <td style={{ padding: '0.65rem 0.5rem', color: '#d1d5db' }}>{device.platform}</td>
+                      <td style={{ padding: '0.65rem 0.5rem' }}>
+                        <span
+                          style={{
+                            padding: '0.2rem 0.55rem',
+                            borderRadius: '999px',
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            background: device.status === 'online' ? 'rgba(16, 185, 129, 0.18)' : 'rgba(156, 163, 175, 0.18)',
+                            color: device.status === 'online' ? '#34d399' : '#9ca3af',
+                          }}
+                        >
                           {device.status}
                         </span>
                       </td>
-                      <td className="py-2 text-sm text-gray-600">
+                      <td style={{ padding: '0.65rem 0.5rem', color: '#9ca3af', fontSize: '0.82rem' }}>
                         {device.last_heartbeat ? new Date(device.last_heartbeat).toLocaleString() : 'Never'}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            )}
-          </div>
+            </div>
+          )}
         </section>
       )}
-    </div>
+    </main>
   );
 }

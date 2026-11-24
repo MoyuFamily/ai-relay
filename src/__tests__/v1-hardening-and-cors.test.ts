@@ -202,8 +202,8 @@ describe('v1 endpoint hardening, CORS middleware, and stream resource cleanup', 
   describe('GET /v1/models/:model parity', () => {
     it('accepts temp keys, hides hidden models, and resolves aliases', async () => {
       const { key: tempKey } = await generateTempKey(300);
-      await saveModelAliasConfig({ aliases: { 'my-custom-gpt': 'gpt-5.4' }, hidden: [] });
-      await setModelHidden('gpt-5.4-nano', true);
+      await saveModelAliasConfig({ aliases: { 'my-custom-gpt': 'gpt-6.2-sol' }, hidden: [] });
+      await setModelHidden('gpt-6-luna', true);
 
       const { GET } = await import('@/app/v1/models/[model]/route');
 
@@ -221,10 +221,10 @@ describe('v1 endpoint hardening, CORS middleware, and stream resource cleanup', 
 
       // Hidden model returns 404
       const hiddenRes = await GET(
-        new NextRequest('http://localhost/v1/models/gpt-5.4-nano', {
+        new NextRequest('http://localhost/v1/models/gpt-6-luna', {
           headers: { 'x-api-key': 'relay-test-key' },
         }),
-        { params: Promise.resolve({ model: 'gpt-5.4-nano' }) }
+        { params: Promise.resolve({ model: 'gpt-6-luna' }) }
       );
       expect(hiddenRes.status).toBe(404);
     });

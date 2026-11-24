@@ -140,7 +140,7 @@ export function matchesPriorityPattern(model: string, pattern: string): boolean 
 
 function sampleForPattern(pattern: string): string {
   const p = pattern.toLowerCase().trim();
-  if (!p || p === '*') return 'gpt-5.4';
+  if (!p || p === '*') return 'gpt-6.2-sol';
   if (!p.includes('*')) return p;
   return p.replace(/\*/g, (match, offset) => (p[offset - 1] === '-' ? 'preview' : ''));
 }
@@ -175,12 +175,11 @@ function patternsOverlap(a: string, b: string): string | null {
   const candidates = Array.from(new Set([
     sampleForPattern(b),
     sampleForPattern(a),
-    'gpt-5.4',
-    'gpt-5.4-mini',
-    'gpt-5.5',
-    'gpt-5.4',
-    'deepseek-fast',
-    'claude-sonnet-4-6',
+    'gpt-6.2-sol',
+    'gpt-6-luna',
+    'gpt-6.2-astra',
+    'deepseek-flash',
+    'claude-sonnet-5-5',
   ]));
   return candidates.find((candidate) => matchesPriorityPattern(candidate, a) && matchesPriorityPattern(candidate, b)) || null;
 }

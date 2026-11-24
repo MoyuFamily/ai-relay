@@ -105,7 +105,9 @@ export interface ProviderEnvConfig {
 export const PROVIDER_ENV_MAP: Record<string, { keyField: string; baseUrlField: string }> = {
   openai: { keyField: 'OPENAI_KEYS', baseUrlField: 'OPENAI_BASE_URL' },
   anthropic: { keyField: 'CLAUDE_KEYS', baseUrlField: 'CLAUDE_BASE_URL' },
+  google: { keyField: 'GEMINI_KEYS', baseUrlField: 'GEMINI_BASE_URL' },
   deepseek: { keyField: 'DEEPSEEK_KEYS', baseUrlField: 'DEEPSEEK_BASE_URL' },
+  openrouter: { keyField: 'OPENROUTER_KEYS', baseUrlField: 'OPENROUTER_BASE_URL' },
   xiaomi_sgp_coding: { keyField: 'XIAOMIMIMO_SGP_CODING_KEYS', baseUrlField: 'XIAOMIMIMO_SGP_CODING_BASE_URL' },
   xiaomi: { keyField: 'XIAOMI_KEYS', baseUrlField: 'XIAOMI_BASE_URL' },
   xiaomi_coding: { keyField: 'XIAOMI_CODING_KEYS', baseUrlField: 'XIAOMI_CODING_BASE_URL' },
@@ -134,10 +136,72 @@ export function hasDatabase(): boolean {
   return !!process.env.DATABASE_URL;
 }
 
-// ── KV Config ────────────────────────────────────────────────
+// ── KV / Redis Config ────────────────────────────────────────
+
+export interface RedisRestConfig {
+  url: string;
+  token: string;
+  source: 'vercel-kv' | 'upstash-redis';
+}
+
+/**
+ * Resolve Redis REST credentials from either legacy Vercel KV variables
+ * (`KV_REST_API_URL` / `KV_REST_API_TOKEN`) or the current Vercel Marketplace
+ * Upstash integration defaults (`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`).
+ */
+export function getRedisRestConfig(): RedisRestConfig | null {
+  const kvUrl = process.env.KV_REST_API_URL?.trim();
+  const kvToken = process.env.KV_REST_API_TOKEN?.trim();
+  if (kvUrl && kvToken) {
+    return { url: kvUrl, token: kvToken, source: 'vercel-kv' };
+  }
+
+  const upstashUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
+  const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+  if (upstashUrl && upstashToken) {
+    return { url: upstashUrl, token: upstashToken, source: 'upstash-redis' };
+  }
+
+  return null;
+}
 
 export function hasKv(): boolean {
-  return !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN);
+  return getRedisRestConfig() !== null;
+}
+
+/**
+ * Whether self-hosted PostgreSQL (`DATABASE_URL`) should be selected.
+ *
+ * Precedence:
+ * 1. Never on Cloudflare/Vercel/Next build phase or when Redis KV is configured.
+ * 2. Explicit `RELAY_STORAGE_BACKEND=file` or explicit `RELAY_STORAGE_PATH` file override
+ *    forces persistent disk storage (unless `RELAY_STORAGE_BACKEND=postgres`).
+ * 3. Otherwise a valid `postgres://` / `postgresql://` `DATABASE_URL` takes precedence
+ *    over the container's default `RELAY_DATA_DIR=/app/data`, so Docker Compose
+ *    `--profile postgres` and PaaS deployments with `DATABASE_URL` actually use PostgreSQL.
+ */
+export function shouldUseSelfHostedPostgres(): boolean {
+  if (process.env.NEXT_PHASE === 'phase-production-build') return false;
+  if (process.env.VERCEL || process.env.CF_PAGES) return false;
+  if (hasKv()) return false;
+  if (process.env.VITEST && process.env.RELAY_ENABLE_POSTGRES_IN_TEST !== '1') return false;
+
+  const backend = process.env.RELAY_STORAGE_BACKEND?.trim().toLowerCase();
+  if (backend === 'file') return false;
+  if (process.env.RELAY_STORAGE_PATH?.trim() && backend !== 'postgres') return false;
+
+  const url = process.env.DATABASE_URL?.trim() || '';
+  return /^postgres(ql)?:\/\//i.test(url);
+}
+
+/**
+ * Whether explicit persistent file storage should be used (not overridden by PostgreSQL).
+ */
+export function hasExplicitFileStorageEnv(): boolean {
+  if (shouldUseSelfHostedPostgres()) return false;
+  const backend = process.env.RELAY_STORAGE_BACKEND?.trim().toLowerCase();
+  if (backend === 'file') return true;
+  return Boolean(process.env.RELAY_STORAGE_PATH?.trim() || process.env.RELAY_DATA_DIR?.trim());
 }
 
 // ── Admin UI Config ──────────────────────────────────────────

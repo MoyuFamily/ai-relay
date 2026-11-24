@@ -10,7 +10,7 @@ export interface ProviderConfig {
   name: string;                    // 'openai' | 'anthropic' | 'deepseek' | 'xiaomi'
   displayName: string;             // Human-readable name
   baseUrl: string;                 // Default upstream base URL
-  modelPrefixes: string[];         // e.g. ['gpt-', 'gpt-5.5-', 'gpt-5.4-']
+  modelPrefixes: string[];         // e.g. ['gpt-', 'chatgpt-']
   headerFormat: 'openai' | 'anthropic' | 'azure';  // Auth header format
   envKeyField: string;             // Env var name for API keys
   envBaseUrlField?: string;        // Env var name for custom base URL
@@ -26,7 +26,7 @@ export interface ProviderConfig {
  * Model metadata for /v1/models endpoint.
  */
 export interface ModelInfo {
-  id: string;                      // e.g. 'gpt-5.4', 'claude-sonnet-4-6'
+  id: string;                      // e.g. 'gpt-6-luna', 'claude-sonnet-5-5'
   displayName: string;             // e.g. 'GPT-5.4', 'Claude Sonnet 4.6'
   contextWindow: number;           // Max context tokens
   maxOutput?: number;              // Max output tokens

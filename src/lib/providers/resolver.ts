@@ -12,14 +12,17 @@ import { findMatchingPriorityRule } from '../admin/priority-rules-core';
  * transparently rewritten to the actual upstream model ID.
  */
 const MODEL_ALIASES: Record<string, string> = {
-  'gpt-best': 'gpt-5.5',
-  'gpt-latest': 'gpt-5.4',
-  'gpt-fast': 'gpt-5.4-mini',
-  'gpt-cheap': 'gpt-5.4-nano',
-  'claude-best': 'claude-opus-4-7',
-  'claude-sonnet': 'claude-sonnet-4-6',
-  'claude-fast': 'claude-haiku-4-5-20251001',
-  'deepseek-fast': 'deepseek-v4-flash',
+  'gpt-best': 'gpt-6.2-astra',
+  'gpt-latest': 'gpt-6.2-sol',
+  'gpt-fast': 'gpt-6-luna',
+  'claude-best': 'claude-fable-5-2',
+  'claude-opus': 'claude-opus-5-5',
+  'claude-sonnet': 'claude-sonnet-5-5',
+  'claude-fast': 'claude-haiku-5-5',
+  'gemini-best': 'gemini-4-neon',
+  'gemini-latest': 'gemini-4-argon',
+  'gemini-fast': 'gemini-4-hydrogen',
+  'deepseek-fast': 'deepseek-flash',
   'deepseek-pro': 'deepseek-v4-pro',
 };
 
@@ -52,13 +55,18 @@ export async function resolveModelAlias(model: string, forceRefresh = false): Pr
  * Automatically resolves aliases before matching.
  * Returns null if no provider matches.
  */
-let cachedProviders: Record<string, ProviderConfig> | null = null;
-let cacheTimestamp = 0;
+const sharedProvidersCache: {
+  providers: Record<string, ProviderConfig> | null;
+  timestamp: number;
+} = ((globalThis as any).__aiRelayProvidersCache ??= {
+  providers: null,
+  timestamp: 0,
+});
 
 export async function getAllProviders(forceRefresh = false): Promise<Record<string, ProviderConfig>> {
   const now = Date.now();
-  if (!forceRefresh && cachedProviders && now - cacheTimestamp < 5000) {
-    return cachedProviders;
+  if (!forceRefresh && sharedProvidersCache.providers && now - sharedProvidersCache.timestamp < 5000) {
+    return sharedProvidersCache.providers;
   }
   try {
     const store = getDefaultConfigStore();
@@ -70,27 +78,27 @@ export async function getAllProviders(forceRefresh = false): Promise<Record<stri
         isCustom: true,
       };
     }
-    cachedProviders = merged;
-    cacheTimestamp = now;
+    sharedProvidersCache.providers = merged;
+    sharedProvidersCache.timestamp = now;
     return merged;
   } catch (err) {
     console.error('[getAllProviders] Error loading custom providers:', err);
-    cachedProviders = cachedProviders ?? { ...PROVIDERS };
-    cacheTimestamp = now;
-    return cachedProviders;
+    sharedProvidersCache.providers = sharedProvidersCache.providers ?? { ...PROVIDERS };
+    sharedProvidersCache.timestamp = now;
+    return sharedProvidersCache.providers;
   }
 }
 
 export function clearProvidersCache(): void {
-  cachedProviders = null;
-  cacheTimestamp = 0;
+  sharedProvidersCache.providers = null;
+  sharedProvidersCache.timestamp = 0;
 }
 
 /**
  * Whether a provider can serve the given (already alias-resolved, lower-cased)
  * model. Mirrors the matching used by resolveProvider: an exact model-id match
  * in the provider's `models` list, or a prefix match against `modelPrefixes`
- * (wildcard prefixes end with -/./_; otherwise the prefix must equal the model).
+ * (wildcard prefixes end with -/./_///:; otherwise the prefix must equal the model).
  *
  * Used by smart routing to restrict the candidate pool to providers that
  * actually support the requested model, rather than every configured provider.
@@ -102,10 +110,16 @@ export function providerSupportsModel(provider: ProviderConfig, lowerModel: stri
     }
   }
   for (const prefix of provider.modelPrefixes) {
-    const isWildcard = prefix.endsWith('-') || prefix.endsWith('.') || prefix.endsWith('_');
+    const lowerPrefix = prefix.toLowerCase();
+    const isWildcard =
+      lowerPrefix.endsWith('-') ||
+      lowerPrefix.endsWith('.') ||
+      lowerPrefix.endsWith('_') ||
+      lowerPrefix.endsWith('/') ||
+      lowerPrefix.endsWith(':');
     if (isWildcard) {
-      if (lowerModel.startsWith(prefix)) return true;
-    } else if (lowerModel === prefix) {
+      if (lowerModel.startsWith(lowerPrefix)) return true;
+    } else if (lowerModel === lowerPrefix) {
       return true;
     }
   }
@@ -153,18 +167,24 @@ export async function resolveProvider(model: string): Promise<ProviderConfig | n
 
   for (const provider of Object.values(allProviders)) {
     for (const prefix of provider.modelPrefixes) {
-      const isWildcard = prefix.endsWith('-') || prefix.endsWith('.') || prefix.endsWith('_');
+      const lowerPrefix = prefix.toLowerCase();
+      const isWildcard =
+        lowerPrefix.endsWith('-') ||
+        lowerPrefix.endsWith('.') ||
+        lowerPrefix.endsWith('_') ||
+        lowerPrefix.endsWith('/') ||
+        lowerPrefix.endsWith(':');
       if (isWildcard) {
-        if (lowerModel.startsWith(prefix)) {
-          if (prefix.length > longestPrefixLength) {
-            longestPrefixLength = prefix.length;
+        if (lowerModel.startsWith(lowerPrefix)) {
+          if (lowerPrefix.length > longestPrefixLength) {
+            longestPrefixLength = lowerPrefix.length;
             bestProvider = provider;
           }
         }
       } else {
-        if (lowerModel === prefix) {
-          if (prefix.length > longestPrefixLength) {
-            longestPrefixLength = prefix.length;
+        if (lowerModel === lowerPrefix) {
+          if (lowerPrefix.length > longestPrefixLength) {
+            longestPrefixLength = lowerPrefix.length;
             bestProvider = provider;
           }
         }
@@ -297,63 +317,109 @@ export async function resolveFallbackModel(originalModel: string, targetProvider
   // 2. Otherwise, map based on the target provider
   switch (targetProviderName) {
     case 'deepseek':
-      // Map reasoning models to DeepSeek V4 Pro, others to DeepSeek V4 Flash
       if (
-        lowerModel.includes('gpt-5.5') ||
-        lowerModel.includes('reasoner') ||
-        lowerModel.includes('r1')
+        lowerModel.includes('astra') ||
+        lowerModel.includes('fable') ||
+        lowerModel.includes('opus') ||
+        lowerModel.includes('neon') ||
+        lowerModel.includes('pro') ||
+        lowerModel.includes('reasoner')
       ) {
         return 'deepseek-v4-pro';
       }
-      return 'deepseek-v4-flash';
+      return 'deepseek-flash';
+
+    case 'google':
+      if (
+        lowerModel.includes('luna') ||
+        lowerModel.includes('haiku') ||
+        lowerModel.includes('flash') ||
+        lowerModel.includes('hydrogen') ||
+        lowerModel.includes('mini')
+      ) {
+        return 'gemini-4-hydrogen';
+      }
+      if (
+        lowerModel.includes('astra') ||
+        lowerModel.includes('fable') ||
+        lowerModel.includes('opus') ||
+        lowerModel.includes('pro')
+      ) {
+        return 'gemini-4-neon';
+      }
+      return 'gemini-4-argon';
+
+    case 'openrouter':
+      if (
+        lowerModel.includes('luna') ||
+        lowerModel.includes('haiku') ||
+        lowerModel.includes('flash') ||
+        lowerModel.includes('hydrogen') ||
+        lowerModel.includes('mini')
+      ) {
+        return 'openai/gpt-6-luna';
+      }
+      return 'anthropic/claude-sonnet-5-5';
 
     case 'xiaomi_sgp_coding':
-      if (lowerModel.includes('mimo-v2.5') && !lowerModel.includes('pro')) {
-        return 'mimo-v2.5-sgp';
+      if (lowerModel.includes('flash') || lowerModel.includes('luna') || lowerModel.includes('haiku')) {
+        return 'mimo-v2.6-flash-sgp';
       }
-      return 'mimo-v2.5-pro-sgp';
+      return 'mimo-v2.6-pro-sgp';
 
     case 'xiaomi':
-      if (lowerModel.includes('mimo-v2.5') && !lowerModel.includes('pro')) {
-        return 'mimo-v2.5';
+      if (lowerModel.includes('flash') || lowerModel.includes('luna') || lowerModel.includes('haiku')) {
+        return 'mimo-v2.6-flash';
       }
-      return 'mimo-v2.5-pro';
+      return 'mimo-v2.6-pro';
 
     case 'xiaomi_coding':
-      if (lowerModel.includes('mimo-v2.5') && !lowerModel.includes('pro')) {
-        return 'mimo-v2.5-coding';
+      if (lowerModel.includes('flash') || lowerModel.includes('luna') || lowerModel.includes('haiku')) {
+        return 'mimo-v2.6-flash-coding';
       }
-      return 'mimo-v2.5-pro-coding';
+      return 'mimo-v2.6-pro-coding';
 
     case 'openai':
       if (
-        lowerModel.includes('gpt-5.5') ||
-        lowerModel.includes('reasoner')
+        lowerModel.includes('astra') ||
+        lowerModel.includes('fable') ||
+        lowerModel.includes('opus') ||
+        lowerModel.includes('neon') ||
+        lowerModel.includes('pro')
       ) {
-        return 'gpt-5.5';
-      }
-      if (lowerModel.includes('nano')) {
-        return 'gpt-5.4-nano';
+        return 'gpt-6.2-astra';
       }
       if (
-        lowerModel.includes('mini') ||
+        lowerModel.includes('luna') ||
         lowerModel.includes('haiku') ||
-        lowerModel.includes('flash')
+        lowerModel.includes('flash') ||
+        lowerModel.includes('hydrogen') ||
+        lowerModel.includes('mini')
       ) {
-        return 'gpt-5.4-mini';
+        return 'gpt-6-luna';
       }
-      return 'gpt-5.4';
+      return 'gpt-6.2-sol';
 
     case 'anthropic':
       if (
-        lowerModel.includes('mini') ||
+        lowerModel.includes('luna') ||
         lowerModel.includes('haiku') ||
         lowerModel.includes('flash') ||
-        lowerModel.includes('nano')
+        lowerModel.includes('hydrogen') ||
+        lowerModel.includes('mini')
       ) {
-        return 'claude-haiku-4-5-20251001';
+        return 'claude-haiku-5-5';
       }
-      return 'claude-sonnet-4-6';
+      if (
+        lowerModel.includes('astra') ||
+        lowerModel.includes('fable') ||
+        lowerModel.includes('neon') ||
+        lowerModel.includes('opus') ||
+        lowerModel.includes('pro')
+      ) {
+        return 'claude-opus-5-5';
+      }
+      return 'claude-sonnet-5-5';
 
     default:
       // Fallback: use the first model ID in the provider's model list if available

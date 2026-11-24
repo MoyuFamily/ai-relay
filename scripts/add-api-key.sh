@@ -1,63 +1,16 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ============================================================
-# AI Relay — 快速添加 API Key
+# AI Relay — 快速添加 API Key 到当前关联的 Vercel 项目
 # 用法: ./scripts/add-api-key.sh <provider> <api_key>
 # 示例: ./scripts/add-api-key.sh xiaomi tp-xxxx
 #       ./scripts/add-api-key.sh openai sk-xxxx
+# 兼容 macOS 默认 bash 3.2 与 Linux bash 4+
 # ============================================================
 
 set -euo pipefail
 
 PROVIDER="${1:-}"
 API_KEY="${2:-}"
-VERCEL_PROJECT="prj_zFB3nw3D1WSXtrh3Bml9pJpfe3wt"
-
-# Provider → Env var name / Test model / Test URL / Header format
-declare -A ENV_KEYS=(
-  [openai]="OPENAI_KEYS"
-  [anthropic]="CLAUDE_KEYS"
-  [deepseek]="DEEPSEEK_KEYS"
-  [xiaomi_sgp_coding]="XIAOMIMIMO_SGP_CODING_KEYS"
-  [xiaomi]="XIAOMI_KEYS"
-  [xiaomi_coding]="XIAOMI_CODING_KEYS"
-)
-
-declare -A TEST_MODELS=(
-  [openai]="gpt-4o-mini"
-  [anthropic]="claude-3-5-haiku-20241022"
-  [deepseek]="deepseek-chat"
-  [xiaomi_sgp_coding]="mimo-v2.5-pro"
-  [xiaomi]="mimo-v2.5-pro"
-  [xiaomi_coding]="mimo-v2.5-pro"
-)
-
-declare -A TEST_URLS=(
-  [openai]="https://api.openai.com/v1/chat/completions"
-  [anthropic]="https://api.anthropic.com/v1/messages"
-  [deepseek]="https://api.deepseek.com/v1/chat/completions"
-  [xiaomi_sgp_coding]="https://token-plan-sgp.xiaomimimo.com/v1/chat/completions"
-  [xiaomi]="https://api.xiaomimimo.com/v1/chat/completions"
-  [xiaomi_coding]="https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
-)
-
-declare -A DISPLAY_NAMES=(
-  [openai]="OpenAI"
-  [anthropic]="Anthropic (Claude)"
-  [deepseek]="DeepSeek"
-  [xiaomi_sgp_coding]="Xiaomi SGP (Coding Plan)"
-  [xiaomi]="Xiaomi (API Key)"
-  [xiaomi_coding]="Xiaomi (Coding Plan)"
-)
-
-# Header format: openai = Authorization Bearer, azure = api-key header, anthropic = x-api-key
-declare -A HEADER_FORMAT=(
-  [openai]="openai"
-  [anthropic]="anthropic"
-  [deepseek]="openai"
-  [xiaomi_sgp_coding]="azure"
-  [xiaomi]="openai"
-  [xiaomi_coding]="openai"
-)
 
 usage() {
   echo "用法: $0 <provider> <api_key>"
@@ -76,119 +29,149 @@ usage() {
   exit 1
 }
 
-if [[ -z "$PROVIDER" || -z "$API_KEY" ]]; then
+if [ -z "$PROVIDER" ] || [ -z "$API_KEY" ]; then
   usage
 fi
 
-if [[ -z "${ENV_KEYS[$PROVIDER]+x}" ]]; then
-  echo "❌ 不支持的 provider: $PROVIDER"
-  usage
-fi
-
-ENV_KEY="${ENV_KEYS[$PROVIDER]}"
-TEST_MODEL="${TEST_MODELS[$PROVIDER]}"
-TEST_URL="${TEST_URLS[$PROVIDER]}"
-DISPLAY="${DISPLAY_NAMES[$PROVIDER]}"
-FMT="${HEADER_FORMAT[$PROVIDER]}"
+case "$PROVIDER" in
+  openai)
+    ENV_KEY="OPENAI_KEYS"
+    TEST_MODEL="gpt-6-luna"
+    TEST_URL="https://api.openai.com/v1/chat/completions"
+    DISPLAY="OpenAI"
+    FMT="openai"
+    ;;
+  anthropic)
+    ENV_KEY="CLAUDE_KEYS"
+    TEST_MODEL="claude-haiku-5-5"
+    TEST_URL="https://api.anthropic.com/v1/messages"
+    DISPLAY="Anthropic (Claude)"
+    FMT="anthropic"
+    ;;
+  google|gemini)
+    ENV_KEY="GEMINI_KEYS"
+    TEST_MODEL="gemini-4-hydrogen"
+    TEST_URL="https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+    DISPLAY="Google Gemini"
+    FMT="openai"
+    ;;
+  deepseek)
+    ENV_KEY="DEEPSEEK_KEYS"
+    TEST_MODEL="deepseek-flash"
+    TEST_URL="https://api.deepseek.com/v1/chat/completions"
+    DISPLAY="DeepSeek"
+    FMT="openai"
+    ;;
+  xiaomi_sgp_coding)
+    ENV_KEY="XIAOMIMIMO_SGP_CODING_KEYS"
+    TEST_MODEL="mimo-v2.6-pro"
+    TEST_URL="https://token-plan-sgp.xiaomimimo.com/v1/chat/completions"
+    DISPLAY="Xiaomi SGP (Coding Plan)"
+    FMT="azure"
+    ;;
+  xiaomi)
+    ENV_KEY="XIAOMI_KEYS"
+    TEST_MODEL="mimo-v2.6-flash"
+    TEST_URL="https://api.xiaomimimo.com/v1/chat/completions"
+    DISPLAY="Xiaomi (API Key)"
+    FMT="openai"
+    ;;
+  xiaomi_coding)
+    ENV_KEY="XIAOMI_CODING_KEYS"
+    TEST_MODEL="mimo-v2.6-pro"
+    TEST_URL="https://token-plan-cn.xiaomimimo.com/v1/chat/completions"
+    DISPLAY="Xiaomi (Coding Plan)"
+    FMT="openai"
+    ;;
+  *)
+    echo "❌ 不支持的 provider: $PROVIDER"
+    usage
+    ;;
+esac
 
 echo "🔑 添加 $DISPLAY API Key"
 echo "   Env: $ENV_KEY"
 echo "   Key: ${API_KEY:0:8}...${API_KEY: -4}"
 echo ""
 
+TMP_RESP="$(mktemp)"
+TMP_ENV="$(mktemp)"
+trap 'rm -f "$TMP_RESP" "$TMP_ENV"' EXIT
+
 # ── Step 1: 测试 Key 可用性 ──────────────────────────────
 echo "📡 测试 Key 可用性..."
 
-if [[ "$FMT" == "anthropic" ]]; then
-  HTTP_CODE=$(curl -s -o /tmp/airelay-test-resp.json -w "%{http_code}" \
+if [ "$FMT" = "anthropic" ]; then
+  HTTP_CODE=$(curl -s -o "$TMP_RESP" -w "%{http_code}" \
     "$TEST_URL" \
     -H "x-api-key: $API_KEY" \
     -H "anthropic-version: 2023-06-01" \
     -H "content-type: application/json" \
-    -d "{
-      \"model\": \"$TEST_MODEL\",
-      \"max_tokens\": 5,
-      \"messages\": [{\"role\": \"user\", \"content\": \"hi\"}]
-    }" 2>/dev/null || echo "000")
-elif [[ "$FMT" == "azure" ]]; then
-  # Azure header format (xiaomimimo)
-  HTTP_CODE=$(curl -s -o /tmp/airelay-test-resp.json -w "%{http_code}" \
+    -d "{\"model\":\"$TEST_MODEL\",\"max_tokens\":5,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" 2>/dev/null || echo "000")
+elif [ "$FMT" = "azure" ]; then
+  HTTP_CODE=$(curl -s -o "$TMP_RESP" -w "%{http_code}" \
     "$TEST_URL" \
     -H "api-key: $API_KEY" \
     -H "content-type: application/json" \
-    -d "{
-      \"model\": \"$TEST_MODEL\",
-      \"max_tokens\": 5,
-      \"messages\": [{\"role\": \"user\", \"content\": \"hi\"}]
-    }" 2>/dev/null || echo "000")
+    -d "{\"model\":\"$TEST_MODEL\",\"max_tokens\":5,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" 2>/dev/null || echo "000")
 else
-  # OpenAI-compatible 格式
-  HTTP_CODE=$(curl -s -o /tmp/airelay-test-resp.json -w "%{http_code}" \
+  HTTP_CODE=$(curl -s -o "$TMP_RESP" -w "%{http_code}" \
     "$TEST_URL" \
     -H "Authorization: Bearer $API_KEY" \
     -H "content-type: application/json" \
-    -d "{
-      \"model\": \"$TEST_MODEL\",
-      \"max_tokens\": 5,
-      \"messages\": [{\"role\": \"user\", \"content\": \"hi\"}]
-    }" 2>/dev/null || echo "000")
+    -d "{\"model\":\"$TEST_MODEL\",\"max_tokens\":5,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" 2>/dev/null || echo "000")
 fi
 
-if [[ "$HTTP_CODE" == "200" ]]; then
+if [ "$HTTP_CODE" = "200" ]; then
   echo "✅ Key 可用！(HTTP $HTTP_CODE)"
-elif [[ "$HTTP_CODE" == "401" || "$HTTP_CODE" == "403" ]]; then
+elif [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
   echo "❌ Key 无效 (HTTP $HTTP_CODE)"
-  echo "   响应: $(cat /tmp/airelay-test-resp.json 2>/dev/null | head -c 200)"
+  echo "   响应: $(head -c 200 "$TMP_RESP" 2>/dev/null || true)"
   exit 1
-elif [[ "$HTTP_CODE" == "429" ]]; then
-  echo "⚠️  Key 被限流 (HTTP 429)，但 key 本身可能是有效的"
-  echo "   继续添加..."
-elif [[ "$HTTP_CODE" == "000" ]]; then
+elif [ "$HTTP_CODE" = "429" ]; then
+  echo "⚠️  Key 被限流 (HTTP 429)，但 key 本身可能是有效的，继续添加..."
+elif [ "$HTTP_CODE" = "000" ]; then
   echo "❌ 网络连接失败"
   exit 1
 else
   echo "⚠️  未知状态码 $HTTP_CODE"
-  echo "   响应: $(cat /tmp/airelay-test-resp.json 2>/dev/null | head -c 200)"
-  read -p "   是否继续添加？(y/N) " -n 1 -r
-  echo
-  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    exit 1
-  fi
+  echo "   响应: $(head -c 200 "$TMP_RESP" 2>/dev/null || true)"
+  read -r -p "   是否继续添加？(y/N) " REPLY
+  case "$REPLY" in
+    [Yy]*) ;;
+    *) exit 1 ;;
+  esac
 fi
 
 # ── Step 2: 获取当前 Vercel 环境变量 ─────────────────────
 echo ""
 echo "📦 获取 Vercel 环境变量..."
-
-EXISTING=$(npx vercel env ls "$ENV_KEY" production --token="${VERCEL_TOKEN:-}" 2>/dev/null | tail -1 | awk '{print $NF}' || echo "")
-
-# 如果 vercel env ls 不好用，尝试直接拉
-if [[ -z "$EXISTING" ]]; then
-  EXISTING=$(npx vercel env pull /tmp/airelay-env-pull.env --yes --token="${VERCEL_TOKEN:-}" 2>/dev/null && grep "^$ENV_KEY=" /tmp/airelay-env-pull.env | cut -d'=' -f2- | tr -d '"' || echo "")
+VERCEL_TOKEN_ARGS=()
+if [ -n "${VERCEL_TOKEN:-}" ]; then
+  VERCEL_TOKEN_ARGS=(--token "$VERCEL_TOKEN")
 fi
 
+EXISTING=$(npx vercel env pull "$TMP_ENV" --yes "${VERCEL_TOKEN_ARGS[@]}" >/dev/null 2>&1 && grep "^${ENV_KEY}=" "$TMP_ENV" | cut -d'=' -f2- | tr -d '"' || echo "")
+
 # ── Step 3: 检查 Key 是否已存在 ──────────────────────────
-if echo "$EXISTING" | grep -q "$API_KEY"; then
+if printf '%s' "$EXISTING" | grep -Fq "$API_KEY"; then
   echo "⚠️  该 Key 已存在于 $ENV_KEY 中，跳过"
   exit 0
 fi
 
 # ── Step 4: 追加新 Key ──────────────────────────────────
-if [[ -n "$EXISTING" ]]; then
+if [ -n "$EXISTING" ]; then
   NEW_VALUE="${EXISTING},${API_KEY}"
 else
   NEW_VALUE="$API_KEY"
 fi
 
 echo "📝 更新 Vercel 环境变量 $ENV_KEY..."
-
-# 先删除旧的，再创建新的（Vercel CLI 不支持直接更新）
-npx vercel env rm "$ENV_KEY" production --yes --token="${VERCEL_TOKEN:-}" 2>/dev/null || true
-echo "$NEW_VALUE" | npx vercel env add "$ENV_KEY" production --token="${VERCEL_TOKEN:-}" 2>/dev/null
+npx vercel env rm "$ENV_KEY" production --yes "${VERCEL_TOKEN_ARGS[@]}" >/dev/null 2>&1 || true
+printf '%s' "$NEW_VALUE" | npx vercel env add "$ENV_KEY" production "${VERCEL_TOKEN_ARGS[@]}" >/dev/null
 
 echo ""
 echo "✅ Done! $DISPLAY key 已添加"
-echo "   $ENV_KEY 现在有 $(echo "$NEW_VALUE" | tr ',' '\n' | wc -l | tr -d ' ') 个 key"
+echo "   $ENV_KEY 现在有 $(printf '%s' "$NEW_VALUE" | tr ',' '\n' | wc -l | tr -d ' ') 个 key"
 echo ""
-echo "🚀 部署以激活: cd $(dirname "$0")/.. && npx vercel --prod --yes"
-echo "   或等待下一次自动部署"
+echo "🚀 部署以激活: npx vercel --prod --yes"

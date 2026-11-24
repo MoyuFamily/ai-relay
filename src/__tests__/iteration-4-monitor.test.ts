@@ -78,9 +78,11 @@ describe('iteration 4 health probe and usage report', () => {
       getKeyPool: vi.fn(async () => ({ provider: 'openai', keys: [], counter: 0 })),
     }));
 
+    vi.stubEnv('VERCEL', '1');
+    vi.stubEnv('CRON_SECRET', 'test-cron-secret');
     const { GET } = await import('../app/api/cron/probe/route');
     const res = await GET(new NextRequest('http://localhost/api/cron/probe', {
-      headers: { 'x-vercel-cron': '1' },
+      headers: { Authorization: 'Bearer test-cron-secret' },
     }));
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
@@ -107,11 +109,13 @@ describe('iteration 4 health probe and usage report', () => {
     vi.resetModules();
     vi.doMock('../lib/providers', () => ({ getAllProviders: vi.fn(async () => ({ openai: { name: 'openai' } })) }));
 
+    vi.stubEnv('VERCEL', '1');
+    vi.stubEnv('CRON_SECRET', 'test-cron-secret');
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-05-26T00:05:00.000Z'));
     const usageCron = await import('../app/api/cron/usage/route');
     const cronRes = await usageCron.GET(new NextRequest('http://localhost/api/cron/usage', {
-      headers: { 'x-vercel-cron': '1' },
+      headers: { Authorization: 'Bearer test-cron-secret' },
     }));
     expect(cronRes.status).toBe(200);
     await expect(cronRes.json()).resolves.toMatchObject({ success: true, date: '2026-05-25' });

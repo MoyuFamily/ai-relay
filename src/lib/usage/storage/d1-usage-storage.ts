@@ -425,6 +425,47 @@ export class D1UsageStorage implements UsageStorage {
       // Non-critical
     }
   }
+
+  /**
+   * Prune expired quota counters (>2 days daily, >2 months monthly) and
+   * stale error rows (>31 days) in D1 so tables stay bounded on Cloudflare Pages.
+   */
+  async cleanupExpired(): Promise<{ deletedRows: number }> {
+    try {
+      const nowBeijing = getBeijingDate();
+      const cutoffDailyQuota = new Date(nowBeijing.getTime() - 2 * 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+      const cutoffMonthlyDate = new Date(nowBeijing);
+      cutoffMonthlyDate.setUTCDate(1);
+      cutoffMonthlyDate.setUTCMonth(cutoffMonthlyDate.getUTCMonth() - 2);
+      const cutoffMonthlyQuota = cutoffMonthlyDate.toISOString().slice(0, 7);
+      const cutoffErrors = new Date(nowBeijing.getTime() - 31 * 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+
+      const results = await this.db.batch([
+        this.db
+          .prepare(
+            `DELETE FROM quota_counters
+             WHERE (period_type = 'daily' AND period < ?)
+                OR (period_type = 'monthly' AND period < ?)`
+          )
+          .bind(cutoffDailyQuota, cutoffMonthlyQuota),
+        this.db.prepare('DELETE FROM error_stats WHERE date < ?').bind(cutoffErrors),
+        this.db.prepare('DELETE FROM error_key_stats WHERE date < ?').bind(cutoffErrors),
+      ]);
+
+      const deletedRows = results.reduce(
+        (sum, r) => sum + Number((r as any)?.meta?.changes ?? 0),
+        0
+      );
+      return { deletedRows };
+    } catch {
+      return { deletedRows: 0 };
+    }
+  }
+
   async flush(): Promise<void> { /* no-op */ }
 
   private buildUpsert(date: string, provider: string, requests: number, tokens: number, promptTokens: number, completionTokens: number) {

@@ -6,9 +6,10 @@ export const TRANSLATIONS = {
   zh: {
     // Login
     adminLogin: '🔐 后台登录',
-    enterAdminKey: '请输入管理员密钥 (RELAY_ADMIN_KEY)',
+    enterAdminKey: '请输入管理员密钥 (RELAY_ADMIN_KEY / RELAY_API_KEY)',
     login: '登录',
     invalidKey: '无效的 API 密钥',
+    serverNotConfigured: '服务端尚未配置 RELAY_API_KEY（或 RELAY_ADMIN_KEY），请先在环境变量中配置并重新部署。',
     failedFetch: '获取后台数据失败',
 
     // Header & Global
@@ -17,6 +18,7 @@ export const TRANSLATIONS = {
     refreshing: '正在刷新...',
     autoRefreshInfo: '页面激活时每15秒自动刷新 · 数据截至',
     navHome: '首页',
+    navLocalRelay: '本地设备',
 
     // Tab names
     tabSetup: '🚀 初始化向导',
@@ -139,7 +141,7 @@ export const TRANSLATIONS = {
     setupKvFixTitleCf: '建议配置 GitHub Secrets 进行资源自动配置与绑定',
     setupKvStep1: '在 Vercel 项目 Storage 中选择 Upstash for Redis，创建 Redis 数据库时选择 Free 套餐，其他选项保持默认即可。',
     setupKvStep1Cf: '确保已在 GitHub 仓库中配置了 CLOUDFLARE_API_TOKEN 与 CLOUDFLARE_ACCOUNT_ID 密钥。',
-    setupKvStep2: '连接到当前项目后，确认环境变量中已自动注入 KV_REST_API_URL 与 KV_REST_API_TOKEN。',
+    setupKvStep2: '连接到当前项目后，确认环境变量已注入 UPSTASH_REDIS_REST_URL/TOKEN 或 KV_REST_API_URL/TOKEN，然后务必在 Deployments 中点击 Redeploy。',
     setupKvStep2Cf: '工作流会自动在 Cloudflare 端创建 KV 命名空间（如 ai-relay-KV）并绑定到项目（变量名为 KV）。',
     setupKvStep3: '重新部署后再运行检查；未配置 Upstash Redis 时密钥管理、用量统计和配额会受限。',
     setupKvStep3Cf: '（可选）若手动操作，请在 Cloudflare Pages 项目的 Settings → Functions 页面添加 KV 绑定，名称必须为 KV，重新部署后运行检查。',
@@ -317,9 +319,9 @@ export const TRANSLATIONS = {
 • 保存时会检测循环配置并拒绝
 
 示例：
-[muyuan, deepseek:deepseek-v4-flash]
+[muyuan, deepseek:deepseek-flash]
 → 主供应商失败后尝试 muyuan（沿用原模型）
-→ 仍失败则尝试 deepseek，并改用 deepseek-v4-flash
+→ 仍失败则尝试 deepseek，并改用 deepseek-flash
 
 注意：
 ⚠️ 开启智能路由后，本配置将被忽略
@@ -385,9 +387,10 @@ export const TRANSLATIONS = {
   en: {
     // Login
     adminLogin: '🔐 Admin Login',
-    enterAdminKey: 'Enter Admin Key (RELAY_ADMIN_KEY)',
+    enterAdminKey: 'Enter Admin Key (RELAY_ADMIN_KEY / RELAY_API_KEY)',
     login: 'Login',
     invalidKey: 'Invalid API key',
+    serverNotConfigured: 'Server authentication is not configured. Set RELAY_API_KEY (or RELAY_ADMIN_KEY) in environment variables and redeploy.',
     failedFetch: 'Failed to fetch admin data',
 
     // Header & Global
@@ -396,6 +399,7 @@ export const TRANSLATIONS = {
     refreshing: 'Refreshing...',
     autoRefreshInfo: 'Auto-refreshes every 15s while active · Data as of',
     navHome: 'Home',
+    navLocalRelay: 'Local Relay',
 
     // Tab names
     tabSetup: '🚀 Setup',
@@ -518,7 +522,7 @@ export const TRANSLATIONS = {
     setupKvFixTitleCf: 'Recommend using GitHub Secrets for automatic resource provisioning and binding',
     setupKvStep1: 'In Vercel project Storage, choose Upstash for Redis. When creating the Redis database, select the Free plan and keep the other options at their defaults.',
     setupKvStep1Cf: 'Ensure CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are configured in your GitHub Repository Secrets.',
-    setupKvStep2: 'After connecting it to this project, confirm KV_REST_API_URL and KV_REST_API_TOKEN are injected into environment variables.',
+    setupKvStep2: 'After connecting it to this project, confirm UPSTASH_REDIS_REST_URL/TOKEN or KV_REST_API_URL/TOKEN are injected, then trigger a Redeploy in Deployments.',
     setupKvStep2Cf: 'GitHub Actions workflow will automatically provision the KV namespace (e.g. ai-relay-KV) and bind it as KV.',
     setupKvStep3: 'Redeploy and run checks again; without Upstash Redis, key management, usage stats, and quotas are limited.',
     setupKvStep3Cf: '(Optional) If configuring manually, bind a KV Namespace named KV in your Pages project Settings → Functions in the Cloudflare Dashboard, and redeploy.',
@@ -695,9 +699,9 @@ How it works:
 • Built-in loop protection: a provider already attempted in this request is skipped
 
 Example:
-[muyuan, deepseek:deepseek-v4-flash]
+[muyuan, deepseek:deepseek-flash]
 → On primary failure, try muyuan (same model)
-→ Then deepseek using deepseek-v4-flash
+→ Then deepseek using deepseek-flash
 
 Note:
 ⚠️ Ignored while Smart Routing is enabled

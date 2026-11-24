@@ -5,7 +5,7 @@
 **个人与团队的 AI API 统一网关 — 支持 Serverless 云端部署、Docker 自托管与本地 CLI 运行**
 
 <p>
-  <a href="https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY,RELAY_ADMIN_KEY,RELAY_SIGNING_SECRET&envDescription=API%20authentication%20keys%20(required%20for%20security)&envLink=https://github.com/MoyuFamily/ai-relay/blob/main/README_CN.md#-快速开始">
+  <a href="https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY&envDescription=Client%20and%20Admin%20authentication%20key%20(RELAY_ADMIN_KEY%20is%20optional%20and%20falls%20back%20to%20RELAY_API_KEY)&envLink=https://github.com/MoyuFamily/ai-relay/blob/main/README_CN.md#-快速开始&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22upstash%22%2C%22productSlug%22%3A%22upstash-kv%22%2C%22protocol%22%3A%22storage%22%7D%5D">
     <img src="https://vercel.com/button" alt="Deploy with Vercel" height="36">
   </a>
   &nbsp;
@@ -33,7 +33,7 @@
 
 > **一个网关，统一管理所有大模型接口。**
 >
-> 将 OpenAI、Anthropic (Claude)、DeepSeek、MiMo 以及任意兼容 OpenAI / Anthropic 协议的自定义 Provider 收敛到单一端点。
+> 将 OpenAI、Anthropic (Claude)、Google Gemini、DeepSeek、OpenRouter 以及任意兼容 OpenAI / Anthropic 协议的服务商（硅基流动、火山方舟、智谱、Ollama 等）收敛到单一端点。
 > 内置多 Key 自动轮换、跨协议故障转移、熔断保护与智能路由，零业务代码改造。
 
 ### 四种部署形态怎么选？
@@ -44,7 +44,7 @@
 | **运行环境** | Vercel Node.js Serverless（最长 `60s`） | Cloudflare Workers（`@opennextjs/cloudflare`） | 独立 Node.js 容器或常驻进程 | 本机 HTTP 服务（默认 `127.0.0.1:3147`） |
 | **数据存储** | Upstash Redis（`@vercel/kv`） | Cloudflare KV（配置）+ D1（统计） | 本地持久化磁盘（`./data`）**或** PostgreSQL | 云端快照同步 / 本地 JSON / 环境变量 |
 | **用量统计** | 支持采样统计（节省免费 KV 额度） | D1 直写 + 流式字节估算 | **100% 实时精确统计**（磁盘或 Postgres） | 批量聚合并同步回云端后台 |
-| **定时任务** | Vercel Cron（`/api/cron/*`） | Workers `scheduled()` + D1 自动清理 | **内置后台调度器**（自动探测/日报/清理） | 30s 配置同步 + 60s 设备心跳 |
+| **定时任务** | Vercel Cron（`/api/cron/*` + 自动日报） | GitHub Actions Cron（探测 / 日报 / D1 清理） | **内置后台调度器**（自动探测/日报/清理） | 30s 配置同步 + 60s 设备心跳 |
 | **平台限制** | Hobby 免费层有流量、KV 次数与 60s 上限 | 免费层单次请求约 10ms CPU 预算、6 并发连接上限 | **无 Serverless 限制**（取决于自有服务器） | 默认仅本机访问，需进程常驻 |
 
 > **一句话选择：** 想 2 分钟零成本尝鲜用 **Vercel**；想白嫖高频编码用 **Cloudflare**；有 VPS/NAS、跑长推理或团队共用直接上 **Docker 自部署**；在本机跑 Agent 不想消耗云端额度用 **本地 CLI**。四种形态共用同一套核心引擎，配置与备份可随时迁移。
@@ -55,22 +55,15 @@
 
 ### ☁️ 1. 一键部署到 Vercel（最快体验）
 
-1. 点击上方 **Deploy with Vercel** 按钮，配置环境变量：
-
-| 变量 | 说明 |
-|------|------|
-| `RELAY_API_KEY` | 客户端调用 `/v1/*` 的鉴权密钥（支持 `Bearer` 或 `X-API-Key`） |
-| `RELAY_ADMIN_KEY` | `/admin` 后台登录密钥（可选，未设置时回退到 `RELAY_API_KEY`） |
-| `RELAY_SIGNING_SECRET` | 临时密钥 HMAC 签名密钥（可选） |
-
-2. 部署后进入 Vercel Dashboard → **Storage** → 创建并关联 **Upstash for Redis**（自动注入 `KV_REST_API_URL` 与 `KV_REST_API_TOKEN`）。
-3. 打开 `/admin` 添加上游 Provider Key，即可开始调用：
+1. 点击上方 **Deploy with Vercel** 按钮，在向导中直接关联免费版 **Upstash for Redis** 并填写 `RELAY_API_KEY` 即可一键完成创建（`RELAY_ADMIN_KEY` 与 `RELAY_SIGNING_SECRET` 均为可选，未设置时自动回退到 `RELAY_API_KEY`；如需启用每日 Vercel Cron 自动探测/汇总，可在环境变量中补充 `CRON_SECRET`）。
+2. 如在向导中跳过了存储，部署后进入 Vercel Dashboard → **Storage** → 创建并关联 **Upstash for Redis**（自动兼容 `KV_REST_API_*` 与 `UPSTASH_REDIS_REST_*`），然后 **Redeploy** 即可。
+3. 打开 `/admin`（用 `RELAY_API_KEY` 登录）添加上游 Provider Key，即可直接复制客户端配置开始调用：
 
 ```bash
 curl -X POST https://你的项目.vercel.app/v1/chat/completions \
   -H "Authorization: Bearer YOUR_RELAY_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model": "gpt-5.4", "messages": [{"role": "user", "content": "你好！"}]}'
+  -d '{"model": "gpt-6-luna", "messages": [{"role": "user", "content": "你好！"}]}'
 ```
 
 <details id="deploy-cloudflare">
@@ -78,55 +71,84 @@ curl -X POST https://你的项目.vercel.app/v1/chat/completions \
 
 **前置条件：** [Cloudflare 账号](https://dash.cloudflare.com/sign-up)（免费）+ Fork 本仓库。
 
-**第 1 步 — 配置 GitHub Repository Secrets**（`Settings → Secrets and variables → Actions`）：
+**第 1 步 — 开启 Fork 仓库的 GitHub Actions**
 
-| Secret | 说明 | 必填 |
-|--------|------|------|
-| `CLOUDFLARE_API_TOKEN` | 具备 `Cloudflare Pages:Edit`、`D1:Edit`、`Workers KV Storage:Edit` 权限 | ✅ |
+Fork 仓库默认禁用 Actions：打开你 Fork 后的仓库 → **Actions** 标签页 → 点击 **"I understand my workflows, go ahead and enable them"**。
+
+**第 2 步 — 配置 GitHub Repository Secrets**（`Settings → Secrets and variables → Actions → Repository secrets`）：
+
+| Secret / Variable | 说明 | 必填 |
+|-------------------|------|------|
+| `CLOUDFLARE_API_TOKEN` | 在 [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens) 创建，授予 `Cloudflare Pages:Edit`、`D1:Edit`、`Workers KV Storage:Edit` 权限 | ✅ |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账号 ID | ✅ |
-| `RELAY_API_KEY` | 客户端鉴权密钥 | ✅ |
-| `RELAY_ADMIN_KEY` | Admin 登录密钥（可选，默认同 `RELAY_API_KEY`） | ⬜ |
+| `RELAY_API_KEY` | 客户端与后台鉴权密钥 | ✅ |
+| `RELAY_ADMIN_KEY` | 独立 Admin 登录密钥（可选，默认回退到 `RELAY_API_KEY`） | ⬜ |
 | `RELAY_SIGNING_SECRET` | 临时密钥签名密钥（可选） | ⬜ |
-| `DEVICE_TOKEN_SECRET` | 本地 CLI 设备令牌哈希密钥（可选） | ⬜ |
+| `DEVICE_TOKEN_SECRET` | 本地 CLI 设备令牌哈希密钥（可选，默认派生自配置密钥） | ⬜ |
 | `CRON_SECRET` | 定时任务鉴权密钥（可选） | ⬜ |
+| `DEPLOY_URL` | 部署后的公网地址，如 `https://你的项目.pages.dev`（启用每日自动探测、Webhook 日报与 D1 过期清理时配置） | ⬜ |
 
-**第 2 步 — 推送自动部署**
+**第 3 步 — 推送或手动触发部署**
 
-推送到 `main` 分支（或在 Actions 页面手动触发 **Deploy to Cloudflare Pages**），工作流会自动完成 D1 建表与迁移、KV 创建、OpenNext 构建部署及密钥同步。
+推送到 `main` 分支（或在 **Actions → Deploy to Cloudflare Pages → Run workflow** 手动触发），工作流会自动完成 D1 建表迁移、KV 创建、OpenNext 构建部署及密钥批量同步，并在运行摘要中输出访问链接。
 
-**第 3 步 — 验证**
+**第 4 步 — 验证并添加密钥**
 
 ```bash
-curl https://你的项目.pages.dev/health
+# 确认服务已启动（未添加上游 Key 前使用 liveness 探针返回 200）
+curl https://你的项目.pages.dev/health?liveness=1
 ```
+
+随后打开 `https://你的项目.pages.dev/admin` 添加上游 Provider Key（添加后 `GET /health` 会返回 `200 healthy`）。
 
 </details>
 
 <details id="deploy-self-hosted">
 <summary><strong>🐳 3. 自部署服务（Docker / VPS / NAS）</strong></summary>
 
-自部署模式运行在独立 Node.js 服务上，**无 60s 函数超时或 CPU 时间限制**，内置后台定时调度器（自动执行上游健康探测、每日用量聚合、过期数据清理与 Webhook 日报推送），并提供容器存活探针 `/health?liveness=1`。
+自部署模式运行在独立 Node.js 服务上，**默认上游超时放宽至 5 分钟（无 Serverless 60s 限制）**，内置后台定时调度器（自动执行上游健康探测、每日用量聚合、过期数据清理与 Webhook 日报推送），并提供容器存活探针 `/health?liveness=1`。
 
-#### 方案 A — 单容器持久化磁盘模式（零外部数据库依赖，开箱即用）
+#### 方案 A — 预构建镜像一条命令启动（无需克隆源码，最快）
+
+```bash
+docker run -d \
+  --name ai-relay \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -e RELAY_API_KEY=your-strong-secret \
+  -v ai-relay-data:/app/data \
+  ghcr.io/moyufamily/ai-relay:latest
+```
+
+#### 方案 B — Docker Compose 一键脚本 / 源码构建（支持 `.env` 自动透传）
 
 默认将后台配置、Provider Key、模型别名、路由规则、配额与用量自动持久化到 `/app/data/kv-store.json`（原子写入 + `0600` 权限保护）：
 
 ```bash
 git clone https://github.com/MoyuFamily/ai-relay.git && cd ai-relay
+
+# 一键自动生成随机 RELAY_API_KEY 并启动（推荐）：
+bash scripts/quick-start.sh
+
+# 或手动启动：
 RELAY_API_KEY=your-strong-secret docker compose up -d --build
 ```
 
-#### 方案 B — 多实例 / PostgreSQL 高可用模式
+#### 方案 C — 多实例 / PostgreSQL 高可用模式
 
-传入 `DATABASE_URL` 即可切换至 PostgreSQL 模式，**服务启动时会自动幂等创建所需全部数据表与索引**，无需手动执行 SQL 迁移：
+传入 `DATABASE_URL` 即可自动切换至 PostgreSQL 模式（优先级高于默认磁盘目录），**服务启动时会自动幂等创建所需全部数据表与索引**，无需手动执行 SQL 迁移：
 
 ```bash
+# 一键生成 .env 并拉起内置 PostgreSQL + AI Relay：
+bash scripts/quick-start.sh --postgres
+
+# 或手动启动：
 DATABASE_URL=postgresql://airelay:airelay@postgres:5432/airelay \
 RELAY_API_KEY=your-strong-secret \
 docker compose --profile postgres up -d --build
 ```
 
-#### 方案 C — 裸机 / PM2 / Systemd 直接运行
+#### 方案 D — 裸机 / PM2 / Systemd 直接运行
 
 ```bash
 pnpm install --frozen-lockfile
@@ -151,19 +173,23 @@ RELAY_API_KEY=your-strong-secret RELAY_DATA_DIR=./data node .next/standalone/ser
 
 ```bash
 git clone https://github.com/MoyuFamily/ai-relay.git && cd ai-relay
-pnpm install && npm link
+pnpm install && pnpm link --global
 
 # 方式 A：绑定云端或自建后台，自动同步 Provider 与密钥配置
 airelay login https://your-relay.example.com
 airelay local:start
 
-# 方式 B：纯本地离线配置文件或环境变量启动
+# 方式 B：交互式初始化向导（写入 ~/.ai-relay/relay-config.json）
+airelay init
+airelay local:start
+
+# 方式 C：纯本地配置文件或环境变量启动
 airelay local:start --config ./relay-config.json
 OPENAI_KEYS="sk-xxx" airelay local:start
 
-# 可选：一键写入并检查 Codex CLI 配置
+# 可选：一键配置 Codex / Claude Code
 airelay agent:install codex
-airelay agent:doctor codex
+airelay agent:install claude-code
 ```
 
 </details>
@@ -225,16 +251,17 @@ OpenAI · Anthropic (Claude) · DeepSeek · MiMo · 任意自定义兼容 Provid
 | `RELAY_ADMIN_KEY` | Admin 后台密钥（未设置时默认回退到 `RELAY_API_KEY`） | ⬜ |
 | `RELAY_SIGNING_SECRET` | 临时客户端 Key 的 HMAC 签名密钥 | ⬜ |
 | `DEVICE_TOKEN_SECRET` | 本地 CLI 设备登录令牌（`airelay login`）哈希密钥 | ⬜ |
-| `OPENAI_KEYS` / `CLAUDE_KEYS` / `DEEPSEEK_KEYS` / `XIAOMI_KEYS` | 静态环境变量密钥（更推荐在 `/admin` 后台可视化管理） | ⬜ |
-| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Vercel KV / Upstash Redis 连接凭据 | ⬜ |
+| `OPENAI_KEYS` / `CLAUDE_KEYS` / `GEMINI_KEYS` / `DEEPSEEK_KEYS` / `OPENROUTER_KEYS` | 静态环境变量密钥（更推荐在 `/admin` 后台可视化管理） | ⬜ |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`（或 `KV_REST_API_*`） | Vercel / Upstash Redis 连接凭据（两套变量名自动兼容） | ⬜ |
 | `RELAY_DATA_DIR` / `RELAY_STORAGE_PATH` | 自部署单机模式的持久化目录或文件路径（默认 `./data`） | ⬜ |
-| `DATABASE_URL` | 自部署多实例 PostgreSQL 连接串（启动时自动建表） | ⬜ |
+| `DATABASE_URL` | 自部署多实例 PostgreSQL 连接串（启动时自动建表，优先级高于默认磁盘目录） | ⬜ |
 | `ENABLE_SELF_HOSTED_CRON` | 自部署服务是否启用内置后台定时任务（默认 `true`） | ⬜ |
 | `SELF_HOSTED_PROBE_INTERVAL_MINUTES` | 自部署内置上游健康探测间隔分钟数（默认 `60`） | ⬜ |
+| `ALLOW_LOCAL_KEY_SYNC` | 是否允许已授权本地 CLI 同步上游 Key（默认 `true`，设 `false` 禁用） | ⬜ |
 | `RELAY_DAILY_LIMIT` / `RELAY_MONTHLY_LIMIT` | 全局每日 / 每月请求上限（`0` 为不限制，可在后台覆盖） | ⬜ |
 | `RELAY_MAX_CONCURRENT` | 单实例 `/v1/*` 最大并发请求数限制（`0` 为不限制） | ⬜ |
-| `RELAY_ALLOWED_ORIGINS` | 允许的浏览器跨域 CORS 来源（逗号分隔或 `*`） | ⬜ |
-| `RELAY_UPSTREAM_TIMEOUT_MS` | 上游请求超时毫秒数（默认 `50000`，设 `0` 关闭） | ⬜ |
+| `RELAY_ALLOWED_ORIGINS`（别名 `CORS_ORIGINS`） | 允许的浏览器跨域 CORS 来源（逗号分隔或 `*`） | ⬜ |
+| `RELAY_UPSTREAM_TIMEOUT_MS` | 上游请求超时毫秒数（Serverless 默认 `50000`，自部署/本地默认 `300000`，设 `0` 关闭） | ⬜ |
 | `RELAY_KV_USAGE_SAMPLE_RATE` | KV 用量采样率（默认 `1` 全量，`0.1` 表示 10% 采样） | ⬜ |
 
 ---
@@ -288,7 +315,7 @@ AI Relay 是采用 [MIT 许可证](LICENSE) 的开源项目。除了 Serverless 
 - **[技术架构设计](docs/TECH-DESIGN.md)** — 核心请求链路、跨协议转换矩阵与多平台运行时适配细节
 - **[多平台存储架构](docs/storage-architecture.md)** — Vercel KV、Cloudflare KV+D1、自部署磁盘与 PostgreSQL 存储层说明
 - **[常见问题 (FAQ)](docs/FAQ.md)** — 部署排错、鉴权、Docker 自托管与本地 CLI 问答
-- **[发布分支流程](docs/RELEASE-FLOW.md)** — Fork 用户与维护者的分支及自动化发布约定
+- **[发布流程](docs/RELEASE-FLOW.md)** — 单主干 (`main`) 精简 CI/CD 与版本发布说明
 - **[更新日志](CHANGELOG.md)** — 历史版本变更记录
 
 ## 📄 许可证

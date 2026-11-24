@@ -10,25 +10,27 @@ _airelay() {
   case "$state" in
     cmds)
       _values "airelay command" \
-        "login[Bind device to cloud admin]" \
+        "init[Interactive local relay setup wizard]" \
+        "login[Bind device to cloud or self-hosted admin]" \
         "local[Manage local relay server]" \
         "local:start[Start local relay server]" \
         "local:status[Show status and configuration]" \
-        "agent:install[Install agent adapter]" \
+        "agent:install[Configure local AI agent]" \
         "agent:doctor[Check agent configuration]" \
-        "agent:uninstall[Uninstall agent adapter]" \
+        "agent:uninstall[Remove agent configuration]" \
         "help[Display help]"
       ;;
     args)
       case $line[1] in
         local:start)
           _arguments \
-            "--config[Config file path]:file:_files" \
+            "--config[Config file path or URL]:file:_files" \
             "--port[Port number]:port:" \
             "--host[Host address]:host:"
           ;;
-        agent:install)
+        agent:install|agent:doctor|agent:uninstall)
           _arguments \
+            "1:agent:(codex claude-code)" \
             "--dry-run[Show what would be changed]"
           ;;
       esac
@@ -36,4 +38,8 @@ _airelay() {
   esac
 }
 
-_airelay "$@"
+if [[ "${funcstack[1]:-}" == "_airelay" ]]; then
+  _airelay "$@"
+elif (( $+functions[compdef] )); then
+  compdef _airelay airelay
+fi

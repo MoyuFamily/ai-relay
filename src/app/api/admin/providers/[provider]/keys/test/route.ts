@@ -83,7 +83,7 @@ export async function POST(request: NextRequest, { params }: { params: Params })
   if (authErr) return authErr;
 
   const { provider: providerName } = await params;
-  let body: { key?: string; hash?: string; model?: string; providerConfig?: any };
+  let body: { key?: string; hash?: string; model?: string; prompt?: string; providerConfig?: any };
   try {
     body = await request.json();
   } catch {
@@ -154,26 +154,41 @@ export async function POST(request: NextRequest, { params }: { params: Params })
   const userAgents = getUserAgentCandidates(provider);
   const isAnthropic = provider.headerFormat === 'anthropic';
 
-  // Use appropriate default model based on provider format
-  const defaultModel = isAnthropic ? 'claude-haiku-4-5-20251001' : 'gpt-5.4-mini';
+  // Pick a widely-available, low-cost default test model per provider
+  const DEFAULT_TEST_MODELS: Record<string, string> = {
+    openai: 'gpt-6-luna',
+    anthropic: 'claude-haiku-5-5',
+    google: 'gemini-4-hydrogen',
+    deepseek: 'deepseek-flash',
+    openrouter: 'openai/gpt-6-luna',
+    xiaomi: 'mimo-v2.6-flash',
+  };
+  const providerDefaultModel =
+    DEFAULT_TEST_MODELS[providerName] ||
+    provider.models?.[0]?.id ||
+    (isAnthropic ? 'claude-haiku-5-5' : 'gpt-6-luna');
   const targetModel = (body.model && typeof body.model === 'string' && body.model.trim().length > 0)
     ? body.model.trim()
-    : await resolveFallbackModel(defaultModel, providerName);
+    : await resolveFallbackModel(providerDefaultModel, providerName);
   const upstreamModel = resolveUpstreamModel(targetModel, provider);
 
+  const customPrompt = typeof body.prompt === 'string' && body.prompt.trim()
+    ? body.prompt.trim().slice(0, 500)
+    : null;
   const testBody: ChatCompletionRequest = {
     model: upstreamModel,
-    messages: [{ role: 'user', content: 'ping' }],
-    max_tokens: 1,
+    messages: [{ role: 'user', content: customPrompt || 'ping' }],
+    max_tokens: customPrompt ? 128 : 1,
   };
   const requestBody = isAnthropic ? transformToAnthropic(testBody) : testBody;
 
   let lastFailure: { status?: number; error: string } | null = null;
+  const startedAt = Date.now();
 
   for (const url of urls) {
     for (const userAgent of userAgents) {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), customPrompt ? 14000 : 10000);
       let upstreamResponse: Response;
       let responseText = '';
       try {
@@ -201,7 +216,27 @@ export async function POST(request: NextRequest, { params }: { params: Params })
       }
 
       if (upstreamResponse.ok && parsed && isValidTestPayload(provider, parsed)) {
-        return Response.json({ valid: true });
+        if (!customPrompt) {
+          return Response.json({ valid: true });
+        }
+        let reply: string | undefined;
+        if (provider.headerFormat === 'anthropic' && Array.isArray(parsed.content)) {
+          reply = parsed.content
+            .map((part: any) => (typeof part?.text === 'string' ? part.text : ''))
+            .join('')
+            .trim();
+        } else if (Array.isArray(parsed.choices)) {
+          const msgContent = parsed.choices[0]?.message?.content;
+          if (typeof msgContent === 'string') {
+            reply = msgContent.trim();
+          }
+        }
+        return Response.json({
+          valid: true,
+          model: upstreamModel,
+          latencyMs: Date.now() - startedAt,
+          ...(reply ? { reply } : {}),
+        });
       }
 
       const errorMessage = summarizeUpstreamText(upstreamResponse, responseText) || upstreamResponse.statusText;

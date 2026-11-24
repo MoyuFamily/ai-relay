@@ -3,9 +3,18 @@
 // ============================================================
 
 import type { AgentAdapter, InstallOptions, InstallResult, DoctorResult, UninstallOptions, UninstallResult } from './adapter';
+import { getProfileDir, loadProfile } from '../local/profile';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+
+function getBackupDir(): string {
+  const dir = path.join(getProfileDir(), 'backups');
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  }
+  return dir;
+}
 
 export class CodexAdapter implements AgentAdapter {
   id = 'codex' as const;
@@ -25,14 +34,17 @@ export class CodexAdapter implements AgentAdapter {
     if (!fs.existsSync(configPath)) {
       return {
         success: false,
-        message: 'Codex config not found. Install Codex first.',
+        message: 'Codex config not found at ~/.codex/config.toml. Install and run Codex once first.',
       };
     }
 
-    // Backup
-    const backupPath = `${configPath}.backup.${Date.now()}`;
-    if (!options.dryRun) {
-      fs.copyFileSync(configPath, backupPath);
+    // Check if already installed BEFORE creating any backup
+    const content = fs.readFileSync(configPath, 'utf-8');
+    if (content.includes('[model_providers.ai-relay-local]')) {
+      return {
+        success: false,
+        message: 'ai-relay-local provider already exists in ~/.codex/config.toml',
+      };
     }
 
     // Escape URL for TOML string (prevent injection)
@@ -46,7 +58,7 @@ export class CodexAdapter implements AgentAdapter {
 [model_providers.ai-relay-local]
 name = "AI Relay Local"
 base_url = "${escapedUrl}/v1"
-wire_api = "chat"
+wire_api = "responses"
 requires_openai_auth = true
 `;
 
@@ -58,26 +70,29 @@ requires_openai_auth = true
       };
     }
 
-    // Check if already installed
-    const content = fs.readFileSync(configPath, 'utf-8');
-    if (content.includes('[model_providers.ai-relay-local]')) {
-      return {
-        success: false,
-        message: 'ai-relay-local provider already exists in config',
-      };
-    }
+    // Backup to ~/.ai-relay/backups/
+    const backupPath = path.join(getBackupDir(), `codex-config.toml.backup.${Date.now()}`);
+    fs.copyFileSync(configPath, backupPath);
 
     fs.appendFileSync(configPath, snippet);
 
     return {
       success: true,
       configPath,
-      message: `✅ Added ai-relay-local provider\n   Backup: ${backupPath}`,
+      backupPath,
+      message:
+        `✅ Added ai-relay-local provider to ${configPath}\n` +
+        `   Backup: ${backupPath}\n` +
+        `   Use with: codex -c model_provider=ai-relay-local`,
     };
   }
 
   async doctor(): Promise<DoctorResult> {
     const detection = await this.detect();
+    const profile = await loadProfile().catch(() => null);
+    const expectedHost = profile?.listenHost || '127.0.0.1';
+    const expectedPort = profile?.listenPort || 3147;
+    const expectedBaseUrl = `http://${expectedHost}:${expectedPort}/v1`;
 
     const checks: DoctorResult['checks'] = [
       {
@@ -94,15 +109,17 @@ requires_openai_auth = true
       checks.push({
         name: 'AI Relay provider configured',
         status: hasProvider ? 'pass' : 'warn',
-        message: hasProvider ? 'ai-relay-local provider found in config' : 'Run "ai-relay agent install codex" first',
+        message: hasProvider ? 'ai-relay-local provider found in config' : 'Run "airelay agent:install codex" first',
       });
 
       if (hasProvider) {
-        const hasBaseUrl = content.includes('base_url = "http://127.0.0.1:3147/v1"');
+        const hasBaseUrl = content.includes(`base_url = "${expectedBaseUrl}"`);
         checks.push({
           name: 'Base URL points to local relay',
           status: hasBaseUrl ? 'pass' : 'warn',
-          message: hasBaseUrl ? 'Correctly points to 127.0.0.1:3147' : 'Base URL may be incorrect',
+          message: hasBaseUrl
+            ? `Correctly points to ${expectedBaseUrl}`
+            : `Expected base_url = "${expectedBaseUrl}" in ~/.codex/config.toml`,
         });
       }
     }
@@ -157,8 +174,8 @@ requires_openai_auth = true
       };
     }
 
-    // Create backup before uninstall
-    const backupPath = `${configPath}.backup.uninstall.${Date.now()}`;
+    // Create backup in ~/.ai-relay/backups/ before uninstall
+    const backupPath = path.join(getBackupDir(), `codex-config.toml.uninstall.${Date.now()}`);
     fs.copyFileSync(configPath, backupPath);
 
     // Write modified content

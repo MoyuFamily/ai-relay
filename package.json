@@ -3,7 +3,7 @@
   "version": "2.15.0",
   "private": true,
   "bin": {
-    "airelay": "./cli/index.ts"
+    "airelay": "./cli/bin.mjs"
   },
   "scripts": {
     "dev": "next dev",

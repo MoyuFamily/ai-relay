@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import styles from './homepage.module.css';
+import pkg from '../../package.json';
 
 type Language = 'zh' | 'en';
 
@@ -21,7 +22,7 @@ export interface HomepageProvider {
   models: HomepageModel[];
 }
 
-const deployUrl = 'https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY,RELAY_ADMIN_KEY,RELAY_SIGNING_SECRET&envDescription=API%20authentication%20keys%20(required%20for%20security)&envLink=https://github.com/MoyuFamily/ai-relay#environment-variables';
+const deployUrl = 'https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY&envDescription=Client%20and%20Admin%20authentication%20key%20(RELAY_ADMIN_KEY%20is%20optional%20and%20falls%20back%20to%20RELAY_API_KEY)&envLink=https://github.com/MoyuFamily/ai-relay#-quick-start&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22upstash%22%2C%22productSlug%22%3A%22upstash-kv%22%2C%22protocol%22%3A%22storage%22%7D%5D';
 const githubUrl = 'https://github.com/MoyuFamily/ai-relay';
 
 const copyText = {
@@ -40,10 +41,10 @@ const content = {
       admin: '管理后台',
     },
     hero: {
-      badge: 'Serverless · Vercel 一键部署 · Cloudflare 推送即部署 · OpenAI 兼容',
+      badge: 'Vercel 一键部署 · Cloudflare Pages · Docker 自部署 · 本地 CLI · OpenAI / Anthropic 兼容',
       title: 'AI Relay',
-      subtitle: '无服务器 AI API 中转网关，Vercel 一键部署 / Cloudflare 推送即部署',
-      description: '不用买服务器、不用维护 Docker。Vercel 一键部署即开即用；Cloudflare 通过 GitHub Actions 推送即部署，自动配置 D1 + KV。填写 3 个环境变量，2 分钟拥有自己的多 Provider AI Relay。现有 OpenAI SDK 只改 base_url，即可获得 Key 轮换、Fallback、用量统计和 Admin 后台。',
+      subtitle: '个人与团队的 AI API 统一网关 — Serverless 云端部署、Docker 自部署与本地 CLI 一体化',
+      description: '支持 Vercel 一键部署、Cloudflare Pages 推送即部署、Docker / PostgreSQL 自托管与本机 CLI 运行。只需配置 RELAY_API_KEY，2 分钟拥有多 Provider 路由、多 Key 轮换、OpenAI ↔ Anthropic 跨协议转换、Fallback 与 Admin 后台。',
       quickstart: '2 分钟部署',
       github: 'GitHub',
       deploy: '一键部署',
@@ -74,7 +75,7 @@ const content = {
     },
     featureCards: [
       { icon: '↻', title: '多 Key 轮换', description: 'Round-Robin 分发请求，遇到 429 自动退避，降低单 Key 限流风险。', tier: 'p0' },
-      { icon: '⇄', title: '多 Provider 路由', description: '支持 OpenAI、Claude、DeepSeek、MiMo 与自定义 Provider，按模型前缀自动路由。', tier: 'p0' },
+      { icon: '⇄', title: '多 Provider 路由', description: '内置 OpenAI、Claude、Google Gemini、DeepSeek、OpenRouter 与自定义 Provider，按模型前缀自动路由。', tier: 'p0' },
       { icon: '↪', title: '多级 Fallback', description: 'Provider 到 Key Pool 的链式故障转移，让上游异常不直接暴露给客户端。', tier: 'p0' },
       { icon: '▣', title: '100% OpenAI 兼容', description: '保留 /v1/chat/completions 与 /v1/models 习惯，现有 SDK 几乎零改动接入。', tier: 'p0' },
       { icon: '▤', title: 'Admin 后台', description: '集中管理密钥、配额、用量统计、模型测试和 Provider 配置。', tier: 'p0' },
@@ -93,37 +94,39 @@ const content = {
     quickstartSteps: [
       {
         title: '部署',
-        description: 'Vercel 一键克隆部署；Cloudflare Fork 后配置 GitHub Secrets，push to main 自动部署。填入 RELAY_API_KEY、RELAY_ADMIN_KEY、RELAY_SIGNING_SECRET。',
-        label: 'Vercel / CF',
-        code: 'RELAY_API_KEY=your-strong-client-key\nRELAY_ADMIN_KEY=your-admin-key\nRELAY_SIGNING_SECRET=your-signing-secret',
+        description: 'Vercel 填 1 个 RELAY_API_KEY 即可一键部署（并关联 Upstash Redis 后 Redeploy）；Cloudflare Fork 后开启 Actions 配置 Secrets；或直接 Docker 一条命令自托管。',
+        label: 'Vercel / CF / Docker',
+        code: 'RELAY_API_KEY=your-strong-secret\n# Docker 一键运行:\ndocker run -d --name ai-relay -p 3000:3000 -e RELAY_API_KEY=your-strong-secret -v ai-relay-data:/app/data ghcr.io/moyufamily/ai-relay:latest',
       },
       {
-        title: '验证',
-        description: '部署完成后检查公开健康端点，确认 Edge Function 已经正常响应。',
+        title: '验证存活',
+        description: '部署完成后调用存活探针确认服务已启动（未添加上游 Key 前 `/health?liveness=1` 返回 200）。',
         label: 'bash',
-        code: 'curl https://你的项目.vercel.app/health\n# {"status":"ok"}',
+        code: 'curl https://你的项目.vercel.app/health?liveness=1\n# {"status":"unconfigured","relayReady":false,...}',
       },
       {
         title: '添加密钥',
-        description: '进入 Admin 后台，添加 OpenAI、Claude、DeepSeek、MiMo 或自定义 Provider Key。',
+        description: '进入 Admin 后台（默认用 RELAY_API_KEY 或 RELAY_ADMIN_KEY 登录），添加 OpenAI、Claude、Gemini、DeepSeek、OpenRouter 或自定义 Provider Key，并可当场发一句测试对话。',
         label: 'URL',
-        code: 'https://你的项目.vercel.app/admin\n# 使用 RELAY_ADMIN_KEY 登录',
+        code: 'https://你的项目.vercel.app/admin\n# 添加上游 Key 后，GET /health 返回 {"status":"healthy"}',
       },
       {
         title: '开始调用',
-        description: '把客户端 base URL 指向你的 Relay，继续使用 OpenAI 兼容请求格式。',
+        description: '把客户端 base URL 指向你的 Relay，同时兼容 OpenAI SDK、Claude Code、Codex 与 Cursor。',
         label: 'bash',
-        code: 'curl -X POST https://你的项目.vercel.app/v1/chat/completions \\\n  -H "Authorization: Bearer YOUR_RELAY_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"gpt-5.4","messages":[{"role":"user","content":"你好！"}]}\'',
+        code: 'curl -X POST https://你的项目.vercel.app/v1/chat/completions \\\n  -H "Authorization: Bearer YOUR_RELAY_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"gpt-6-luna","messages":[{"role":"user","content":"你好！"}]}\'',
       },
     ],
     endpoints: {
       headers: ['端点', '说明', '访问'],
       rows: [
-        ['GET /v1/models', '列出所有可用模型', 'Bearer Key'],
-        ['GET /v1/models/:id', '查询单个模型信息', 'Bearer Key'],
-        ['POST /v1/chat/completions', 'Chat Completions，支持流式和非流式', 'Bearer Key'],
-        ['GET /health', '公开健康检查', 'Public'],
-        ['GET /api/status', '服务状态详情', 'Public'],
+        ['POST /v1/chat/completions', 'OpenAI Chat Completions（流式/非流式 + 跨协议回退）', 'Bearer Key'],
+        ['POST /v1/messages', 'Anthropic Messages API（Claude Code / SDK 原生直连）', 'x-api-key / Bearer'],
+        ['POST /v1/messages/count_tokens', 'Anthropic Token 计数（上游直连 + 本地估算降级）', 'x-api-key / Bearer'],
+        ['POST /v1/responses', 'OpenAI Responses API（流式/非流式）', 'Bearer Key'],
+        ['GET /v1/models & /:id', '列出或查询可用模型与虚拟模型别名', 'Bearer Key'],
+        ['GET /health & ?liveness=1', '就绪探针（Readiness）与容器存活探针（Liveness）', 'Public'],
+        ['GET /api/status', '服务状态与熔断详情', 'Public'],
       ],
     },
     modelLabels: {
@@ -144,9 +147,9 @@ const content = {
       notes: ['OpenAI 兼容请求进入 Relay', '按模型前缀选择 Provider', 'Key Pool 轮换、退避、Fallback', '用量、错误与配置写入 KV'],
     },
     footer: {
-      version: 'AI Relay v2.14.0',
+      version: `AI Relay v${pkg.version}`,
       license: 'MIT License',
-      powered: 'Powered by Edge Runtime (Vercel / Cloudflare)',
+      powered: 'Vercel · Cloudflare Pages · Docker · Local CLI',
       docs: '文档',
       sponsor: '基础设施赞助',
     },
@@ -161,10 +164,10 @@ const content = {
       admin: 'Admin',
     },
     hero: {
-      badge: 'Serverless · Vercel one-click · Cloudflare push-to-deploy · OpenAI-compatible',
+      badge: 'Vercel One-Click · Cloudflare Pages · Self-Hosted Docker · Local CLI · OpenAI & Anthropic',
       title: 'AI Relay',
-      subtitle: 'Serverless AI API relay gateway — Vercel one-click / Cloudflare push-to-deploy',
-      description: 'No VPS, no Docker, no backend ops. Vercel: one-click deploy and go. Cloudflare: fork, configure GitHub Secrets, push to main — GitHub Actions auto-deploys with D1 + KV. Set 3 environment variables and run your own multi-provider AI Relay in 2 minutes. Keep your OpenAI SDK and only change base_url to get key rotation, fallback, usage tracking, and an Admin console.',
+      subtitle: 'Unified AI API gateway — deploy serverless, self-host with Docker, or run locally',
+      description: 'Deploy to Vercel in one click, push-to-deploy on Cloudflare Pages with D1 + KV, self-host with Docker / PostgreSQL, or run the local CLI. Set a single RELAY_API_KEY and get multi-provider routing, key rotation, OpenAI ↔ Anthropic protocol translation, fallback, and an Admin console in 2 minutes.',
       quickstart: 'Deploy in 2 minutes',
       github: 'GitHub',
       deploy: 'One-click deploy',
@@ -195,7 +198,7 @@ const content = {
     },
     featureCards: [
       { icon: '↻', title: 'Key rotation', description: 'Round-robin dispatch plus automatic 429 backoff reduces pressure on individual upstream keys.', tier: 'p0' },
-      { icon: '⇄', title: 'Provider routing', description: 'Route OpenAI, Claude, DeepSeek, MiMo, and custom providers automatically by model prefix.', tier: 'p0' },
+      { icon: '⇄', title: 'Provider routing', description: 'Built-in OpenAI, Claude, Google Gemini, DeepSeek, OpenRouter, and custom providers routed automatically by model prefix.', tier: 'p0' },
       { icon: '↪', title: 'Multi-level fallback', description: 'Chained Provider and Key Pool failover keeps upstream faults away from client code.', tier: 'p0' },
       { icon: '▣', title: '100% OpenAI-compatible', description: 'Keep /v1/chat/completions and /v1/models semantics, with almost no SDK changes.', tier: 'p0' },
       { icon: '▤', title: 'Admin console', description: 'Manage keys, quotas, usage analytics, model tests, and Provider configuration in one place.', tier: 'p0' },
@@ -214,37 +217,39 @@ const content = {
     quickstartSteps: [
       {
         title: 'Deploy',
-        description: 'Vercel: one-click clone deploy. Cloudflare: fork, configure GitHub Secrets, push to main for auto-deploy. Set RELAY_API_KEY, RELAY_ADMIN_KEY, and RELAY_SIGNING_SECRET.',
-        label: 'Vercel / CF',
-        code: 'RELAY_API_KEY=your-strong-client-key\nRELAY_ADMIN_KEY=your-admin-key\nRELAY_SIGNING_SECRET=your-signing-secret',
+        description: 'Vercel: one-click deploy with just RELAY_API_KEY (then attach Upstash Redis & Redeploy). Cloudflare: fork, enable Actions, add Secrets. Or run a single Docker command.',
+        label: 'Vercel / CF / Docker',
+        code: 'RELAY_API_KEY=your-strong-secret\n# One-line Docker self-host:\ndocker run -d --name ai-relay -p 3000:3000 -e RELAY_API_KEY=your-strong-secret -v ai-relay-data:/app/data ghcr.io/moyufamily/ai-relay:latest',
       },
       {
-        title: 'Verify',
-        description: 'After deployment, check the public health endpoint to confirm the Edge Function is responding.',
+        title: 'Verify liveness',
+        description: 'Confirm the service booted cleanly with the liveness probe (returns 200 even before provider keys are added).',
         label: 'bash',
-        code: 'curl https://your-project.vercel.app/health\n# {"status":"ok"}',
+        code: 'curl https://your-project.vercel.app/health?liveness=1\n# {"status":"unconfigured","relayReady":false,...}',
       },
       {
         title: 'Add keys',
-        description: 'Open Admin and add OpenAI, Claude, DeepSeek, MiMo, or custom Provider keys.',
+        description: 'Open /admin (sign in with RELAY_API_KEY or RELAY_ADMIN_KEY), add OpenAI, Claude, Gemini, DeepSeek, OpenRouter, or custom Provider keys, and run a 10-second live test.',
         label: 'URL',
-        code: 'https://your-project.vercel.app/admin\n# Sign in with RELAY_ADMIN_KEY',
+        code: 'https://your-project.vercel.app/admin\n# Once a key is added, GET /health returns {"status":"healthy"}',
       },
       {
         title: 'Call it',
-        description: 'Point your client base URL to the relay and keep the OpenAI-compatible request format.',
+        description: 'Point OpenAI SDK, Claude Code, Codex CLI, or Cursor at your relay endpoint.',
         label: 'bash',
-        code: 'curl -X POST https://your-project.vercel.app/v1/chat/completions \\\n  -H "Authorization: Bearer YOUR_RELAY_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"gpt-5.4","messages":[{"role":"user","content":"Hello!"}]}\'',
+        code: 'curl -X POST https://your-project.vercel.app/v1/chat/completions \\\n  -H "Authorization: Bearer YOUR_RELAY_API_KEY" \\\n  -H "Content-Type: application/json" \\\n  -d \'{"model":"gpt-6-luna","messages":[{"role":"user","content":"Hello!"}]}\'',
       },
     ],
     endpoints: {
       headers: ['Endpoint', 'Description', 'Access'],
       rows: [
-        ['GET /v1/models', 'List all available models', 'Bearer Key'],
-        ['GET /v1/models/:id', 'Get one model by id', 'Bearer Key'],
-        ['POST /v1/chat/completions', 'Chat Completions with streaming and non-streaming modes', 'Bearer Key'],
-        ['GET /health', 'Public health check', 'Public'],
-        ['GET /api/status', 'Service status details', 'Public'],
+        ['POST /v1/chat/completions', 'OpenAI Chat Completions (streaming/non-streaming + failover)', 'Bearer Key'],
+        ['POST /v1/messages', 'Anthropic Messages API (native Claude Code / SDK support)', 'x-api-key / Bearer'],
+        ['POST /v1/messages/count_tokens', 'Anthropic token counting with local estimation fallback', 'x-api-key / Bearer'],
+        ['POST /v1/responses', 'OpenAI Responses API (streaming & non-streaming)', 'Bearer Key'],
+        ['GET /v1/models & /:id', 'List or inspect available models and virtual aliases', 'Bearer Key'],
+        ['GET /health & ?liveness=1', 'Readiness check & container liveness probe', 'Public'],
+        ['GET /api/status', 'Service status & circuit breaker details', 'Public'],
       ],
     },
     modelLabels: {
@@ -265,9 +270,9 @@ const content = {
       notes: ['OpenAI-compatible requests enter Relay', 'Model prefixes select the Provider', 'Key Pool rotates, backs off, and falls back', 'Usage, errors, and config persist to KV'],
     },
     footer: {
-      version: 'AI Relay v2.14.0',
+      version: `AI Relay v${pkg.version}`,
       license: 'MIT License',
-      powered: 'Powered by Edge Runtime (Vercel / Cloudflare)',
+      powered: 'Vercel · Cloudflare Pages · Docker · Local CLI',
       docs: 'Docs',
       sponsor: 'Infrastructure sponsor',
     },

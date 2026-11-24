@@ -55,21 +55,27 @@ describe('model aliases admin config', () => {
     const originalGet = kv.get.bind(kv);
     kv.get = vi.fn((key: string) => originalGet(key));
 
-    await saveModelAliasConfig({ aliases: { fast: 'gpt-5.4-mini' }, hidden: ['gpt-5.4-nano'] });
+    await saveModelAliasConfig({ aliases: { fast: 'gpt-6-luna' }, hidden: ['gpt-6.2-astra'] });
 
     await expect(kv.get('relay:models:aliases')).resolves.toBeTruthy();
+    // Write-through cache serves immediate reads without hitting KV (critical for eventually-consistent CF KV)
     vi.mocked(kv.get).mockClear();
-    await expect(getModelAliasConfig()).resolves.toMatchObject({ aliases: { fast: 'gpt-5.4-mini' }, hidden: ['gpt-5.4-nano'] });
-    await expect(getModelAliasConfig()).resolves.toMatchObject({ aliases: { fast: 'gpt-5.4-mini' } });
+    await expect(getModelAliasConfig()).resolves.toMatchObject({ aliases: { fast: 'gpt-6-luna' }, hidden: ['gpt-6.2-astra'] });
+    expect(kv.get).toHaveBeenCalledTimes(0);
+
+    // On cold cache, repeated reads share the 5-minute read cache (1 KV read total)
+    __adminConfigCacheForTests.clear();
+    await expect(getModelAliasConfig()).resolves.toMatchObject({ aliases: { fast: 'gpt-6-luna' }, hidden: ['gpt-6.2-astra'] });
+    await expect(getModelAliasConfig()).resolves.toMatchObject({ aliases: { fast: 'gpt-6-luna' } });
     expect(kv.get).toHaveBeenCalledTimes(1);
   });
 
   it('resolves user aliases from KV before falling back to system aliases', async () => {
-    await saveModelAliasConfig({ aliases: { fast: 'gpt-5.4-mini', flagship: 'gpt-5.5' }, hidden: [] });
+    await saveModelAliasConfig({ aliases: { fast: 'gpt-6-luna', flagship: 'gpt-6.2-astra' }, hidden: [] });
 
-    await expect(resolveModelAlias('FAST')).resolves.toBe('gpt-5.4-mini');
-    await expect(resolveModelAlias('flagship')).resolves.toBe('gpt-5.5');
-    await expect(resolveModelAlias('claude-sonnet')).resolves.toBe('claude-sonnet-4-6');
+    await expect(resolveModelAlias('FAST')).resolves.toBe('gpt-6-luna');
+    await expect(resolveModelAlias('flagship')).resolves.toBe('gpt-6.2-astra');
+    await expect(resolveModelAlias('claude-sonnet')).resolves.toBe('claude-sonnet-5-5');
   });
 
   it('rejects aliases whose target model is not registered in any provider', async () => {
@@ -83,30 +89,30 @@ describe('model aliases admin config', () => {
     await saveModelAliasConfig({
       aliases: {
         fast: 'smart',
-        smart: 'gpt-5.4-mini',
+        smart: 'gpt-6-luna',
         loop_a: 'loop_b',
         loop_b: 'loop_a',
       },
       hidden: [],
     });
 
-    await expect(resolveModelAlias('fast')).resolves.toBe('gpt-5.4-mini');
+    await expect(resolveModelAlias('fast')).resolves.toBe('gpt-6-luna');
     await expect(resolveModelAlias('loop_a')).resolves.toBe('loop_a');
   });
 
   it('exposes CRUD API for model aliases and rejects invalid aliases', async () => {
-    let res = await POST(req('POST', { alias: 'Fast_Model', target: 'gpt-5.4-mini', hidden: false }));
-    await expect(res.json()).resolves.toMatchObject({ success: true, alias: { alias: 'fast_model', target: 'gpt-5.4-mini', source: 'user' } });
+    let res = await POST(req('POST', { alias: 'Fast_Model', target: 'gpt-6-luna', hidden: false }));
+    await expect(res.json()).resolves.toMatchObject({ success: true, alias: { alias: 'fast_model', target: 'gpt-6-luna', source: 'user' } });
 
-    res = await POST(req('POST', { alias: 'bad alias', target: 'gpt-5.4-mini' }));
+    res = await POST(req('POST', { alias: 'bad alias', target: 'gpt-6-luna' }));
     expect(res.status).toBe(400);
 
-    res = await PUT(req('PUT', { aliases: { smart: 'claude-sonnet-4-6' }, hidden: ['gpt-5.4-nano'] }));
-    await expect(res.json()).resolves.toMatchObject({ success: true, hidden: ['gpt-5.4-nano'] });
+    res = await PUT(req('PUT', { aliases: { smart: 'claude-sonnet-5-5' }, hidden: ['gpt-6.2-astra'] }));
+    await expect(res.json()).resolves.toMatchObject({ success: true, hidden: ['gpt-6.2-astra'] });
 
     res = await GET(req('GET'));
     const body = await res.json();
-    expect(body.aliases.smart).toMatchObject({ target: 'claude-sonnet-4-6', source: 'user' });
+    expect(body.aliases.smart).toMatchObject({ target: 'claude-sonnet-5-5', source: 'user' });
     expect(body.total).toBeGreaterThan(0);
 
     res = await DELETE(req('DELETE', undefined, 'http://localhost/api/admin/aliases?alias=smart'));
@@ -115,7 +121,7 @@ describe('model aliases admin config', () => {
   });
 
   it('imports and exports CSV with alias targets and hidden flags', async () => {
-    const csv = 'alias,target_model,hidden,note\nfast,gpt-5.4-mini,false,team\ncheap,gpt-5.4-nano,true,cost\n';
+    const csv = 'alias,target_model,hidden,note\nfast,gpt-6-luna,false,team\ncheap,gemini-4-hydrogen,true,cost\n';
 
     const importRes = await importPOST(csvReq(csv));
     await expect(importRes.json()).resolves.toMatchObject({ success: true, stats: { added: 2, errors: 0 } });
@@ -124,16 +130,16 @@ describe('model aliases admin config', () => {
     expect(exportRes.headers.get('content-type')).toContain('text/csv');
     const exported = await exportRes.text();
     expect(exported).toContain('alias,target_model,hidden,note');
-    expect(exported).toContain('fast,gpt-5.4-mini,false,');
-    expect(exported).toContain('cheap,gpt-5.4-nano,true,');
+    expect(exported).toContain('fast,gpt-6-luna,false,');
+    expect(exported).toContain('cheap,gemini-4-hydrogen,true,');
   });
 
   it('filters hidden models from /v1/models without disabling direct alias resolution', async () => {
-    await saveModelAliasConfig({ aliases: { cheap: 'gpt-5.4-nano' }, hidden: ['gpt-5.4-nano'] });
+    await saveModelAliasConfig({ aliases: { cheap: 'gemini-4-hydrogen' }, hidden: ['gemini-4-hydrogen'] });
 
     const res = await modelsGET(new NextRequest('http://localhost/v1/models'));
     const body = await res.json();
-    expect(body.data.some((model: { id: string }) => model.id === 'gpt-5.4-nano')).toBe(false);
-    await expect(resolveModelAlias('cheap')).resolves.toBe('gpt-5.4-nano');
+    expect(body.data.some((model: { id: string }) => model.id === 'gemini-4-hydrogen')).toBe(false);
+    await expect(resolveModelAlias('cheap')).resolves.toBe('gemini-4-hydrogen');
   });
 });
