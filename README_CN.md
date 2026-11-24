@@ -311,6 +311,7 @@ AI Relay 是采用 [MIT 许可证](LICENSE) 的开源项目。除了 Serverless 
 
 ## 📚 项目文档索引
 
+- **[Agent 部署与维护手册](docs/AGENT-OPS.md)**（[AGENTS.md](AGENTS.md)）— 面向 AI Agent 与自动化脚本的无交互部署、回归自检、Key 轮换、备份迁移与排错指南
 - **[本地 CLI 使用指南](CLI_GUIDE.md)** — `airelay` 安装、云端绑定同步、离线配置与 Codex 自动接入
 - **[技术架构设计](docs/TECH-DESIGN.md)** — 核心请求链路、跨协议转换矩阵与多平台运行时适配细节
 - **[多平台存储架构](docs/storage-architecture.md)** — Vercel KV、Cloudflare KV+D1、自部署磁盘与 PostgreSQL 存储层说明

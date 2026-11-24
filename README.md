@@ -355,6 +355,7 @@ We welcome infrastructure sponsorship for this effort. Sponsors providing the en
 
 ## 📚 Documentation
 
+- **[Agent Deployment & Maintenance Runbook](docs/AGENT-OPS.md)** ([AGENTS.md](AGENTS.md)) — Non-interactive CLI/API deployment, smoke tests, key rotation, backup/migration, and troubleshooting for AI agents & automation
 - **[CLI & Local Relay Guide](CLI_GUIDE.md)** — `airelay` installation, cloud sync, standalone config, and Codex integration
 - **[Technical Design](docs/TECH-DESIGN.md)** — End-to-end request lifecycle, protocol translation, and platform constraints
 - **[Storage Architecture](docs/storage-architecture.md)** — Multi-platform KV / D1 / Disk / PostgreSQL storage adapters
