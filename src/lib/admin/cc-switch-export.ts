@@ -69,8 +69,8 @@ function pickDefaultModel(provider?: ProviderConfig): string | undefined {
 
 function fallbackModelForApp(app: CcSwitchApp): string {
   return app === 'claude' || app === 'claude-desktop'
-    ? 'claude-sonnet-4-6'
-    : 'gpt-5.4';
+    ? 'claude-sonnet-5-5'
+    : 'gpt-6.2-sol';
 }
 
 function stripTrailingSlash(url: string): string {

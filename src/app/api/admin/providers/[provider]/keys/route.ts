@@ -164,8 +164,25 @@ export async function POST(request: NextRequest, { params }: { params: Params })
   }
 
   if (addedKeys.length > 0) {
-    await setManagedKeys(provider, current);
-    updateMemoryKeyPool(provider, current);
+    try {
+      await setManagedKeys(provider, current);
+      updateMemoryKeyPool(provider, current);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const isStorageUnavailable = /KV storage not configured/i.test(message);
+      return Response.json(
+        {
+          error: {
+            message: isStorageUnavailable
+              ? 'Persistent storage is not configured. On Vercel, attach Upstash for Redis in Storage and Redeploy; on Cloudflare, bind KV; on self-hosted, ensure RELAY_DATA_DIR is writable or set DATABASE_URL.'
+              : message,
+            type: isStorageUnavailable ? 'storage_not_configured' : 'server_error',
+            code: isStorageUnavailable ? 503 : 500,
+          },
+        },
+        { status: isStorageUnavailable ? 503 : 500 }
+      );
+    }
   }
 
   return Response.json({
@@ -257,9 +274,12 @@ export async function DELETE(request: NextRequest, { params }: { params: Params 
       message: 'Key removed',
     });
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const isStorageUnavailable = /KV storage not configured/i.test(message);
+    const status = isStorageUnavailable ? 503 : 404;
     return Response.json(
-      { error: { message: (err as Error).message, code: 404 } },
-      { status: 404 }
+      { error: { message, code: status } },
+      { status }
     );
   }
 }

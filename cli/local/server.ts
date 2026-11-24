@@ -182,7 +182,15 @@ export async function startLocalServer(options: StartServerOptions): Promise<Loc
     }
   }
 
-  const requireNonLoopbackAuth = !isLoopbackHost(profile.listenHost) || Boolean(process.env.RELAY_API_KEY);
+  const requireAuth = !isLoopbackHost(profile.listenHost) || Boolean(process.env.RELAY_API_KEY?.trim());
+  const isCloudConnected = Boolean(profile.cloudUrl && profile.deviceToken);
+  const recordLocalUsage = (event: Record<string, unknown>) => {
+    if (!isCloudConnected) return;
+    if (pendingUsageEvents.length >= 2000) {
+      pendingUsageEvents.shift();
+    }
+    pendingUsageEvents.push(event);
+  };
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
@@ -204,7 +212,7 @@ export async function startLocalServer(options: StartServerOptions): Promise<Loc
     }
 
     const webHeaders = toWebHeaders(req.headers);
-    if (requireNonLoopbackAuth && !isLoopbackHost(profile.listenHost)) {
+    if (requireAuth) {
       const fakeReq = new Request(url.toString(), { headers: webHeaders });
       if (!(await validateAuth(fakeReq))) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -243,6 +251,67 @@ export async function startLocalServer(options: StartServerOptions): Promise<Loc
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: { message: (err as Error).message, type: 'server_error', code: 500 } }));
+      }
+      return;
+    }
+
+    if (url.pathname.startsWith('/v1/models/') && req.method === 'GET') {
+      try {
+        const requestedModel = decodeURIComponent(url.pathname.slice('/v1/models/'.length));
+        const allProviders = await getAllProviders();
+        await initAllKeyPools(allProviders);
+        const poolStats = getKeyPoolStats();
+        const created = Math.floor(Date.now() / 1000);
+
+        for (const [providerId, pConfig] of Object.entries(allProviders)) {
+          const found = (pConfig.models || []).find((m) => m.id === requestedModel);
+          if (found) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(
+              JSON.stringify({
+                id: found.id,
+                object: 'model',
+                created,
+                owned_by: providerId,
+                display_name: found.displayName,
+                context_window: found.contextWindow,
+                configured: (poolStats[providerId]?.available || 0) > 0,
+              })
+            );
+            return;
+          }
+        }
+
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: `Model '${requestedModel}' not found.`, type: 'not_found_error', code: 404 } }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { message: (err as Error).message, type: 'server_error', code: 500 } }));
+      }
+      return;
+    }
+
+    if (url.pathname === '/v1/messages/count_tokens' && req.method === 'POST') {
+      try {
+        const rawBody = await readNodeRequestBody(req);
+        let body: any;
+        try {
+          body = JSON.parse(rawBody);
+        } catch {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: { type: 'invalid_request_error', message: 'Invalid JSON in request body.' } }));
+          return;
+        }
+        const inputTokens = Math.max(1, Math.ceil(JSON.stringify({
+          system: body?.system ?? '',
+          messages: body?.messages ?? [],
+          tools: body?.tools ?? [],
+        }).length / 4));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ input_tokens: inputTokens }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: { type: 'server_error', message: (err as Error).message } }));
       }
       return;
     }
@@ -309,7 +378,7 @@ export async function startLocalServer(options: StartServerOptions): Promise<Loc
             }
           }
           res.end();
-          pendingUsageEvents.push({
+          recordLocalUsage({
             provider: provider.name,
             model: body.model,
             apiKeyHash: apiKey.hash,
@@ -331,7 +400,7 @@ export async function startLocalServer(options: StartServerOptions): Promise<Loc
             } else if (apiType === 'anthropicMessages' && provider.headerFormat !== 'anthropic') {
               responseText = JSON.stringify(transformOpenAIToAnthropic(parsed, body.model));
             }
-            pendingUsageEvents.push({
+            recordLocalUsage({
               provider: provider.name,
               model: body.model,
               apiKeyHash: apiKey.hash,

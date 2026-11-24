@@ -27,14 +27,33 @@ export async function GET(request: NextRequest) {
 
     const allProviderDefs = { ...PROVIDERS, ...customProviders };
     const fallbackChains: Record<string, string[]> = {};
+    const providerKeys: Record<string, string[]> = {};
+    const allowKeySync = process.env.ALLOW_LOCAL_KEY_SYNC !== 'false';
+
     await Promise.all(
       Object.entries(allProviderDefs).map(async ([providerName, cfg]) => {
-        const chain = await store.getFallbackChain(
-          providerName,
-          cfg.fallbackProviders || cfg.fallbackProvider
-        );
+        const [chain, managedKeys] = await Promise.all([
+          store.getFallbackChain(
+            providerName,
+            cfg.fallbackProviders || cfg.fallbackProvider
+          ),
+          allowKeySync ? store.getProviderKeys(providerName) : Promise.resolve(null),
+        ]);
         if (chain.length > 0) {
           fallbackChains[providerName] = chain;
+        }
+        if (allowKeySync) {
+          if (managedKeys && managedKeys.length > 0) {
+            providerKeys[providerName] = managedKeys;
+          } else if (cfg.envKeyField && process.env[cfg.envKeyField]) {
+            const envKeys = (process.env[cfg.envKeyField] || '')
+              .split(',')
+              .map((k) => k.trim())
+              .filter(Boolean);
+            if (envKeys.length > 0) {
+              providerKeys[providerName] = envKeys;
+            }
+          }
         }
       })
     );
@@ -43,7 +62,7 @@ export async function GET(request: NextRequest) {
       version,
       generatedAt: new Date().toISOString(),
       providers: customProviders,
-      providerKeys: {},
+      providerKeys,
       modelAliases,
       priorityRules,
       fallbackChains,

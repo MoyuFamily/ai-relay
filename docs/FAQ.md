@@ -6,6 +6,21 @@
 
 ## 1. 部署与环境配置
 
+### Vercel 关联 Upstash for Redis 后 `/admin` 仍提示未配置或保存失败？
+
+1. **务必重新部署**：在 Vercel Dashboard → **Storage** 关联 Upstash for Redis 后，环境变量不会自动应用到旧部署，需进入 **Deployments** 点击 **Redeploy**。
+2. AI Relay 同时自动兼容新版 Vercel Marketplace 默认注入的 `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` 以及旧版 `KV_REST_API_URL` / `KV_REST_API_TOKEN`。
+
+---
+
+### Cloudflare Pages Fork 仓库推送后未自动部署，或定时任务未执行？
+
+1. **Fork 仓库默认禁用 Actions**：请进入你的 Fork 仓库 → **Actions** 标签页，点击启用 Workflows。
+2. **定时任务（探测 / 日报 / D1 清理）**：在 `Settings → Secrets and variables → Actions` 中添加 `DEPLOY_URL=https://你的项目.pages.dev`，`cron.yml` 才会按计划调用 `/api/cron/probe` 与 `/api/cron/usage`。
+3. **首次部署验证**：添加上游 Provider Key 之前，`GET /health` 返回 `503 degraded` 属正常现象，请使用 `GET /health?liveness=1` 确认服务存活，然后打开 `/admin` 添加密钥。
+
+---
+
 ### Cloudflare Pages 部署后登录 `/admin` 提示 `Invalid API key`
 
 **原因：** GitHub Actions Secrets 未配置或尚未同步到 Cloudflare Pages 项目。
@@ -46,10 +61,10 @@
 
 ### 请求返回 `504 Gateway Timeout`
 
-- 默认上游请求超时为 `50000ms`（50 秒），这是为了在 Vercel Serverless 60 秒硬限制前安全返回结构化 JSON 错误。
-- 如果你在 **Docker / VPS 自部署** 或 **本地 CLI** 环境下调用深度推理模型（耗时超过 50 秒），可以通过环境变量调大或关闭超时限制：
+- **Vercel / Cloudflare Serverless** 默认上游超时为 `50000ms`（50 秒），以便在 Serverless 60 秒硬限制前安全返回结构化 JSON 错误。
+- **Docker / VPS 自部署与本地 CLI** 默认上游超时已自动放宽至 `300000ms`（5 分钟）；如需进一步调整或关闭，可设置环境变量：
   ```bash
-  RELAY_UPSTREAM_TIMEOUT_MS=300000   # 设为 5 分钟，或设为 0 关闭超时限制
+  RELAY_UPSTREAM_TIMEOUT_MS=600000   # 设为 10 分钟，或设为 0 关闭超时限制
   ```
 
 ---
@@ -58,8 +73,8 @@
 
 ### 运行 `airelay` 提示 `command not found`
 
-1. 在项目根目录执行 `pnpm install && npm link`。
-2. 确认 npm 全局 bin 目录已加入 `PATH`：`export PATH="$(npm config get prefix)/bin:$PATH"`。
+1. 在项目根目录执行 `pnpm install && pnpm link --global`。
+2. 确认 pnpm 全局 bin 目录已加入 `PATH`（可执行 `pnpm bin -g` 查看路径）。
 3. 或者无需全局链接，直接在仓库内使用：`pnpm run local:start` 或 `pnpm run cli -- --help`。
 
 ---
@@ -67,7 +82,7 @@
 ### `airelay local:start` 默认监听哪个端口？配置文件在哪里？
 
 - **默认监听地址**：`http://127.0.0.1:3147`（可通过 `--port` 与 `--host` 修改）。
-- **本机配置目录**：`~/.ai-relay/config.json`。
+- **本机配置目录**：`~/.ai-relay/config.json`（Profile）与 `~/.ai-relay/relay-config.json`（由 `airelay init` 生成）。
 - **连通性自检**：
   ```bash
   curl http://127.0.0.1:3147/health
@@ -78,8 +93,9 @@
 
 ### `airelay login` 设备绑定失败或提示未配置密钥？
 
-1. 云端或自部署服务端必须配置环境变量 `DEVICE_TOKEN_SECRET`（可用 `openssl rand -hex 32` 生成），用于安全哈希存储设备令牌。
+1. 远端实例只要配置了 `RELAY_API_KEY`（或显式配置了 `DEVICE_TOKEN_SECRET`）即可使用设备绑定。
 2. 打开终端输出的 `/admin/local-relay/verify?code=...` 链接后，输入后台的 `RELAY_ADMIN_KEY`（或 `RELAY_API_KEY`）点击批准，终端即可在 3 秒内自动完成绑定。
+3. 若远端位于 Nginx / Caddy 等反向代理之后，建议配置 `DEPLOY_URL=https://你的域名` 或确保反代传递 `X-Forwarded-Proto` 与 `X-Forwarded-Host` 请求头。
 
 ---
 

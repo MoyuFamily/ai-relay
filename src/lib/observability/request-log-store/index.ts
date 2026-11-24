@@ -7,6 +7,11 @@ import { MemoryRequestLogStore } from './memory-store';
 import { KVRequestLogStore } from './kv-store';
 import { PostgresRequestLogStore } from './postgres-store';
 import { isCloudflareSync } from '@/lib/cf-env';
+import {
+  getRedisRestConfig,
+  hasExplicitFileStorageEnv,
+  shouldUseSelfHostedPostgres,
+} from '@/lib/config/env';
 
 // Test override — when set, takes precedence over environment detection.
 let _override: RequestLogStore | null = null;
@@ -46,25 +51,19 @@ export function getDefaultRequestLogStore(): RequestLogStore {
   if (isCloudflareSync()) {
     return (_kvStore ??= new KVRequestLogStore());
   }
-  // Explicit self-hosted persistent disk storage
-  if ((process.env.RELAY_STORAGE_PATH || process.env.RELAY_DATA_DIR) && !process.env.VERCEL && !process.env.CF_PAGES) {
-    return (_kvStore ??= new KVRequestLogStore());
-  }
-  // VPS/Server: Postgres
-  if (
-    process.env.DATABASE_URL &&
-    !process.env.VERCEL &&
-    !process.env.CF_PAGES &&
-    process.env.NEXT_PHASE !== 'phase-production-build' &&
-    (!process.env.VITEST || process.env.RELAY_ENABLE_POSTGRES_IN_TEST === '1')
-  ) {
+  // VPS/Server: Postgres (takes precedence over default Docker RELAY_DATA_DIR)
+  if (shouldUseSelfHostedPostgres()) {
     return (_pgStore ??= new PostgresRequestLogStore());
+  }
+  // Explicit self-hosted persistent disk storage
+  if (hasExplicitFileStorageEnv() && !process.env.VERCEL && !process.env.CF_PAGES) {
+    return (_kvStore ??= new KVRequestLogStore());
   }
   // Vercel / external KV / self-hosted production disk KV
   if (
     process.env.VERCEL ||
     process.env.CF_PAGES ||
-    process.env.KV_REST_API_URL ||
+    getRedisRestConfig() ||
     (process.env.NODE_ENV === 'production' && !process.env.VITEST && process.env.NEXT_PHASE !== 'phase-production-build')
   ) {
     return (_kvStore ??= new KVRequestLogStore());

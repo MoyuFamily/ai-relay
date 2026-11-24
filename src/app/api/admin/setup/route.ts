@@ -21,7 +21,10 @@ export async function GET(request: NextRequest) {
   const configuredProviders = Object.entries(providers).map(([id, provider]) => ({
     id,
     name: provider.displayName,
-    configured: Boolean(provider.envKeyField ? process.env[provider.envKeyField] : stats[id]?.total),
+    configured: Boolean(
+      (provider.envKeyField && process.env[provider.envKeyField]) ||
+      (stats[id]?.total || 0) > 0
+    ),
     keyCount: stats[id]?.total || 0,
     availableKeys: stats[id]?.available || 0,
     envKeyField: provider.envKeyField,

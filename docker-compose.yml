@@ -17,6 +17,9 @@ services:
       dockerfile: Dockerfile
     container_name: ai-relay
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     ports:
       - "${PORT:-3000}:3000"
     environment:
@@ -27,11 +30,14 @@ services:
       DEVICE_TOKEN_SECRET: ${DEVICE_TOKEN_SECRET:-}
       OPENAI_KEYS: ${OPENAI_KEYS:-}
       CLAUDE_KEYS: ${CLAUDE_KEYS:-}
+      GEMINI_KEYS: ${GEMINI_KEYS:-}
       DEEPSEEK_KEYS: ${DEEPSEEK_KEYS:-}
+      OPENROUTER_KEYS: ${OPENROUTER_KEYS:-}
       XIAOMI_KEYS: ${XIAOMI_KEYS:-}
       # Storage: leave DATABASE_URL empty to use persistent disk (/app/data/kv-store.json),
-      # or set DATABASE_URL=postgresql://... for multi-replica PostgreSQL mode.
+      # or set DATABASE_URL=postgresql://... for multi-replica PostgreSQL mode (takes precedence).
       RELAY_DATA_DIR: /app/data
+      RELAY_STORAGE_BACKEND: ${RELAY_STORAGE_BACKEND:-}
       DATABASE_URL: ${DATABASE_URL:-}
       DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
       # Built-in background scheduler (health probes, daily reports, webhook dispatch)

@@ -475,7 +475,12 @@ export class KVUsageStorage implements UsageStorage {
    */
   get shouldRecordDirect(): boolean {
     if (isCloudflareSync()) return false;
-    if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) return false;
+    if (
+      (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) ||
+      (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+    ) {
+      return false;
+    }
     if (process.env.RELAY_STORAGE_PATH?.trim() || process.env.RELAY_DATA_DIR?.trim()) return true;
     return (
       process.env.NODE_ENV === 'production' &&

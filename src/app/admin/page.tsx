@@ -335,8 +335,14 @@ export default function AdminPage() {
             </button>
           </div>
           {error && (
-            <p style={{ color: '#f87171', margin: 0, fontSize: '0.9rem', fontWeight: 500 }}>
-              {error === 'unauthorized' ? t.invalidKey : (error === 'failed_fetch' ? t.failedFetch : error)}
+            <p style={{ color: '#f87171', margin: 0, fontSize: '0.9rem', fontWeight: 500, textAlign: 'center', lineHeight: 1.5 }}>
+              {error === 'unauthorized'
+                ? t.invalidKey
+                : error === 'server_not_configured'
+                  ? t.serverNotConfigured
+                  : error === 'failed_fetch'
+                    ? t.failedFetch
+                    : error}
             </p>
           )}
         </div>
@@ -454,6 +460,18 @@ export default function AdminPage() {
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)'; e.currentTarget.style.color = '#d1d5db'; }}
           >
             {t.navHome}
+          </Link>
+          <Link
+            href="/admin/local-relay"
+            style={{
+              padding: '0.5rem 1rem', borderRadius: '8px', border: '1px solid rgba(255, 255, 255, 0.08)',
+              backgroundColor: 'rgba(255, 255, 255, 0.04)', color: '#d1d5db', textDecoration: 'none',
+              fontSize: '0.85rem', transition: 'all 0.2s'
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)'; e.currentTarget.style.color = '#fff'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)'; e.currentTarget.style.color = '#d1d5db'; }}
+          >
+            💻 {t.navLocalRelay}
           </Link>
           <CcSwitchImportButton
             apiKey={apiKey}
@@ -576,6 +594,8 @@ export default function AdminPage() {
         {activeTab === 'setup' && (
           <SetupTab
             t={t}
+            lang={lang}
+            apiKey={apiKey}
             setupData={setupData}
             loading={v21Loading}
             onRunChecks={() => fetchSetup(true)}

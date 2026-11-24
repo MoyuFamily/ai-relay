@@ -36,12 +36,35 @@ export async function login(cloudUrl: string, options: LoginOptions) {
   });
 
   if (!response.ok) {
-    console.error('❌ Failed to create device session');
+    const errBody = await response.text().catch(() => '');
+    console.error(`❌ Failed to create device session (HTTP ${response.status})${errBody ? `: ${errBody}` : ''}`);
     process.exit(1);
   }
 
-  const { device_code, verification_url, expires_in } =
+  const { device_code, verification_url: rawVerificationUrl, expires_in } =
     (await response.json()) as SessionCreatedResponse;
+
+  // If the server sits behind a reverse proxy and returned an internal origin
+  // (e.g. http://0.0.0.0:3000 or http://localhost:3000), rewrite it using the
+  // user-supplied cloudUrl so the browser link actually works.
+  let verification_url = rawVerificationUrl;
+  try {
+    const parsedVerify = new URL(rawVerificationUrl);
+    const parsedCloud = new URL(normalizedUrl);
+    const isInternalHost =
+      parsedVerify.hostname === '0.0.0.0' ||
+      parsedVerify.hostname === '127.0.0.1' ||
+      parsedVerify.hostname === 'localhost';
+    const isCloudPublic =
+      parsedCloud.hostname !== '0.0.0.0' &&
+      parsedCloud.hostname !== '127.0.0.1' &&
+      parsedCloud.hostname !== 'localhost';
+    if (isInternalHost && isCloudPublic) {
+      verification_url = `${normalizedUrl}${parsedVerify.pathname}${parsedVerify.search}`;
+    }
+  } catch {
+    // Keep server-provided URL if parsing fails
+  }
 
   console.log('\n📱 Please verify this device in your browser:');
   console.log(`   ${verification_url}`);

@@ -10,19 +10,30 @@ import {
 } from '@/app/admin/components/provider-templates';
 
 describe('provider templates', () => {
-  it('contains the required built-in provider templates for iteration one', () => {
+  it('contains the required built-in provider templates including mainstream & local options', () => {
     expect(PROVIDER_TEMPLATES.map((template) => template.id)).toEqual([
       'openai',
       'anthropic',
       'google',
+      'openrouter',
+      'siliconflow',
       'aliyun',
+      'volcengine',
+      'zhipu',
       'baidu',
+      'xai',
       'azure',
       'mistral',
       'groq',
       'deepseek',
+      'ollama',
       'custom',
     ]);
+
+    // Verify Google Gemini uses the OpenAI-compatible /v1beta/openai endpoint
+    expect(findProviderTemplate('google')?.baseUrl).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/openai'
+    );
   });
 
   it('prefills OpenAI template fields and env key naming', () => {
@@ -104,6 +115,9 @@ describe('provider templates', () => {
     expect(validateDraftProvider(validDraft)).toBeNull();
     expect(validateDraftProvider({ ...validDraft, name: 'bad-id' })).toBe('invalid-provider-id');
     expect(validateDraftProvider({ ...validDraft, baseUrl: 'http://api.openai.com/v1' })).toBe('invalid-base-url');
+    // Local/LAN Ollama HTTP endpoints must be allowed
+    expect(validateDraftProvider({ ...validDraft, baseUrl: 'http://127.0.0.1:11434/v1' })).toBeNull();
+    expect(validateDraftProvider({ ...validDraft, baseUrl: 'http://localhost:11434/v1' })).toBeNull();
     expect(validateDraftProvider({ ...validDraft, modelPrefixes: [] })).toBe('missing-model-prefixes');
   });
 

@@ -9,6 +9,11 @@ import type { ProviderConfig } from '../providers/types';
 import type { PriorityRule } from './priority-rules-core';
 import { normalizePriorityRules } from './priority-rules-core';
 import { getCFEnvSync, getCFEnv, isCloudflareSync } from '@/lib/cf-env';
+import {
+  getRedisRestConfig,
+  hasExplicitFileStorageEnv,
+  shouldUseSelfHostedPostgres,
+} from '@/lib/config/env';
 
 let _kv: any = null;
 
@@ -218,15 +223,8 @@ function isNextProductionBuildPhase(): boolean {
 }
 
 function canUseSelfHostedPostgres(): boolean {
-  if (isNextProductionBuildPhase()) return false;
-  if (process.env.VERCEL || process.env.CF_PAGES) return false;
-  if (process.env.VITEST && process.env.RELAY_ENABLE_POSTGRES_IN_TEST !== '1') return false;
-  const url = process.env.DATABASE_URL?.trim() || '';
-  return /^postgres(ql)?:\/\//i.test(url);
-}
-
-function hasExplicitFileStorageEnv(): boolean {
-  return Boolean(process.env.RELAY_STORAGE_PATH?.trim() || process.env.RELAY_DATA_DIR?.trim());
+  if (isCloudflareSync()) return false;
+  return shouldUseSelfHostedPostgres();
 }
 
 function canUseDefaultSelfHostedFileStorage(): boolean {
@@ -241,14 +239,14 @@ export async function detectStorageBackend(): Promise<StorageBackendType> {
     const cfEnv = getCFEnvSync() || await getCFEnv();
     return cfEnv?.KV ? 'cloudflare-kv-d1' : 'none';
   }
-  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+  if (getRedisRestConfig()) {
     return 'vercel-kv';
-  }
-  if (!process.env.VERCEL && !process.env.CF_PAGES && hasExplicitFileStorageEnv()) {
-    return 'file';
   }
   if (canUseSelfHostedPostgres()) {
     return 'postgres';
+  }
+  if (!process.env.VERCEL && !process.env.CF_PAGES && hasExplicitFileStorageEnv()) {
+    return 'file';
   }
   if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test') {
     return 'memory';
@@ -263,9 +261,9 @@ export async function detectStorageBackend(): Promise<StorageBackendType> {
  * Get KV client for the current environment.
  * Supports:
  * 1. Cloudflare Pages/Workers KV binding (`CFKVAdapter`)
- * 2. Vercel KV / Upstash REST API (`@vercel/kv`)
- * 3. Self-hosted explicit file storage (`RELAY_STORAGE_PATH` / `RELAY_DATA_DIR` -> `FileKVAdapter`)
- * 4. Self-hosted PostgreSQL (`DATABASE_URL` -> `PostgresKVAdapter`)
+ * 2. Vercel KV / Upstash REST API (`KV_REST_API_*` or `UPSTASH_REDIS_REST_*`)
+ * 3. Self-hosted PostgreSQL (`DATABASE_URL` -> `PostgresKVAdapter`)
+ * 4. Self-hosted explicit file storage (`RELAY_STORAGE_PATH` / `RELAY_DATA_DIR` -> `FileKVAdapter`)
  * 5. Development / Test in-memory mock (`createMemoryMockKV`)
  * 6. Self-hosted zero-dependency production default (`./data/kv-store.json` -> `FileKVAdapter`)
  */
@@ -284,17 +282,30 @@ export async function getKV() {
     return null;
   }
 
-  // 2. Vercel KV / Upstash REST API
-  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
-    if (_kv && _kv._backendType === 'vercel-kv') return _kv;
+  // 2. Vercel KV / Upstash REST API (supports both KV_REST_API_* and UPSTASH_REDIS_REST_*)
+  const redisConfig = getRedisRestConfig();
+  if (redisConfig) {
+    if (
+      _kv &&
+      _kv._backendType === 'vercel-kv' &&
+      _kv._redisUrl === redisConfig.url &&
+      _kv._redisToken === redisConfig.token
+    ) {
+      return _kv;
+    }
     try {
       const mod = await import('@vercel/kv');
-      _kv = mod.kv || mod.createClient({
-        url: process.env.KV_REST_API_URL,
-        token: process.env.KV_REST_API_TOKEN,
-      });
+      _kv =
+        redisConfig.source === 'vercel-kv' && mod.kv
+          ? mod.kv
+          : mod.createClient({
+              url: redisConfig.url,
+              token: redisConfig.token,
+            });
       if (_kv && typeof _kv === 'object') {
         _kv._backendType = 'vercel-kv';
+        _kv._redisUrl = redisConfig.url;
+        _kv._redisToken = redisConfig.token;
       }
       return _kv;
     } catch {
@@ -307,17 +318,7 @@ export async function getKV() {
     return null;
   }
 
-  // 3. Explicit self-hosted persistent file storage (RELAY_STORAGE_PATH or RELAY_DATA_DIR)
-  if (!process.env.VERCEL && !process.env.CF_PAGES && hasExplicitFileStorageEnv()) {
-    try {
-      const { getFileKVAdapter } = await import('../storage/file-kv-adapter');
-      return getFileKVAdapter();
-    } catch {
-      return null;
-    }
-  }
-
-  // 4. Self-hosted PostgreSQL (multi-instance / Docker / VPS with DATABASE_URL)
+  // 3. Self-hosted PostgreSQL (multi-instance / Docker Compose --profile postgres / VPS with DATABASE_URL)
   if (canUseSelfHostedPostgres()) {
     try {
       const url = process.env.DATABASE_URL!.trim();
@@ -329,6 +330,16 @@ export async function getKV() {
       _pgKv = new PostgresKVAdapter(getPostgresSql());
       _pgKvUrl = url;
       return _pgKv;
+    } catch {
+      return null;
+    }
+  }
+
+  // 4. Explicit self-hosted persistent file storage (RELAY_STORAGE_PATH or RELAY_DATA_DIR)
+  if (!process.env.VERCEL && !process.env.CF_PAGES && hasExplicitFileStorageEnv()) {
+    try {
+      const { getFileKVAdapter } = await import('../storage/file-kv-adapter');
+      return getFileKVAdapter();
     } catch {
       return null;
     }

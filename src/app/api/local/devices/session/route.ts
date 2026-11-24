@@ -33,6 +33,25 @@ function parseSession(raw: unknown): DeviceSessionRecord | null {
   return null;
 }
 
+function resolvePublicOrigin(request: NextRequest): string {
+  const configuredDeployUrl = process.env.DEPLOY_URL?.trim();
+  if (configuredDeployUrl && /^https?:\/\//i.test(configuredDeployUrl)) {
+    return configuredDeployUrl.replace(/\/+$/, '');
+  }
+
+  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
+  const hostHeader = forwardedHost || request.headers.get('host')?.trim();
+  const forwardedProto = request.headers.get('x-forwarded-proto')?.split(',')[0]?.trim();
+
+  if (hostHeader && !hostHeader.startsWith('0.0.0.0')) {
+    const fallbackProto = new URL(request.url).protocol.replace(':', '') || 'https';
+    const proto = forwardedProto || fallbackProto;
+    return `${proto}://${hostHeader}`;
+  }
+
+  return new URL(request.url).origin;
+}
+
 // POST /api/local/devices/session - Create device code
 export async function POST(request: NextRequest) {
   const kv = await getKV();
@@ -77,7 +96,7 @@ export async function POST(request: NextRequest) {
   // Store with native TTL (supported on both Vercel KV and CFKVAdapter)
   await kv.set(`device_session:${deviceCode}`, JSON.stringify(record), { ex: 600 });
 
-  const verificationUrl = `${new URL(request.url).origin}/admin/local-relay/verify?code=${encodeURIComponent(deviceCode)}`;
+  const verificationUrl = `${resolvePublicOrigin(request)}/admin/local-relay/verify?code=${encodeURIComponent(deviceCode)}`;
 
   return Response.json({
     device_code: deviceCode,

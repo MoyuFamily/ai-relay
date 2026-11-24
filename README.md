@@ -5,7 +5,7 @@
 **Your personal & team AI API gateway — deploy serverless, self-host with Docker, or run locally**
 
 <p>
-  <a href="https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY,RELAY_ADMIN_KEY,RELAY_SIGNING_SECRET&envDescription=API%20authentication%20keys%20(required%20for%20security)&envLink=https://github.com/MoyuFamily/ai-relay#-quick-start">
+  <a href="https://vercel.com/new/clone?repository-url=https://github.com/MoyuFamily/ai-relay&env=RELAY_API_KEY&envDescription=Client%20and%20Admin%20authentication%20key%20(RELAY_ADMIN_KEY%20is%20optional%20and%20falls%20back%20to%20RELAY_API_KEY)&envLink=https://github.com/MoyuFamily/ai-relay#-quick-start">
     <img src="https://vercel.com/button" alt="Deploy with Vercel" height="36">
   </a>
   &nbsp;
@@ -33,7 +33,7 @@
 
 > **One gateway for all your AI APIs.**
 >
-> Unify OpenAI, Anthropic (Claude), DeepSeek, MiMo, and any OpenAI/Anthropic-compatible provider behind a single endpoint.
+> Unify OpenAI, Anthropic (Claude), Google Gemini, DeepSeek, OpenRouter, and any OpenAI/Anthropic-compatible provider (SiliconFlow, Volcengine, Zhipu, Groq, Ollama, etc.) behind a single endpoint.
 > Automatic multi-key rotation, cross-protocol failover, circuit breaking, and smart routing — zero glue code required.
 
 ### Choose Your Deployment Mode
@@ -44,7 +44,7 @@
 | **Runtime** | Vercel Node.js Serverless (`60s` max) | Cloudflare Workers (`@opennextjs/cloudflare`) | Standalone Node.js container / process | Local HTTP server (`127.0.0.1:3147`) |
 | **Storage** | Upstash Redis (`@vercel/kv`) | Cloudflare KV (config) + D1 (usage) | Persistent Disk (`./data`) **or** PostgreSQL | Cloud snapshot / local JSON / env |
 | **Token stats** | Configurable sampling (`RELAY_KV_USAGE_SAMPLE_RATE`) | Direct D1 writes + byte-estimated streams | **100% real-time exact** (Disk or Postgres) | Syncs batched usage to Cloud Admin |
-| **Background cron** | Vercel Cron (`/api/cron/*`) | Workers `scheduled()` + D1 cleanup | **Built-in scheduler** (auto-enabled) | 30s config sync + 60s heartbeat |
+| **Background cron** | Vercel Cron (`/api/cron/*` + daily reports) | GitHub Actions Cron (probes, reports & D1 cleanup) | **Built-in scheduler** (auto-enabled) | 30s config sync + 60s heartbeat |
 | **Platform limits** | Hobby free-tier bandwidth & KV command caps | ~10ms Free Worker CPU budget, 6 sockets | **None** (bound only by your server) | Localhost only unless bound to LAN |
 
 > **TL;DR:** Try **Vercel** in 2 minutes → use **Cloudflare** for heavy serverless coding → deploy **Docker / VPS** for zero serverless timeouts or team sharing → run **Local CLI** on your laptop for local agents like Codex and Claude Code. All four share the exact same Relay Core and API!
@@ -55,22 +55,15 @@
 
 ### ☁️ 1. Deploy to Vercel (Fastest Start)
 
-1. Click **Deploy with Vercel** above and set:
-
-| Variable | Description |
-|----------|-------------|
-| `RELAY_API_KEY` | Client authentication key for `/v1/*` (`Bearer` or `X-API-Key`) |
-| `RELAY_ADMIN_KEY` | Admin dashboard key (optional; falls back to `RELAY_API_KEY`) |
-| `RELAY_SIGNING_SECRET` | HMAC signing secret for temporary keys (optional) |
-
-2. In Vercel Dashboard → **Storage** → attach **Upstash for Redis** (`KV_REST_API_URL` & `KV_REST_API_TOKEN`).
-3. Visit `/admin` to add upstream provider keys, then call `/v1/chat/completions`:
+1. Click **Deploy with Vercel** above and set `RELAY_API_KEY` (`RELAY_ADMIN_KEY` and `RELAY_SIGNING_SECRET` are optional and automatically fall back to `RELAY_API_KEY`).
+2. In Vercel Dashboard → **Storage** → attach **Upstash for Redis** (both `UPSTASH_REDIS_REST_*` and `KV_REST_API_*` are supported automatically), then trigger a **Redeploy** under **Deployments** so the injected variables take effect.
+3. Visit `/admin` (sign in with `RELAY_API_KEY`) to add upstream provider keys and copy client snippets:
 
 ```bash
 curl -X POST https://your-project.vercel.app/v1/chat/completions \
   -H "Authorization: Bearer YOUR_RELAY_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model": "gpt-5.4", "messages": [{"role": "user", "content": "Hello!"}]}'
+  -d '{"model": "gpt-6-luna", "messages": [{"role": "user", "content": "Hello!"}]}'
 ```
 
 <details id="deploy-cloudflare">
@@ -78,55 +71,84 @@ curl -X POST https://your-project.vercel.app/v1/chat/completions \
 
 **Prerequisites:** [Cloudflare account](https://dash.cloudflare.com/sign-up) (free) + GitHub fork.
 
-**Step 1 — Configure GitHub Repository Secrets** (`Settings → Secrets and variables → Actions`):
+**Step 1 — Enable GitHub Actions on your fork**
 
-| Secret | Description | Required |
-|--------|-------------|----------|
-| `CLOUDFLARE_API_TOKEN` | Token with `Cloudflare Pages:Edit`, `D1:Edit`, `Workers KV Storage:Edit` | ✅ |
+GitHub disables Actions on forked repositories by default. Open your fork → **Actions** tab → click **"I understand my workflows, go ahead and enable them"**.
+
+**Step 2 — Configure GitHub Repository Secrets** (`Settings → Secrets and variables → Actions → Repository secrets`):
+
+| Secret / Variable | Description | Required |
+|-------------------|-------------|----------|
+| `CLOUDFLARE_API_TOKEN` | Create at [Cloudflare API Tokens](https://dash.cloudflare.com/profile/api-tokens) with `Cloudflare Pages:Edit`, `D1:Edit`, `Workers KV Storage:Edit` | ✅ |
 | `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare Account ID | ✅ |
-| `RELAY_API_KEY` | Client authentication key | ✅ |
-| `RELAY_ADMIN_KEY` | Admin login key (optional, defaults to `RELAY_API_KEY`) | ⬜ |
+| `RELAY_API_KEY` | Client & Admin authentication key | ✅ |
+| `RELAY_ADMIN_KEY` | Separate Admin login key (optional, falls back to `RELAY_API_KEY`) | ⬜ |
 | `RELAY_SIGNING_SECRET` | Temporary key signing secret (optional) | ⬜ |
-| `DEVICE_TOKEN_SECRET` | Device token hash secret for `airelay login` (optional) | ⬜ |
+| `DEVICE_TOKEN_SECRET` | Device token hash secret for `airelay login` (optional, derived from relay key by default) | ⬜ |
 | `CRON_SECRET` | Authenticates scheduled probe/report jobs (optional) | ⬜ |
+| `DEPLOY_URL` | Your public deployment URL, e.g. `https://your-project.pages.dev` (required if you want GitHub Actions `cron.yml` to run daily probes, webhook reports, and D1 cleanup) | ⬜ |
 
-**Step 2 — Push or trigger workflow**
+**Step 3 — Push or trigger workflow**
 
-Push to `main` (or trigger **Deploy to Cloudflare Pages** in GitHub Actions). The workflow automatically provisions D1 + KV, runs migrations, builds the OpenNext bundle, and syncs secrets.
+Push to `main` (or trigger **Deploy to Cloudflare Pages** in GitHub Actions). The workflow automatically provisions D1 + KV, runs migrations, builds the OpenNext bundle, bulk-syncs secrets, and prints direct links in the run summary.
 
-**Step 3 — Verify**
+**Step 4 — Verify & add keys**
 
 ```bash
-curl https://your-project.pages.dev/health
+# Confirm the instance booted cleanly (returns 200 even before adding keys)
+curl https://your-project.pages.dev/health?liveness=1
 ```
+
+Open `https://your-project.pages.dev/admin` to add upstream provider keys (`GET /health` returns `200 healthy` once ≥1 key is added).
 
 </details>
 
 <details id="deploy-self-hosted">
 <summary><strong>🐳 3. Self-Host with Docker / VPS (Disk or PostgreSQL)</strong></summary>
 
-Self-hosted mode runs as a standalone Node.js server with **built-in cron scheduling** (periodic health probes, daily usage aggregation, and webhook reports) and **container liveness support** (`/health?liveness=1`).
+Self-hosted mode runs as a standalone Node.js server with **5-minute default upstream timeouts** (no 60s serverless cap), **built-in cron scheduling** (periodic health probes, daily usage aggregation, cleanup, and webhook reports), and **container liveness support** (`/health?liveness=1`).
 
-#### Option A — Single-Container Persistent Disk (Zero External DB)
+#### Option A — Pre-built GHCR Image (One Command, No Git Clone Needed)
+
+```bash
+docker run -d \
+  --name ai-relay \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -e RELAY_API_KEY=your-strong-secret \
+  -v ai-relay-data:/app/data \
+  ghcr.io/moyufamily/ai-relay:latest
+```
+
+#### Option B — Docker Compose / One-Command Quick Start (Auto-reads `.env`)
 
 Persists all Admin settings, keys, aliases, routing rules, quotas, and usage in `/app/data/kv-store.json`:
 
 ```bash
 git clone https://github.com/MoyuFamily/ai-relay.git && cd ai-relay
+
+# Auto-generate RELAY_API_KEY into .env and launch:
+bash scripts/quick-start.sh
+
+# Or manually:
 RELAY_API_KEY=your-strong-secret docker compose up -d --build
 ```
 
-#### Option B — Multi-Instance High Availability with PostgreSQL
+#### Option C — Multi-Instance High Availability with PostgreSQL
 
-Pass `DATABASE_URL` — AI Relay **auto-creates all PostgreSQL tables and indexes on startup** (zero manual migration steps):
+Pass `DATABASE_URL` (takes precedence over default `RELAY_DATA_DIR`) — AI Relay **auto-creates all PostgreSQL tables and indexes on startup** (zero manual migration steps):
 
 ```bash
+# One-command quick start with bundled PostgreSQL:
+bash scripts/quick-start.sh --postgres
+
+# Or manually:
 DATABASE_URL=postgresql://airelay:airelay@postgres:5432/airelay \
 RELAY_API_KEY=your-strong-secret \
 docker compose --profile postgres up -d --build
 ```
 
-#### Option C — Bare-Metal / PM2 / Systemd
+#### Option D — Bare-Metal / PM2 / Systemd
 
 ```bash
 pnpm install --frozen-lockfile
@@ -149,19 +171,23 @@ Run a lightweight local gateway on `http://127.0.0.1:3147` for Codex, Claude Cod
 
 ```bash
 git clone https://github.com/MoyuFamily/ai-relay.git && cd ai-relay
-pnpm install && npm link
+pnpm install && pnpm link --global
 
 # Option A: Sync providers & keys from your Cloud / Self-Hosted Admin
 airelay login https://your-relay.example.com
 airelay local:start
 
-# Option B: Standalone local config file or environment variables
+# Option B: Interactive setup wizard (~/.ai-relay/relay-config.json)
+airelay init
+airelay local:start
+
+# Option C: Standalone local config file or environment variables
 airelay local:start --config ./relay-config.json
 OPENAI_KEYS="sk-xxx" airelay local:start
 
-# Optional: Auto-configure Codex CLI
+# Optional: Auto-configure Codex / Claude Code
 airelay agent:install codex
-airelay agent:doctor codex
+airelay agent:install claude-code
 ```
 
 </details>
@@ -226,7 +252,7 @@ client = OpenAI(
 )
 
 stream = client.chat.completions.create(
-    model="gpt-5.4",
+    model="gpt-6.2-sol",
     messages=[{"role": "user", "content": "Hello!"}],
     stream=True,
 )
@@ -242,7 +268,7 @@ curl -X POST https://your-relay.example.com/v1/messages \
   -H "anthropic-version: 2023-06-01" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "claude-sonnet-4-6",
+    "model": "claude-sonnet-5-5",
     "max_tokens": 1024,
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
@@ -254,7 +280,7 @@ curl -X POST https://your-relay.example.com/v1/messages \
 curl -X POST https://your-relay.example.com/v1/responses \
   -H "Authorization: Bearer YOUR_RELAY_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model": "gpt-5.4", "input": "Summarize this repository", "stream": true}'
+  -d '{"model": "gpt-6.2-sol", "input": "Summarize this repository", "stream": true}'
 ```
 
 ---
@@ -269,16 +295,17 @@ See [`.env.local.example`](.env.local.example) for the complete template.
 | `RELAY_ADMIN_KEY` | Admin dashboard key(s) (falls back to `RELAY_API_KEY` if unset) | ⬜ |
 | `RELAY_SIGNING_SECRET` | HMAC signing secret for temporary client keys | ⬜ |
 | `DEVICE_TOKEN_SECRET` | Secret for hashing `airelay login` device tokens | ⬜ |
-| `OPENAI_KEYS` / `CLAUDE_KEYS` / `DEEPSEEK_KEYS` / `XIAOMI_KEYS` | Static provider keys (can also be managed dynamically in `/admin`) | ⬜ |
-| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Vercel KV / Upstash Redis credentials (Vercel mode) | ⬜ |
+| `OPENAI_KEYS` / `CLAUDE_KEYS` / `GEMINI_KEYS` / `DEEPSEEK_KEYS` / `OPENROUTER_KEYS` | Static provider keys (can also be managed dynamically in `/admin`) | ⬜ |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` (or `KV_REST_API_*`) | Vercel / Upstash Redis credentials (both naming schemes auto-detected) | ⬜ |
 | `RELAY_DATA_DIR` / `RELAY_STORAGE_PATH` | Persistent JSON state directory/file for single-node self-hosted mode (default `./data`) | ⬜ |
-| `DATABASE_URL` | PostgreSQL connection string for multi-node self-hosted mode (auto-bootstraps schema) | ⬜ |
+| `DATABASE_URL` | PostgreSQL connection string for multi-node self-hosted mode (auto-bootstraps schema; takes precedence over default `RELAY_DATA_DIR`) | ⬜ |
 | `ENABLE_SELF_HOSTED_CRON` | Enable built-in background probes & daily reports on self-hosted servers (default `true`) | ⬜ |
 | `SELF_HOSTED_PROBE_INTERVAL_MINUTES` | Upstream health probe interval in minutes on self-hosted servers (default `60`) | ⬜ |
+| `ALLOW_LOCAL_KEY_SYNC` | Allow authenticated Local CLI devices to sync provider keys from `/api/local/config/snapshot` (default `true`, set `false` to disable) | ⬜ |
 | `RELAY_DAILY_LIMIT` / `RELAY_MONTHLY_LIMIT` | Global daily/monthly request limits (`0` = unlimited) | ⬜ |
 | `RELAY_MAX_CONCURRENT` | Per-instance concurrent `/v1/*` request cap (`0` = unlimited) | ⬜ |
-| `RELAY_ALLOWED_ORIGINS` | Allowed browser CORS origins (comma-separated or `*`) | ⬜ |
-| `RELAY_UPSTREAM_TIMEOUT_MS` | Upstream timeout in ms (default `50000`, `0` to disable) | ⬜ |
+| `RELAY_ALLOWED_ORIGINS` (alias `CORS_ORIGINS`) | Allowed browser CORS origins (comma-separated or `*`) | ⬜ |
+| `RELAY_UPSTREAM_TIMEOUT_MS` | Upstream timeout in ms (`50000` default on Serverless, `300000` on self-hosted/local, `0` to disable) | ⬜ |
 | `RELAY_KV_USAGE_SAMPLE_RATE` | KV usage sampling rate for Upstash quota saving (`1` = 100%, `0.1` = 10%) | ⬜ |
 
 ---
@@ -332,7 +359,7 @@ We welcome infrastructure sponsorship for this effort. Sponsors providing the en
 - **[Technical Design](docs/TECH-DESIGN.md)** — End-to-end request lifecycle, protocol translation, and platform constraints
 - **[Storage Architecture](docs/storage-architecture.md)** — Multi-platform KV / D1 / Disk / PostgreSQL storage adapters
 - **[FAQ](docs/FAQ.md)** — Troubleshooting deployment, auth, Docker, and local relay
-- **[Release Flow](docs/RELEASE-FLOW.md)** — Branching & CI/CD workflow for forks and maintainers
+- **[Release Flow](docs/RELEASE-FLOW.md)** — Streamlined `main`-branch CI/CD and release guide
 - **[Changelog](CHANGELOG.md)** — Version history
 
 ## 📄 License

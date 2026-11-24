@@ -59,9 +59,21 @@ export function useAdminHandlers(apiKey: string, t: any) {
         headers: { Authorization: `Bearer ${apiKey}` },
         cache: 'no-store',
       });
+      if (res.status === 503) {
+        const errJson = await res.json().catch(() => null);
+        if (errJson?.error?.type === 'server_not_configured') {
+          setError('server_not_configured');
+          setAuthenticated(false);
+          return;
+        }
+      }
       if (res.status === 401) {
         setError('unauthorized');
         setAuthenticated(false);
+        return;
+      }
+      if (!res.ok) {
+        setError('failed_fetch');
         return;
       }
       const json = await res.json();

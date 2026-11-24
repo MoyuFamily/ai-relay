@@ -3,6 +3,7 @@
 // ============================================================
 
 import { isCloudflareSync } from '../cf-env';
+import { getRedisRestConfig, shouldUseSelfHostedPostgres } from '../config/env';
 
 export interface RuntimeCapabilities {
   runtime: 'vercel' | 'cloudflare' | 'local' | 'server';
@@ -35,8 +36,7 @@ export function detectRuntime(): RuntimeCapabilities {
     };
   }
 
-  const dbUrl = process.env.DATABASE_URL || '';
-  if (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) {
+  if (shouldUseSelfHostedPostgres()) {
     return {
       runtime: 'server',
       persistentProcess: true,
@@ -56,7 +56,7 @@ export function detectRuntime(): RuntimeCapabilities {
       persistentProcess: true,
       publicEndpoint: true,
       localAgentSetup: false,
-      storage: process.env.KV_REST_API_URL ? 'kv' : 'file',
+      storage: getRedisRestConfig() ? 'kv' : 'file',
     };
   }
 

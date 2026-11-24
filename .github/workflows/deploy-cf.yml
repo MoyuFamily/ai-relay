@@ -2,19 +2,22 @@ name: Deploy to Cloudflare Pages
 
 on:
   push:
-    branches: [main, pre-release]
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: deploy-cf-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.ref_name == (vars.CLOUDFLARE_DEPLOY_BRANCH || 'main') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       deployments: write
     env:
       CLOUDFLARE_PAGES_PROJECT_NAME: ${{ vars.CLOUDFLARE_PAGES_PROJECT_NAME || 'ai-relay' }}
-      CLOUDFLARE_PAGES_PRODUCTION_BRANCH: ${{ vars.CLOUDFLARE_PAGES_PRODUCTION_BRANCH || vars.CLOUDFLARE_DEPLOY_BRANCH || 'main' }}
+      CLOUDFLARE_PAGES_PRODUCTION_BRANCH: main
 
     steps:
       - uses: actions/checkout@v4
@@ -60,8 +63,15 @@ jobs:
         run: |
           set -euo pipefail
 
+          PROJECT_NAME="${CLOUDFLARE_PAGES_PROJECT_NAME}"
+          D1_NAME="${PROJECT_NAME}"
+
+          # Keep wrangler.toml project & D1 names aligned with CLOUDFLARE_PAGES_PROJECT_NAME
+          sed -i "s|^name = .*|name = \"${PROJECT_NAME}\"|" wrangler.toml
+          sed -i "s|^database_name = .*|database_name = \"${D1_NAME}\"|" wrangler.toml
+
           # ─── D1 Database ───────────────────────────────────────────
-          echo "=== Provisioning D1 database ==="
+          echo "=== Provisioning D1 database (${D1_NAME}) ==="
 
           # Try to get database ID from existing databases
           echo "Fetching D1 database list..."
@@ -70,19 +80,18 @@ jobs:
           echo "$D1_LIST_OUT" | head -20
 
           # Try JSON parsing first
-          DATABASE_ID=$(echo "$D1_LIST_OUT" | jq -r '.[] | select(.name == "ai-relay") | .uuid' 2>/dev/null || echo "")
+          DATABASE_ID=$(echo "$D1_LIST_OUT" | jq -r --arg name "$D1_NAME" '.[] | select(.name == $name) | .uuid' 2>/dev/null || echo "")
 
           # Fallback: grep UUID from any format (JSON or plain text)
           if [ -z "$DATABASE_ID" ] || [ "$DATABASE_ID" = "null" ]; then
             echo "JSON parsing failed, trying regex extraction..."
-            # Look for ai-relay followed by UUID pattern
-            DATABASE_ID=$(echo "$D1_LIST_OUT" | grep -A 5 -i "ai-relay" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1 || echo "")
+            DATABASE_ID=$(echo "$D1_LIST_OUT" | grep -A 5 -i "${D1_NAME}" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1 || echo "")
           fi
 
           # If still not found, try creating it
           if [ -z "$DATABASE_ID" ] || [ "$DATABASE_ID" = "null" ]; then
             echo "D1 database not found, attempting to create..."
-            CREATE_OUT=$(pnpm exec wrangler d1 create ai-relay 2>&1 || true)
+            CREATE_OUT=$(pnpm exec wrangler d1 create "${D1_NAME}" 2>&1 || true)
             echo "$CREATE_OUT"
 
             # Extract UUID from create output
@@ -92,18 +101,16 @@ jobs:
             if [ -z "$DATABASE_ID" ] || [ "$DATABASE_ID" = "null" ]; then
               if echo "$CREATE_OUT" | grep -qi "already exists\|name already in use"; then
                 echo "Database exists but UUID not found. Retrying fetch with verbose output..."
-                sleep 2  # Give Cloudflare API a moment
+                sleep 2
 
-                # Try multiple fetch attempts
                 for i in 1 2 3; do
                   echo "Attempt $i to fetch database list..."
                   D1_LIST_OUT=$(pnpm exec wrangler d1 list 2>&1 || echo "")
                   echo "$D1_LIST_OUT"
 
-                  # Try all possible extraction methods
-                  DATABASE_ID=$(echo "$D1_LIST_OUT" | jq -r '.[] | select(.name == "ai-relay") | .uuid' 2>/dev/null || echo "")
+                  DATABASE_ID=$(echo "$D1_LIST_OUT" | jq -r --arg name "$D1_NAME" '.[] | select(.name == $name) | .uuid' 2>/dev/null || echo "")
                   if [ -z "$DATABASE_ID" ] || [ "$DATABASE_ID" = "null" ]; then
-                    DATABASE_ID=$(echo "$D1_LIST_OUT" | grep -A 5 -i "ai-relay" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1 || echo "")
+                    DATABASE_ID=$(echo "$D1_LIST_OUT" | grep -A 5 -i "${D1_NAME}" | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1 || echo "")
                   fi
 
                   if [ -n "$DATABASE_ID" ] && [ "$DATABASE_ID" != "null" ]; then
@@ -124,8 +131,7 @@ jobs:
 
           if [ -z "$DATABASE_ID" ] || [ "$DATABASE_ID" = "null" ]; then
             echo "❌ Failed to obtain D1 database_id after all attempts"
-            echo ""
-            echo "Debug information:"
+            echo "Check that CLOUDFLARE_API_TOKEN has D1:Edit permission."
             echo "Last D1 list output:"
             echo "$D1_LIST_OUT"
             exit 1
@@ -137,25 +143,20 @@ jobs:
           if grep -q "database_id" wrangler.toml; then
             sed -i "s|database_id = .*|database_id = \"${DATABASE_ID}\"|" wrangler.toml
           else
-            sed -i "/database_name = \"ai-relay\"/a database_id = \"${DATABASE_ID}\"" wrangler.toml
+            sed -i "/database_name = \"${D1_NAME}\"/a database_id = \"${DATABASE_ID}\"" wrangler.toml
           fi
 
           # ─── KV Namespace ──────────────────────────────────────────
           echo ""
           echo "=== Provisioning KV namespace ==="
 
-          # wrangler kv namespace list outputs JSON by default (--json is NOT supported).
-          # pnpm prints progress lines ("Already up to date", "Done in ...") to stdout,
-          # so strip everything before the first "[" to isolate the JSON array for jq.
           KV_LIST=$(pnpm exec wrangler kv namespace list 2>/dev/null | awk '/^\[/{f=1} f' || echo "[]")
           [ -z "$KV_LIST" ] && KV_LIST="[]"
           echo "KV namespaces found: $(echo "$KV_LIST" | jq 'length' 2>/dev/null || echo 'unknown')"
 
-          # Search for existing namespace.
-          # Priority order: prefer "ai-relay" (historical data), then fallback to wrangler-generated variants.
           KV_ID=""
-          for TITLE in "ai-relay" "ai-relay-KV" "KV" "ai-relay-ai-relay"; do
-            FOUND=$(echo "$KV_LIST" | jq -r ".[] | select(.title == \"${TITLE}\") | .id" 2>/dev/null || echo "")
+          for TITLE in "${PROJECT_NAME}" "${PROJECT_NAME}-KV" "ai-relay" "ai-relay-KV" "KV" "${PROJECT_NAME}-${PROJECT_NAME}"; do
+            FOUND=$(echo "$KV_LIST" | jq -r --arg title "$TITLE" '.[] | select(.title == $title) | .id' 2>/dev/null || echo "")
             if [ -n "$FOUND" ] && [ "$FOUND" != "null" ]; then
               KV_ID="$FOUND"
               echo "Found existing KV namespace: title=${TITLE}, id=${KV_ID}"
@@ -168,13 +169,12 @@ jobs:
             KV_OUTPUT=$(pnpm exec wrangler kv namespace create KV 2>&1 || true)
             echo "$KV_OUTPUT"
 
-            # If wrangler reports "already exists", re-fetch the list and find it
             if echo "$KV_OUTPUT" | grep -qi "already exists"; then
               echo "Namespace already exists (title conflict); re-fetching list to obtain id..."
               KV_LIST=$(pnpm exec wrangler kv namespace list 2>/dev/null | awk '/^\[/{f=1} f' || echo "[]")
               [ -z "$KV_LIST" ] && KV_LIST="[]"
-              for TITLE in "ai-relay" "ai-relay-KV" "KV" "ai-relay-ai-relay"; do
-                FOUND=$(echo "$KV_LIST" | jq -r ".[] | select(.title == \"${TITLE}\") | .id" 2>/dev/null || echo "")
+              for TITLE in "${PROJECT_NAME}" "${PROJECT_NAME}-KV" "ai-relay" "ai-relay-KV" "KV" "${PROJECT_NAME}-${PROJECT_NAME}"; do
+                FOUND=$(echo "$KV_LIST" | jq -r --arg title "$TITLE" '.[] | select(.title == $title) | .id' 2>/dev/null || echo "")
                 if [ -n "$FOUND" ] && [ "$FOUND" != "null" ]; then
                   KV_ID="$FOUND"
                   echo "Recovered KV namespace: title=${TITLE}, id=${KV_ID}"
@@ -182,7 +182,6 @@ jobs:
                 fi
               done
             else
-              # Extract id from create output: try JSON first, then 32-char hex fallback
               KV_ID=$(echo "$KV_OUTPUT" | jq -r '.id' 2>/dev/null || echo "")
               if [ -z "$KV_ID" ] || [ "$KV_ID" = "null" ]; then
                 KV_ID=$(echo "$KV_OUTPUT" | grep -oE '[0-9a-f]{32}' | head -1 || echo "")
@@ -194,6 +193,7 @@ jobs:
 
           if [ -z "$KV_ID" ] || [ "$KV_ID" = "null" ]; then
             echo "❌ Failed to obtain KV namespace id"
+            echo "Check that CLOUDFLARE_API_TOKEN has Workers KV Storage:Edit permission."
             echo "Debug: KV list output was:"
             echo "$KV_LIST" | head -20
             exit 1
@@ -216,8 +216,21 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          # Create project if it doesn't exist; ignore error if it already does
-          pnpm exec wrangler pages project create "$CLOUDFLARE_PAGES_PROJECT_NAME" --production-branch "$CLOUDFLARE_PAGES_PRODUCTION_BRANCH" 2>&1 || true
+          set -euo pipefail
+          set +e
+          CREATE_OUT=$(pnpm exec wrangler pages project create "$CLOUDFLARE_PAGES_PROJECT_NAME" --production-branch "$CLOUDFLARE_PAGES_PRODUCTION_BRANCH" 2>&1)
+          CREATE_STATUS=$?
+          set -e
+          echo "$CREATE_OUT"
+          if [ "$CREATE_STATUS" -ne 0 ]; then
+            if echo "$CREATE_OUT" | grep -qiE "already exists|8000002|A project with this name already exists"; then
+              echo "✅ Pages project '${CLOUDFLARE_PAGES_PROJECT_NAME}' already exists"
+            else
+              echo "❌ Failed to create/verify Pages project '${CLOUDFLARE_PAGES_PROJECT_NAME}'."
+              echo "Check that CLOUDFLARE_API_TOKEN has 'Cloudflare Pages:Edit' permission."
+              exit "$CREATE_STATUS"
+            fi
+          fi
 
       - name: Build for Cloudflare Pages
         run: pnpm exec opennextjs-cloudflare build --dangerouslyUseUnsupportedNextVersion
@@ -226,6 +239,7 @@ jobs:
 
       - name: Adapt Build Output for Cloudflare Pages
         run: |
+          set -euo pipefail
           # Copy static assets to the root of .open-next so they can be served directly by Pages
           if [ -d ".open-next/assets" ]; then
             cp -r .open-next/assets/* .open-next/
@@ -246,28 +260,50 @@ jobs:
             const cacheDir = process.env.CACHE_DIR;
             const outputRoot = ".open-next";
             const entries = [
-              ["index.cache", "index.html"],
-              ["admin.cache", path.join("admin", "index.html")],
-              ["_not-found.cache", "404.html"]
+              ["index.cache", "index.html", "/"],
+              ["admin.cache", path.join("admin", "index.html"), "/admin"],
+              ["_not-found.cache", "404.html", null]
             ];
 
-            for (const [source, target] of entries) {
+            const staticExcludes = [
+              "/_next/static/*",
+              "/favicon.ico",
+              "/*.png",
+              "/*.ico",
+              "/*.txt",
+              "/*.svg"
+            ];
+
+            for (const [source, target, routePath] of entries) {
               const input = path.join(cacheDir, source);
-              if (!fs.existsSync(input)) continue;
+              if (!fs.existsSync(input)) {
+                console.warn(`⚠️ Cache file not found (will route dynamically): ${source}`);
+                continue;
+              }
               const payload = JSON.parse(fs.readFileSync(input, "utf8"));
               if (!payload || !payload.html) continue;
               const output = path.join(outputRoot, target);
               fs.mkdirSync(path.dirname(output), { recursive: true });
               fs.writeFileSync(output, payload.html);
+              if (routePath) {
+                staticExcludes.unshift(routePath);
+              }
             }
+
+            // Only exclude static routes that were actually materialized, preventing silent 404s.
+            const routesConfig = {
+              version: 1,
+              include: ["/*"],
+              exclude: staticExcludes
+            };
+            fs.writeFileSync(path.join(outputRoot, "_routes.json"), JSON.stringify(routesConfig));
+            console.log("Generated _routes.json:", JSON.stringify(routesConfig));
           '
 
           # Rename worker.js to _worker.js to enable Pages Functions
           if [ -f ".open-next/worker.js" ]; then
             mv .open-next/worker.js .open-next/_worker.js
           fi
-          # Tell Cloudflare Pages to serve the prerendered pages directly from CDN.
-          echo '{"version":1,"include":["/*"],"exclude":["/","/admin","/_next/static/*","/favicon.ico","/*.png","/*.ico","/*.txt","/*.svg"]}' > .open-next/_routes.json
 
       - name: Apply D1 migrations
         env:
@@ -276,16 +312,11 @@ jobs:
         run: |
           export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN}"
           export CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID}"
-          pnpm exec wrangler d1 migrations apply ai-relay --remote
+          pnpm exec wrangler d1 migrations apply "$CLOUDFLARE_PAGES_PROJECT_NAME" --remote
 
       - name: Configure environment variables
         # Must run BEFORE the deploy step: Cloudflare Pages only binds
-        # secrets/vars to the NEXT deployment, never retroactively to the
-        # one being published. If secrets are pushed after `pages deploy`,
-        # the freshly published deployment starts with an empty process.env
-        # (no RELAY_ADMIN_KEY / RELAY_API_KEY), so admin auth returns 401
-        # until a second deploy picks them up. Pushing them first ensures the
-        # deployment below is published with the secrets already bound.
+        # secrets/vars to the NEXT deployment, never retroactively.
         if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -297,13 +328,17 @@ jobs:
           SYNC_CRON_SECRET: ${{ secrets.CRON_SECRET || vars.CRON_SECRET }}
           SYNC_OPENAI_KEYS: ${{ secrets.OPENAI_KEYS || vars.OPENAI_KEYS }}
           SYNC_CLAUDE_KEYS: ${{ secrets.CLAUDE_KEYS || vars.CLAUDE_KEYS }}
+          SYNC_GEMINI_KEYS: ${{ secrets.GEMINI_KEYS || vars.GEMINI_KEYS }}
           SYNC_DEEPSEEK_KEYS: ${{ secrets.DEEPSEEK_KEYS || vars.DEEPSEEK_KEYS }}
+          SYNC_OPENROUTER_KEYS: ${{ secrets.OPENROUTER_KEYS || vars.OPENROUTER_KEYS }}
           SYNC_XIAOMI_KEYS: ${{ secrets.XIAOMI_KEYS || vars.XIAOMI_KEYS }}
           SYNC_XIAOMI_CODING_KEYS: ${{ secrets.XIAOMI_CODING_KEYS || vars.XIAOMI_CODING_KEYS }}
           SYNC_XIAOMIMIMO_SGP_CODING_KEYS: ${{ secrets.XIAOMIMIMO_SGP_CODING_KEYS || vars.XIAOMIMIMO_SGP_CODING_KEYS }}
           SYNC_OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL || vars.OPENAI_BASE_URL }}
           SYNC_CLAUDE_BASE_URL: ${{ secrets.CLAUDE_BASE_URL || vars.CLAUDE_BASE_URL }}
+          SYNC_GEMINI_BASE_URL: ${{ secrets.GEMINI_BASE_URL || vars.GEMINI_BASE_URL }}
           SYNC_DEEPSEEK_BASE_URL: ${{ secrets.DEEPSEEK_BASE_URL || vars.DEEPSEEK_BASE_URL }}
+          SYNC_OPENROUTER_BASE_URL: ${{ secrets.OPENROUTER_BASE_URL || vars.OPENROUTER_BASE_URL }}
           SYNC_XIAOMI_BASE_URL: ${{ secrets.XIAOMI_BASE_URL || vars.XIAOMI_BASE_URL }}
           SYNC_XIAOMI_CODING_BASE_URL: ${{ secrets.XIAOMI_CODING_BASE_URL || vars.XIAOMI_CODING_BASE_URL }}
           SYNC_XIAOMIMIMO_SGP_CODING_BASE_URL: ${{ secrets.XIAOMIMIMO_SGP_CODING_BASE_URL || vars.XIAOMIMIMO_SGP_CODING_BASE_URL }}
@@ -324,21 +359,13 @@ jobs:
           SYNC_RELAY_API_KEY_MIN_LENGTH: ${{ secrets.RELAY_API_KEY_MIN_LENGTH || vars.RELAY_API_KEY_MIN_LENGTH }}
           SYNC_RELAY_STREAM_BYTES_PER_TOKEN: ${{ secrets.RELAY_STREAM_BYTES_PER_TOKEN || vars.RELAY_STREAM_BYTES_PER_TOKEN }}
           SYNC_CORS_ORIGINS: ${{ secrets.CORS_ORIGINS || vars.CORS_ORIGINS }}
+          SYNC_RELAY_ALLOWED_ORIGINS: ${{ secrets.RELAY_ALLOWED_ORIGINS || vars.RELAY_ALLOWED_ORIGINS }}
           SYNC_DEPLOY_URL: ${{ secrets.DEPLOY_URL || vars.DEPLOY_URL }}
         run: |
+          set -euo pipefail
           export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN}"
           export CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID}"
 
-          # Cloudflare Pages keeps production and preview env vars fully
-          # separate, and `wrangler pages secret put` defaults to the
-          # production environment. But `pages deploy --branch=<branch>`
-          # publishes to *preview* whenever the branch is not the project's
-          # production branch (e.g. a workflow_dispatch run from a feature or
-          # pre-release branch). If we only wrote production secrets, that
-          # preview deployment would start with an empty process.env and
-          # admin/relay auth would return "Invalid API key". Pick the target
-          # environment to match the branch we are about to deploy so the
-          # secret lands where the deployment can actually read it.
           if [ "${GITHUB_REF_NAME}" = "${CLOUDFLARE_PAGES_PRODUCTION_BRANCH}" ]; then
             PAGES_ENV="production"
           else
@@ -346,24 +373,58 @@ jobs:
           fi
           echo "Target Pages environment: ${PAGES_ENV} (branch=${GITHUB_REF_NAME}, production branch=${CLOUDFLARE_PAGES_PRODUCTION_BRANCH})"
 
-          # 动态遍历环境变量中所有以 SYNC_ 开头的变量并推送到 CF Pages
-          for var_name in $(env | grep -oE '^SYNC_[A-Z0-9_]+' | sort -u); do
-            # 提取原变量名
-            target_name="${var_name#SYNC_}"
-            # 获取变量的值
-            val="${!var_name}"
+          SECRETS_FILE="$(mktemp)"
+          trap 'rm -f "$SECRETS_FILE"' EXIT
 
-            if [ -n "$val" ]; then
-              echo "Syncing $target_name to ${PAGES_ENV}..."
-              echo "$val" | pnpm exec wrangler pages secret put "$target_name" --project-name="$CLOUDFLARE_PAGES_PROJECT_NAME" --env "$PAGES_ENV"
+          node -e '
+            const fs = require("fs");
+            const out = {};
+            for (const [k, v] of Object.entries(process.env)) {
+              if (k.startsWith("SYNC_") && v) {
+                out[k.slice(5)] = v;
+              }
+            }
+            fs.writeFileSync(process.argv[1], JSON.stringify(out), { mode: 0o600 });
+            console.log("Prepared", Object.keys(out).length, "secret(s):", Object.keys(out).sort().join(", "));
+          ' "$SECRETS_FILE"
+
+          if [ "$(node -e 'console.log(Object.keys(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))).length)' "$SECRETS_FILE")" -gt 0 ]; then
+            if ! pnpm exec wrangler pages secret bulk "$SECRETS_FILE" --project-name="$CLOUDFLARE_PAGES_PROJECT_NAME" --env "$PAGES_ENV"; then
+              echo "⚠️ Bulk secret upload failed, falling back to per-key upload..."
+              for var_name in $(env | grep -oE '^SYNC_[A-Z0-9_]+' | sort -u); do
+                target_name="${var_name#SYNC_}"
+                val="${!var_name}"
+                if [ -n "$val" ]; then
+                  printf '%s' "$val" | pnpm exec wrangler pages secret put "$target_name" --project-name="$CLOUDFLARE_PAGES_PROJECT_NAME" --env "$PAGES_ENV"
+                fi
+              done
             fi
-          done
+          fi
 
       - name: Deploy to Cloudflare Pages
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
+          set -euo pipefail
           export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN}"
           export CLOUDFLARE_ACCOUNT_ID="${CLOUDFLARE_ACCOUNT_ID}"
-          pnpm exec wrangler pages deploy .open-next --project-name="$CLOUDFLARE_PAGES_PROJECT_NAME" --branch="${GITHUB_REF_NAME}"
+          DEPLOY_OUT=$(pnpm exec wrangler pages deploy .open-next --project-name="$CLOUDFLARE_PAGES_PROJECT_NAME" --branch="${GITHUB_REF_NAME}" 2>&1)
+          echo "$DEPLOY_OUT"
+
+          DEPLOY_PREVIEW_URL=$(echo "$DEPLOY_OUT" | grep -oE 'https://[a-zA-Z0-9.-]+\.pages\.dev' | tail -1 || true)
+          PROD_URL="https://${CLOUDFLARE_PAGES_PROJECT_NAME}.pages.dev"
+          TARGET_URL="${DEPLOY_PREVIEW_URL:-$PROD_URL}"
+
+          {
+            echo "### ⚡ Cloudflare Pages Deployment Succeeded"
+            echo ""
+            echo "- **Production URL**: ${PROD_URL}"
+            if [ -n "$DEPLOY_PREVIEW_URL" ] && [ "$DEPLOY_PREVIEW_URL" != "$PROD_URL" ]; then
+              echo "- **Deployment URL**: ${DEPLOY_PREVIEW_URL}"
+            fi
+            echo "- **Admin Panel**: ${PROD_URL}/admin"
+            echo "- **Liveness Check**: \`curl ${TARGET_URL}/health?liveness=1\`"
+            echo ""
+            echo "> 💡 **Tip**: Open \`/admin\` to add your upstream provider keys. To enable daily scheduled health probes, usage rollups, D1 cleanup, and webhook reports via GitHub Actions (\`cron.yml\`), add \`DEPLOY_URL=${PROD_URL}\` to your repository Actions variables or secrets."
+          } >> "$GITHUB_STEP_SUMMARY"

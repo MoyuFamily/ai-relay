@@ -30,7 +30,7 @@ const CORS_HEADERS: Record<string, string> = {
  * back cleanly to `['*']`.
  */
 function getAllowedOrigins(): string[] {
-  const raw = process.env.CORS_ORIGINS;
+  const raw = process.env.RELAY_ALLOWED_ORIGINS || process.env.CORS_ORIGINS;
   if (!raw || !raw.trim()) return ['*'];
   const parsed = raw
     .split(',')

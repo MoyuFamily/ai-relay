@@ -29,7 +29,7 @@ describe('Anthropic Messages API relay', () => {
       id: 'msg_test',
       type: 'message',
       role: 'assistant',
-      model: 'claude-sonnet-4-6',
+      model: 'claude-sonnet-5-5',
       content: [{ type: 'text', text: 'pong' }],
       stop_reason: 'end_turn',
       usage: { input_tokens: 3, output_tokens: 2 },
@@ -52,7 +52,7 @@ describe('Anthropic Messages API relay', () => {
         'anthropic-version': '2023-06-01',
       }),
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'claude-sonnet-5-5',
         max_tokens: 32,
         messages: [{ role: 'user', content: 'ping' }],
       }),

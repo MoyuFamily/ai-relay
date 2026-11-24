@@ -8,29 +8,20 @@
 import { NextRequest } from 'next/server';
 import { sendDailyReport } from '@/lib/webhooks';
 import { getWebhookSettings } from '@/lib/admin/admin-config';
+import { requireCronOrAdminAuth } from '@/lib/admin/auth';
 import { createUsageStorage } from '@/lib/usage/factory';
 
 export const runtime = 'nodejs';
 
-
-
 /**
  * GET /api/cron/daily-report
- * Protected by Vercel cron secret header or admin auth.
+ * Protected by CRON_SECRET, Vercel cron (on Vercel without CRON_SECRET), or admin auth.
  */
 export async function GET(request: NextRequest) {
-  // Vercel cron sends a special header; also allow admin auth
-  const usageStorage = await createUsageStorage();
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1';
-  const cronSecret = process.env.CRON_SECRET;
-  const isCronSecret = !!(cronSecret && request.headers.get('x-cron-secret') === cronSecret);
+  const authErr = requireCronOrAdminAuth(request);
+  if (authErr) return authErr;
 
-  if (!isVercelCron && !isCronSecret) {
-    // If not a Vercel cron call, require admin auth
-    const { requireAdminAuth } = await import('@/lib/admin');
-    const authErr = requireAdminAuth(request);
-    if (authErr) return authErr;
-  }
+  const usageStorage = await createUsageStorage();
 
   try {
     // Check for webhooks

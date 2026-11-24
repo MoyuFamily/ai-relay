@@ -64,7 +64,9 @@ const GRANULARITY_LABELS: Record<Granularity, string> = {
 const PROVIDER_COLORS: Record<string, string> = {
   openai: '#10b981',
   anthropic: '#f59e0b',
+  google: '#06b6d4',
   deepseek: '#3b82f6',
+  openrouter: '#8b5cf6',
   xiaomi: '#ef4444',
   xiaomi_sgp_coding: '#ec4899',
   xiaomi_coding: '#a855f7',
@@ -73,7 +75,9 @@ const PROVIDER_COLORS: Record<string, string> = {
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
+  google: 'Google Gemini',
   deepseek: 'DeepSeek',
+  openrouter: 'OpenRouter',
   xiaomi: 'Xiaomi',
   xiaomi_sgp_coding: 'MiMo SGP Coding',
   xiaomi_coding: 'MiMo Coding',

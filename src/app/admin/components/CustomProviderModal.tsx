@@ -507,7 +507,7 @@ export default function CustomProviderModal({
             </label>
             <input
               type="text"
-              placeholder="gpt-5.4-mini"
+              placeholder="gpt-6-luna"
               value={testModelId}
               onChange={(e) => setTestModelId(e.target.value)}
               style={{

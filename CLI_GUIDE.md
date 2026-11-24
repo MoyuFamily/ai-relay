@@ -12,13 +12,13 @@ cd ai-relay
 pnpm install
 
 # 注册全局 airelay 命令（也可以直接使用 pnpm run cli -- <command>）
-npm link
+pnpm link --global
 
 # 验证安装
 airelay --help
 ```
 
-> 如果系统未全局安装 `tsx`，也可以直接通过仓库脚本运行：`pnpm run local:start` 或 `pnpm run cli -- local:status`。
+> 无需全局链接也可以直接通过仓库脚本运行：`pnpm run local:start` 或 `pnpm run cli -- init`。
 
 ---
 
@@ -26,12 +26,13 @@ airelay --help
 
 | 命令 | 说明 |
 |------|------|
+| `airelay init` | 交互式初始化向导，快速生成 `~/.ai-relay/relay-config.json` |
 | `airelay login [cloud-url]` | 通过设备授权码流程绑定云端或自部署的 AI Relay 实例（可选） |
 | `airelay local:start` | 启动本机 HTTP 转发服务（默认监听 `127.0.0.1:3147`） |
 | `airelay local:status` | 查看本机设备配置、监听地址与有效配置来源 |
-| `airelay agent:install codex [--dry-run]` | 自动备份并向 `~/.codex/config.toml` 写入本地 Relay 配置 |
-| `airelay agent:doctor codex` | 检查 Codex 配置文件是否正确指向本地 Relay |
-| `airelay agent:uninstall codex [--dry-run]` | 从 `~/.codex/config.toml` 移除本地 Relay 配置块 |
+| `airelay agent:install <agent> [--dry-run]` | 配置本地编程工具（支持 `codex`、`claude-code`；Codex 会自动备份到 `~/.ai-relay/backups/`） |
+| `airelay agent:doctor <agent>` | 检查 `codex` 或 `claude-code` 配置是否正确指向本地 Relay |
+| `airelay agent:uninstall <agent> [--dry-run]` | 移除本地 Relay 配置块 |
 
 `airelay local:start` 支持的参数：
 - `-c, --config <source>`：指定本地 JSON 配置文件路径或远程快照 URL
@@ -71,7 +72,7 @@ cat > relay-config.json << 'EOF'
     }
   },
   "modelAliases": {
-    "aliases": { "fast": "gpt-5.4-mini" },
+    "aliases": { "fast": "gpt-6-luna" },
     "hidden": []
   }
 }
@@ -87,9 +88,13 @@ export RELAY_CONFIG_PATH=./relay-config.json
 airelay local:start
 ```
 
-### 方式 3：绑定云端 / 自部署实例同步配置（推荐已有后台用户）
+### 方式 3：本地默认配置文件（`~/.ai-relay/relay-config.json`）
 
-先确保远端实例已配置 `DEVICE_TOKEN_SECRET` 环境变量，然后执行设备登录：
+运行 `airelay init` 可通过交互式向导生成 `~/.ai-relay/relay-config.json`，之后直接执行 `airelay local:start` 即可自动加载。
+
+### 方式 4：绑定云端 / 自部署实例同步配置（推荐已有后台用户）
+
+远端实例只要配置了 `RELAY_API_KEY`（或单独设置了 `DEVICE_TOKEN_SECRET`）即可开箱支持设备绑定：
 
 ```bash
 # 1. 发起设备绑定，按终端提示打开浏览器并输入 Admin Key 批准设备
@@ -99,9 +104,9 @@ airelay login https://your-relay.example.com
 airelay local:start
 ```
 
-> 也可以访问后台的 `/admin/local-relay` 页面查看当前在线设备列表与最近心跳时间。
+> 默认自动同步上游 Provider Key；如服务端希望禁止向本地设备下发明文 Key，可在服务端设置 `ALLOW_LOCAL_KEY_SYNC=false`。也可以访问后台的 `/admin/local-relay` 页面查看当前在线设备列表与最近心跳时间。
 
-### 方式 4：纯环境变量内联 Key（零配置文件最快启动）
+### 方式 5：纯环境变量内联 Key（零配置文件最快启动）
 
 自动扫描环境变量中的 `OPENAI_KEYS`、`CLAUDE_KEYS`、`DEEPSEEK_KEYS`、`XIAOMI_KEYS` 等 `*_KEYS` 变量（支持逗号分隔多 Key 轮换与对应的 `*_BASE_URL`）：
 
@@ -138,18 +143,18 @@ curl http://127.0.0.1:3147/v1/models
 # 3. 测试 OpenAI Chat Completions
 curl http://127.0.0.1:3147/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-5.4","messages":[{"role":"user","content":"Hello!"}]}'
+  -d '{"model":"gpt-6-luna","messages":[{"role":"user","content":"Hello!"}]}'
 
 # 4. 测试 Anthropic Messages
 curl http://127.0.0.1:3147/v1/messages \
   -H "Content-Type: application/json" \
   -H "anthropic-version: 2023-06-01" \
-  -d '{"model":"claude-sonnet-4-6","max_tokens":512,"messages":[{"role":"user","content":"Hello!"}]}'
+  -d '{"model":"claude-sonnet-5-5","max_tokens":512,"messages":[{"role":"user","content":"Hello!"}]}'
 
 # 5. 测试 OpenAI Responses API
 curl http://127.0.0.1:3147/v1/responses \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-5.4","input":"Hello!"}'
+  -d '{"model":"gpt-6.2-sol","input":"Hello!"}'
 ```
 
 ---

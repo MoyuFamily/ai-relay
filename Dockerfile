@@ -17,7 +17,7 @@ RUN corepack enable
 # ── Stage 1: Install dependencies ────────────────────────────
 FROM base AS deps
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 # ── Stage 2: Build standalone Next.js server ─────────────────

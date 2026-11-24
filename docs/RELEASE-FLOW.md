@@ -1,55 +1,34 @@
-# Release Flow
+# 发布流程 / Release Flow
 
-AI Relay uses a fork-friendly release flow.
-
-## Default fork behavior
-
-Fork users can keep deploying from `main`.
-
-- CI runs on pull requests and pushes to `main`.
-- Vercel deployments keep using the fork user's Vercel project production branch, which defaults to `main`.
-- Cloudflare Pages deployment defaults to `main`.
-- No extra branch, Vercel setting, or repository variable is required.
-
-## Upstream maintainer flow
-
-The upstream repository uses `pre-release` as the dogfood branch before publishing to `main`.
+AI Relay 采用**单主干 (`main`) 直接发布**流程，不再维护 `pre-release` 中间分支或发布门禁，维护者与 Fork 用户完全共用同一套约定。
 
 ```text
-feature/* -> pre-release -> maintainer deployment -> main
+feature/* (或小改动直接提交) ──▶ main ──▶ CI 验证 & 自动部署 (Vercel / Cloudflare / GHCR)
 ```
 
-1. Open regular feature and fix pull requests against `pre-release`.
-2. Merge reviewed changes into `pre-release`.
-3. Deploy and use `pre-release` in the maintainer environment.
-4. Open a release pull request from `pre-release` to `main`.
-5. Merge to `main` only after validation.
+## 日常开发与发布
 
-## Vercel maintainer setup
+1. **常规开发**：开短生命周期分支（如 `feat/xxx`、`fix/xxx`），向 `main` 提 PR（或维护者小改动自测后直接推送 `main`）。
+2. **CI 验证**：[ci.yml](../.github/workflows/ci.yml) 在每次 PR / push 到 `main` 时通过单 Job 依次执行 `lint → type-check → test → build`。
+3. **自动部署**：合并或推送到 `main` 后，各平台自动发布：
+   - **Vercel**：自动从 `main` 构建上线。
+   - **Cloudflare Pages**：[deploy-cf.yml](../.github/workflows/deploy-cf.yml) 自动同步 D1/KV、密钥并部署到 `main` 生产环境（也可手动 `workflow_dispatch` 在任意分支部署 Preview）。
+   - **Docker (GHCR)**：[docker-publish.yml](../.github/workflows/docker-publish.yml) 自动构建并推送 `latest` 多架构镜像。
 
-Keep fork users on Vercel's default `main` behavior. For the upstream maintainer environment only, configure the connected Vercel project to deploy production from `pre-release`.
+## 版本号发布（可选）
 
-In Vercel:
+需要对外标记一个正式版本时：
 
-1. Open the maintainer project.
-2. Go to **Settings** -> **Environments**.
-3. Under the **Production** environment card, find the **Branch Tracking** settings (or "Production Branch" section).
-4. Change the tracked branch from `main` to `pre-release` and click **Save**.
+```bash
+# 1. 更新 package.json 中的 version 与 CHANGELOG.md，提交到 main
+git add package.json CHANGELOG.md
+git commit -m "chore(release): v2.16.0"
+git push origin main
 
-Vercel creates production deployments from the configured production branch, and treats other branches (including `main`) as preview branches.
+# 2. 打 tag 推送（自动触发 GHCR 语义化版本镜像 tag，如 :2.16.0 / :2.16）
+git tag v2.16.0
+git push origin v2.16.0
+```
 
-## Cloudflare maintainer setup
-
-Set these in GitHub under Settings -> Secrets and variables -> Actions -> Variables:
-
-| Variable | Value | Purpose |
-| --- | --- | --- |
-| `CLOUDFLARE_DEPLOY_BRANCH` | `pre-release` | Deploy the upstream maintainer environment from `pre-release` instead of `main`. |
-| `CLOUDFLARE_PAGES_PRODUCTION_BRANCH` | `pre-release` | Create the Pages project with `pre-release` as its production branch. |
-| `CLOUDFLARE_PAGES_PROJECT_NAME` | `ai-relay` or a private project name | Optional Pages project override for the maintainer environment. |
-
-If these variables are not set, deployment remains compatible with fork users and uses `main`.
-
-> [!IMPORTANT]
-> **Existing Cloudflare Pages Project:** If you already have an existing Cloudflare Pages project, Wrangler CLI cannot update its production branch. You must manually go to the Cloudflare Pages Dashboard -> **Settings** -> **Builds & deployments** -> **Production branch**, and switch it to `pre-release` so that your custom production domain tracks the correct branch.
-
+> **从旧 `pre-release` 流程迁移提醒：**
+> 如果之前在 Vercel Dashboard、Cloudflare Pages Dashboard 或 GitHub Actions Variables 中将生产分支切到了 `pre-release`，切回 `main`（并删除旧的 `CLOUDFLARE_DEPLOY_BRANCH` / `CLOUDFLARE_PAGES_PRODUCTION_BRANCH` 变量）即可。

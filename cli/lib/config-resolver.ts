@@ -20,6 +20,7 @@ import {
 } from './config-source';
 import type { LocalProfile } from '../local/profile';
 import { getProfileDir } from '../local/profile';
+import { PROVIDERS } from '../../src/lib/providers/registry';
 
 export interface ResolveConfigOptions {
   /**
@@ -42,12 +43,12 @@ export interface ResolveConfigOptions {
 /**
  * Resolve a config source from various inputs with priority.
  *
- * Priority order:
+ * Priority order (matches CLI_GUIDE.md):
  * 1. CLI --config argument (URL or file path)
- * 2. Environment variables (RELAY_CONFIG_URL, RELAY_CONFIG_PATH)
- * 3. Inline config from env vars (OPENAI_KEYS, CLAUDE_KEYS, etc.)
- * 4. Local config file (~/.ai-relay/relay-config.json)
- * 5. Stored profile cloudUrl (from ai-relay login)
+ * 2. Explicit environment variables (RELAY_CONFIG_URL, RELAY_CLOUD_URL, RELAY_CONFIG_PATH)
+ * 3. Local config file (~/.ai-relay/relay-config.json)
+ * 4. Stored profile cloudUrl (from `airelay login`)
+ * 5. Inline config from provider env vars (OPENAI_KEYS, CLAUDE_KEYS, etc.)
  * 6. null (no config source found)
  *
  * @returns ConfigSource or null if no source found
@@ -71,21 +72,21 @@ export function resolveConfigSource(options: ResolveConfigOptions): ConfigSource
     return new FileConfigSource(env.RELAY_CONFIG_PATH);
   }
 
-  // 3. Inline config from environment variables
-  const inlineConfig = buildInlineConfigFromEnv(env);
-  if (inlineConfig) {
-    return new InlineConfigSource(inlineConfig);
-  }
-
-  // 4. Local config file (default location)
+  // 3. Local config file (default location)
   const defaultConfigPath = path.join(getProfileDir(), 'relay-config.json');
   if (fs.existsSync(defaultConfigPath)) {
     return new FileConfigSource(defaultConfigPath);
   }
 
-  // 5. Stored profile cloudUrl (from login)
+  // 4. Stored profile cloudUrl (from `airelay login`)
   if (profile?.cloudUrl) {
     return new CloudConfigSource(profile.cloudUrl, profile.deviceToken);
+  }
+
+  // 5. Inline config from provider environment variables
+  const inlineConfig = buildInlineConfigFromEnv(env);
+  if (inlineConfig) {
+    return new InlineConfigSource(inlineConfig);
   }
 
   // 6. No config source found
@@ -127,13 +128,19 @@ function buildInlineConfigFromEnv(env: NodeJS.ProcessEnv): FileConfig | null {
 
   // Well-known provider mappings (for display names and default base URLs)
   const knownProviders: Record<string, { id?: string; name: string; defaultBaseUrl?: string; headerFormat?: 'openai' | 'anthropic' | 'azure'; modelPrefixes?: string[] }> = {
-    'OPENAI': { id: 'openai', name: 'OpenAI', defaultBaseUrl: 'https://api.openai.com/v1', headerFormat: 'openai', modelPrefixes: ['gpt-', 'dall-e-'] },
+    'OPENAI': { id: 'openai', name: 'OpenAI', defaultBaseUrl: 'https://api.openai.com/v1', headerFormat: 'openai', modelPrefixes: ['gpt-', 'chatgpt-'] },
     'CLAUDE': { id: 'anthropic', name: 'Anthropic', defaultBaseUrl: 'https://api.anthropic.com/v1', headerFormat: 'anthropic', modelPrefixes: ['claude-'] },
     'ANTHROPIC': { id: 'anthropic', name: 'Anthropic', defaultBaseUrl: 'https://api.anthropic.com/v1', headerFormat: 'anthropic', modelPrefixes: ['claude-'] },
+    'GEMINI': { id: 'google', name: 'Google Gemini', defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', headerFormat: 'openai', modelPrefixes: ['gemini-'] },
+    'GOOGLE': { id: 'google', name: 'Google Gemini', defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai', headerFormat: 'openai', modelPrefixes: ['gemini-'] },
     'DEEPSEEK': { id: 'deepseek', name: 'DeepSeek', defaultBaseUrl: 'https://api.deepseek.com/v1', headerFormat: 'openai', modelPrefixes: ['deepseek-'] },
+    'OPENROUTER': { id: 'openrouter', name: 'OpenRouter', defaultBaseUrl: 'https://openrouter.ai/api/v1', headerFormat: 'openai', modelPrefixes: ['openrouter/', 'openai/', 'anthropic/', 'google/', 'deepseek/', 'meta-llama/', 'x-ai/', 'qwen/', 'mistralai/'] },
+    'SILICONFLOW': { id: 'siliconflow', name: 'SiliconFlow', defaultBaseUrl: 'https://api.siliconflow.cn/v1', headerFormat: 'openai', modelPrefixes: ['deepseek-ai/', 'Qwen/', 'THUDM/', 'Pro/'] },
+    'GROQ': { id: 'groq', name: 'Groq', defaultBaseUrl: 'https://api.groq.com/openai/v1', headerFormat: 'openai', modelPrefixes: ['llama-', 'mixtral-', 'gemma-'] },
+    'OLLAMA': { id: 'ollama', name: 'Ollama Local', defaultBaseUrl: 'http://127.0.0.1:11434/v1', headerFormat: 'openai', modelPrefixes: ['llama', 'qwen', 'mistral', 'gemma'] },
     'XIAOMI': { id: 'xiaomi', name: 'MiMo (API Key)', defaultBaseUrl: 'https://api.xiaomimimo.com/v1', headerFormat: 'openai', modelPrefixes: ['mimo-'] },
-    'XIAOMI_CODING': { id: 'xiaomi_coding', name: 'MiMo (Coding Plan)', defaultBaseUrl: 'https://token-plan-cn.xiaomimimo.com/v1', headerFormat: 'openai', modelPrefixes: ['mimo-v2.5-pro-coding', 'mimo-v2.5-coding'] },
-    'XIAOMIMIMO_SGP_CODING': { id: 'xiaomi_sgp_coding', name: 'MiMo SGP (Coding Plan)', defaultBaseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1', headerFormat: 'azure', modelPrefixes: ['mimo-v2.5-pro-sgp', 'mimo-v2.5-sgp'] },
+    'XIAOMI_CODING': { id: 'xiaomi_coding', name: 'MiMo (Coding Plan)', defaultBaseUrl: 'https://token-plan-cn.xiaomimimo.com/v1', headerFormat: 'openai', modelPrefixes: ['mimo-v2.6-pro-coding', 'mimo-v2.6-flash-coding'] },
+    'XIAOMIMIMO_SGP_CODING': { id: 'xiaomi_sgp_coding', name: 'MiMo SGP (Coding Plan)', defaultBaseUrl: 'https://token-plan-sgp.xiaomimimo.com/v1', headerFormat: 'azure', modelPrefixes: ['mimo-v2.6-pro-sgp', 'mimo-v2.6-flash-sgp'] },
   };
 
   // Scan environment for XXX_KEYS patterns
@@ -147,15 +154,17 @@ function buildInlineConfigFromEnv(env: NodeJS.ProcessEnv): FileConfig | null {
     const knownInfo = knownProviders[providerPrefix];
     const providerId = knownInfo?.id || providerPrefix.toLowerCase();
     const baseUrlKey = `${providerPrefix}_BASE_URL`;
+    const builtinDef = PROVIDERS[providerId];
 
     providers[providerId] = {
       name: providerId,
-      displayName: knownInfo?.name || toTitleCase(providerId),
-      headerFormat: knownInfo?.headerFormat || 'openai',
-      modelPrefixes: knownInfo?.modelPrefixes || [`${providerId}-`],
+      displayName: knownInfo?.name || builtinDef?.displayName || toTitleCase(providerId),
+      headerFormat: knownInfo?.headerFormat || builtinDef?.headerFormat || 'openai',
+      modelPrefixes: knownInfo?.modelPrefixes || builtinDef?.modelPrefixes || [`${providerId}-`],
       envKeyField: key,
       apiKeys: value.split(',').map(k => k.trim()).filter(Boolean),
-      baseUrl: env[baseUrlKey] || knownInfo?.defaultBaseUrl || '',
+      baseUrl: env[baseUrlKey] || knownInfo?.defaultBaseUrl || builtinDef?.baseUrl || '',
+      ...(builtinDef?.models ? { models: builtinDef.models } : {}),
     };
   }
 

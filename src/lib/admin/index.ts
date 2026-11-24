@@ -34,4 +34,9 @@ export {
   importStatsData,
 } from './admin-config';
 
-export { requireAdminAuth, getRelayApiKeys, getRelayAdminKeys } from './auth';
+export {
+  requireAdminAuth,
+  requireCronOrAdminAuth,
+  getRelayApiKeys,
+  getRelayAdminKeys,
+} from './auth';

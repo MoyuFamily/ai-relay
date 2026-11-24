@@ -71,7 +71,7 @@ export async function sendTestMessage(
         completionTokens: 43456,
       },
     },
-    topModels: [{ model: 'gpt-5.4', count: 42 }],
+    topModels: [{ model: 'gpt-6-luna', count: 42 }],
   };
 
   const msg: WebhookMessage = {

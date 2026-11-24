@@ -15,7 +15,7 @@ import { __usageReportStoreForTests, aggregateUsageDailyReport } from '@/lib/usa
 import { __resetDefaultConfigStore, getDefaultConfigStore } from '@/lib/config-store';
 import { PostgresConfigStore } from '@/lib/config-store/postgres-store';
 import { detectRuntime } from '@/lib/runtime/capabilities';
-import worker from '../../worker';
+import { D1UsageStorage } from '@/lib/usage/storage/d1-usage-storage';
 
 function createFakeCFKVNamespace(delayMs = 0) {
   const map = new Map<string, { value: string; expirationTtl?: number }>();
@@ -228,7 +228,7 @@ describe('Multi-platform storage & Cloudflare compatibility', () => {
       expect(snapshot.providers[0].history).toHaveLength(1);
     });
 
-    it('cleans quota_counters using period + period_type in worker.ts scheduled handler', async () => {
+    it('cleans quota_counters using period + period_type in D1UsageStorage.cleanupExpired()', async () => {
       const executed: Array<{ sql: string; args: unknown[] }> = [];
       const fakeDb = {
         prepare(sql: string) {
@@ -243,14 +243,9 @@ describe('Multi-platform storage & Cloudflare compatibility', () => {
           return [];
         },
       };
-      const tasks: Promise<unknown>[] = [];
 
-      await worker.scheduled(
-        { cron: '0 0 * * *', scheduledTime: Date.now(), noRetry: () => {} } as any,
-        { DB: fakeDb as any, KV: {} as any },
-        { waitUntil: (p: Promise<unknown>) => tasks.push(p), passThroughOnException: () => {} } as any
-      );
-      await Promise.all(tasks);
+      const d1 = new D1UsageStorage(fakeDb as any);
+      await d1.cleanupExpired();
 
       expect(executed).toHaveLength(3);
       expect(executed[0].sql).toContain("period_type = 'daily'");
@@ -279,9 +274,11 @@ describe('Multi-platform storage & Cloudflare compatibility', () => {
     it('does not crash when PostgresConfigStore is selected in server mode', async () => {
       vi.stubEnv('NODE_ENV', 'production');
       vi.stubEnv('DATABASE_URL', 'postgresql://localhost:5432/relay');
+      vi.stubEnv('RELAY_ENABLE_POSTGRES_IN_TEST', '1');
       delete process.env.VERCEL;
       delete process.env.CF_PAGES;
       delete process.env.KV_REST_API_URL;
+      delete process.env.UPSTASH_REDIS_REST_URL;
 
       const store = getDefaultConfigStore();
       expect(store).toBeInstanceOf(PostgresConfigStore);
