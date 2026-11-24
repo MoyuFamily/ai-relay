@@ -55,13 +55,18 @@ export async function resolveModelAlias(model: string, forceRefresh = false): Pr
  * Automatically resolves aliases before matching.
  * Returns null if no provider matches.
  */
-let cachedProviders: Record<string, ProviderConfig> | null = null;
-let cacheTimestamp = 0;
+const sharedProvidersCache: {
+  providers: Record<string, ProviderConfig> | null;
+  timestamp: number;
+} = ((globalThis as any).__aiRelayProvidersCache ??= {
+  providers: null,
+  timestamp: 0,
+});
 
 export async function getAllProviders(forceRefresh = false): Promise<Record<string, ProviderConfig>> {
   const now = Date.now();
-  if (!forceRefresh && cachedProviders && now - cacheTimestamp < 5000) {
-    return cachedProviders;
+  if (!forceRefresh && sharedProvidersCache.providers && now - sharedProvidersCache.timestamp < 5000) {
+    return sharedProvidersCache.providers;
   }
   try {
     const store = getDefaultConfigStore();
@@ -73,27 +78,27 @@ export async function getAllProviders(forceRefresh = false): Promise<Record<stri
         isCustom: true,
       };
     }
-    cachedProviders = merged;
-    cacheTimestamp = now;
+    sharedProvidersCache.providers = merged;
+    sharedProvidersCache.timestamp = now;
     return merged;
   } catch (err) {
     console.error('[getAllProviders] Error loading custom providers:', err);
-    cachedProviders = cachedProviders ?? { ...PROVIDERS };
-    cacheTimestamp = now;
-    return cachedProviders;
+    sharedProvidersCache.providers = sharedProvidersCache.providers ?? { ...PROVIDERS };
+    sharedProvidersCache.timestamp = now;
+    return sharedProvidersCache.providers;
   }
 }
 
 export function clearProvidersCache(): void {
-  cachedProviders = null;
-  cacheTimestamp = 0;
+  sharedProvidersCache.providers = null;
+  sharedProvidersCache.timestamp = 0;
 }
 
 /**
  * Whether a provider can serve the given (already alias-resolved, lower-cased)
  * model. Mirrors the matching used by resolveProvider: an exact model-id match
  * in the provider's `models` list, or a prefix match against `modelPrefixes`
- * (wildcard prefixes end with -/./_; otherwise the prefix must equal the model).
+ * (wildcard prefixes end with -/./_///:; otherwise the prefix must equal the model).
  *
  * Used by smart routing to restrict the candidate pool to providers that
  * actually support the requested model, rather than every configured provider.
@@ -105,10 +110,16 @@ export function providerSupportsModel(provider: ProviderConfig, lowerModel: stri
     }
   }
   for (const prefix of provider.modelPrefixes) {
-    const isWildcard = prefix.endsWith('-') || prefix.endsWith('.') || prefix.endsWith('_');
+    const lowerPrefix = prefix.toLowerCase();
+    const isWildcard =
+      lowerPrefix.endsWith('-') ||
+      lowerPrefix.endsWith('.') ||
+      lowerPrefix.endsWith('_') ||
+      lowerPrefix.endsWith('/') ||
+      lowerPrefix.endsWith(':');
     if (isWildcard) {
-      if (lowerModel.startsWith(prefix)) return true;
-    } else if (lowerModel === prefix) {
+      if (lowerModel.startsWith(lowerPrefix)) return true;
+    } else if (lowerModel === lowerPrefix) {
       return true;
     }
   }

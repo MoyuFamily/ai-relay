@@ -58,7 +58,13 @@ describe('model aliases admin config', () => {
     await saveModelAliasConfig({ aliases: { fast: 'gpt-6-luna' }, hidden: ['gpt-6.2-astra'] });
 
     await expect(kv.get('relay:models:aliases')).resolves.toBeTruthy();
+    // Write-through cache serves immediate reads without hitting KV (critical for eventually-consistent CF KV)
     vi.mocked(kv.get).mockClear();
+    await expect(getModelAliasConfig()).resolves.toMatchObject({ aliases: { fast: 'gpt-6-luna' }, hidden: ['gpt-6.2-astra'] });
+    expect(kv.get).toHaveBeenCalledTimes(0);
+
+    // On cold cache, repeated reads share the 5-minute read cache (1 KV read total)
+    __adminConfigCacheForTests.clear();
     await expect(getModelAliasConfig()).resolves.toMatchObject({ aliases: { fast: 'gpt-6-luna' }, hidden: ['gpt-6.2-astra'] });
     await expect(getModelAliasConfig()).resolves.toMatchObject({ aliases: { fast: 'gpt-6-luna' } });
     expect(kv.get).toHaveBeenCalledTimes(1);

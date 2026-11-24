@@ -4,18 +4,32 @@
 
 import type { ApiKey, KeyPool, ProviderConfig } from '../providers/types';
 
-/** In-memory key pools (cold start init, refreshed periodically) */
-const keyPools = new Map<string, KeyPool>();
+interface SharedKeyPoolState {
+  keyPools: Map<string, KeyPool>;
+  cooldowns: Map<string, number>;
+  lastManagedVersionCheck: Map<string, number>;
+  knownManagedVersions: Map<string, number>;
+}
+
+const sharedState: SharedKeyPoolState = ((globalThis as any).__aiRelayKeyPoolState ??= {
+  keyPools: new Map<string, KeyPool>(),
+  cooldowns: new Map<string, number>(),
+  lastManagedVersionCheck: new Map<string, number>(),
+  knownManagedVersions: new Map<string, number>(),
+});
+
+/** In-memory key pools (shared across route bundles in the same runtime isolate/process) */
+const keyPools = sharedState.keyPools;
 
 /** Cooldown tracking: key hash → expiry timestamp */
-const cooldowns = new Map<string, number>();
+const cooldowns = sharedState.cooldowns;
 
 const COOLDOWN_MS = 60_000; // 60s cooldown after 429/5xx
 
 /** Version check interval for managed keys. Full key lists are fetched only when the version changes. */
 const DEFAULT_KEY_VERSION_CHECK_TTL_MS = 30_000;
-const lastManagedVersionCheck = new Map<string, number>();
-const knownManagedVersions = new Map<string, number>();
+const lastManagedVersionCheck = sharedState.lastManagedVersionCheck;
+const knownManagedVersions = sharedState.knownManagedVersions;
 
 function keyVersionCheckTtlMs(): number {
   const raw = Number(process.env.RELAY_KEY_POOL_VERSION_CHECK_TTL_MS || DEFAULT_KEY_VERSION_CHECK_TTL_MS);
@@ -225,11 +239,9 @@ export function markCooldown(key: ApiKey): void {
  * not just ones that have handled a request in this invocation.
  */
 export async function initAllKeyPools(configs: Record<string, { envKeyField: string; name: string }>, forceRefresh = false): Promise<void> {
-  for (const config of Object.values(configs)) {
-    if (!keyPools.has(config.name) || forceRefresh) {
-      await getKeyPool(config as ProviderConfig, forceRefresh);
-    }
-  }
+  await Promise.all(
+    Object.values(configs).map((config) => getKeyPool(config as ProviderConfig, forceRefresh))
+  );
 }
 
 /**

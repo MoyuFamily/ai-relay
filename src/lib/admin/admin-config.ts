@@ -23,7 +23,8 @@ interface ConfigCacheEntry {
 }
 
 const CONFIG_CACHE_TTL_MS = 60_000;
-const configCache = new Map<string, ConfigCacheEntry>();
+const configCache: Map<string, ConfigCacheEntry> = ((globalThis as any).__aiRelayAdminConfigCache ??=
+  new Map<string, ConfigCacheEntry>());
 
 function getCached<T>(key: string): T | null {
   const entry = configCache.get(key);
@@ -578,7 +579,8 @@ export async function saveModelAliasConfig(configInput: ModelAliasConfig): Promi
   }
   await kv.set(PREFIX.modelAliases, JSON.stringify(config));
   await bumpGlobalConfigVersion(kv);
-  clearCache('modelAliases');
+  // Write-through to shared isolate cache so immediate reads (especially on eventually-consistent CF KV) see the new alias right away.
+  setCached('modelAliases', config, MODEL_ALIAS_CACHE_TTL_MS);
   return config;
 }
 
@@ -892,7 +894,11 @@ export async function setManagedKeys(
   await kv.set(`${PREFIX.keys}${providerName}`, JSON.stringify(keys));
   const version = await bumpManagedKeysVersion(providerName, kv);
   await bumpGlobalConfigVersion(kv);
-  clearCache(`keys:${providerName}`);
+  // Write-through to shared isolate cache so immediate reads (including on CF KV) stay consistent.
+  setCached(`keys:${providerName}`, [...keys]);
+  if (version > 0) {
+    setCached(`keyVersion:${providerName}`, version, CONFIG_CACHE_TTL_MS);
+  }
   clearCache('keys:all');
   try {
     const { updateMemoryKeyPool } = await import('../relay/key-pool');

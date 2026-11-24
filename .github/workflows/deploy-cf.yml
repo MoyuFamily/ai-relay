@@ -261,7 +261,7 @@ jobs:
             const outputRoot = ".open-next";
             const entries = [
               ["index.cache", "index.html", "/"],
-              ["admin.cache", path.join("admin", "index.html"), "/admin"],
+              ["admin.cache", "admin.html", "/admin"],
               ["_not-found.cache", "404.html", null]
             ];
 
