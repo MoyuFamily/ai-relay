@@ -4,6 +4,7 @@ function resolveDeployCommit() {
   const environmentCommit =
     process.env.NEXT_PUBLIC_DEPLOY_COMMIT ||
     process.env.VERCEL_GIT_COMMIT_SHA ||
+    process.env.WORKERS_CI_COMMIT_SHA ||
     process.env.CF_PAGES_COMMIT_SHA ||
     process.env.GITHUB_SHA ||
     process.env.COMMIT_SHA;
