@@ -18,13 +18,94 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
+  build:
+    name: Build (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Prepare platform metadata
+        id: prepare
+        run: |
+          image_name="$(printf '%s' "${{ env.REGISTRY }}/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          platform_pair="${{ matrix.platform }}"
+          platform_pair="${platform_pair//\//-}"
+          echo "image_name=${image_name}" >> "$GITHUB_OUTPUT"
+          echo "platform_pair=${platform_pair}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.prepare.outputs.image_name }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push image by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            COMMIT_SHA=${{ github.sha }}
+          outputs: type=image,name=${{ steps.prepare.outputs.image_name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=docker-${{ steps.prepare.outputs.platform_pair }}
+          cache-to: type=gha,mode=max,scope=docker-${{ steps.prepare.outputs.platform_pair }}
+
+      - name: Export digest
+        run: |
+          set -euo pipefail
+          mkdir -p "${{ runner.temp }}/digests"
+          digest="${{ steps.build.outputs.digest }}"
+          if [ -z "$digest" ]; then
+            echo "Missing build digest" >&2
+            exit 1
+          fi
+          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ steps.prepare.outputs.platform_pair }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Create and push multi-arch manifest
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digests-*
+          merge-multiple: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -47,15 +128,37 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable={{is_default_branch}}
 
-      - name: Build and push multi-arch image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            COMMIT_SHA=${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Create and push manifest list
+        env:
+          META_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          image_name="$(printf '%s' "${{ env.REGISTRY }}/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+          args=()
+
+          while IFS= read -r tag; do
+            if [ -n "$tag" ]; then
+              args+=(-t "$tag")
+            fi
+          done <<< "$META_TAGS"
+
+          shopt -s nullglob
+          digest_files=("${{ runner.temp }}"/digests/*)
+          if [ "${#digest_files[@]}" -eq 0 ]; then
+            echo "No digest files found" >&2
+            exit 1
+          fi
+
+          for f in "${digest_files[@]}"; do
+            args+=("${image_name}@sha256:$(basename "$f")")
+          done
+
+          docker buildx imagetools create "${args[@]}"
+
+      - name: Inspect published manifest
+        env:
+          META_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          first_tag="$(printf '%s\n' "$META_TAGS" | head -n 1)"
+          docker buildx imagetools inspect "$first_tag"
