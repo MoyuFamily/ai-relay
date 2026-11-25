@@ -93,12 +93,14 @@ export async function isCloudflare(): Promise<boolean> {
 /**
  * Run best-effort background work without blocking the response.
  *
- * On Cloudflare, the runtime suspends as soon as the response stream closes,
- * so awaiting slow usage/log writes before `controller.close()` delays the
- * client's stream completion. Handing the promise to `ctx.waitUntil` lets the
- * worker stay alive for the write while the client sees the stream finish
- * immediately. Off CF (or when no context is available) it degrades to plain
- * fire-and-forget. Errors are always swallowed — this is never load-bearing.
+ * - On Cloudflare Workers/Pages: hands the promise to `ctx.waitUntil()` so the
+ *   worker stays alive for D1/KV writes after the response stream closes.
+ * - On Vercel (Fluid Compute) / Next.js 15: registers the promise with
+ *   `after()` from `next/server` (which maps to Vercel `waitUntil`) when inside
+ *   a Next.js request scope, preventing serverless freeze from dropping writes.
+ * - Outside a request scope (e.g. unit tests, CLI server, or post-return stream
+ *   callbacks): degrades gracefully to plain fire-and-forget.
+ * Errors are always swallowed — this is never load-bearing.
  */
 export function runAfterResponse(work: () => Promise<void>): void {
   let promise: Promise<void>;
@@ -110,17 +112,76 @@ export function runAfterResponse(work: () => Promise<void>): void {
   }
   const settled = promise.catch(() => {});
 
-  if (shouldSkipCloudflareContext()) {
-    return; // Vercel / Node.js: fire-and-forget.
+  if (!shouldSkipCloudflareContext()) {
+    try {
+      const { getCloudflareContext } = require('@opennextjs/cloudflare');
+      const context = getCloudflareContext();
+      if (context && typeof context.ctx?.waitUntil === 'function') {
+        context.ctx.waitUntil(settled);
+        return;
+      }
+    } catch {
+      // Fall through to Next.js after() / fire-and-forget.
+    }
   }
 
+  // Next.js 15 `after()` — hooks Vercel `waitUntil` automatically when called
+  // synchronously inside a route handler request scope.
   try {
-    const { getCloudflareContext } = require('@opennextjs/cloudflare');
-    const context = getCloudflareContext();
-    if (context && typeof context.ctx?.waitUntil === 'function') {
-      context.ctx.waitUntil(settled);
+    const nextServer = require('next/server') as { after?: (fn: () => void | Promise<void>) => void };
+    if (typeof nextServer?.after === 'function') {
+      nextServer.after(() => settled);
     }
   } catch {
-    // No CF context — the fire-and-forget promise above still runs.
+    // Outside a Next.js request scope (tests, CLI, post-return stream) — the
+    // fire-and-forget `settled` promise above still runs.
   }
+}
+
+export interface AfterStreamHook {
+  /** Schedule post-stream work and release the deferred waitUntil promise when done. */
+  schedule(work: () => Promise<void>): void;
+  /** Release the deferred waitUntil promise without extra work (e.g. on cancel/error). */
+  complete(): void;
+}
+
+/**
+ * Create a deferred post-stream hook synchronously inside a Next.js route handler
+ * BEFORE returning a streaming `Response`.
+ *
+ * Next.js 15 `after()` must be called synchronously during the request lifecycle
+ * (not later inside `ReadableStream.pull()`). Calling this helper inside `POST()`
+ * registers a deferred promise with `after()` upfront, so Vercel `waitUntil` keeps
+ * the Fluid Compute instance alive until post-stream usage/log writes settle —
+ * allowing `controller.close()` to flush to the client immediately.
+ */
+export function createAfterStreamHook(): AfterStreamHook {
+  let resolveDeferred: (() => void) | null = null;
+  let settled = false;
+
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    resolveDeferred?.();
+    resolveDeferred = null;
+  };
+
+  if (process.env.VERCEL || process.env.VERCEL_ENV) {
+    const deferred = new Promise<void>((resolve) => {
+      resolveDeferred = resolve;
+    });
+    runAfterResponse(() => deferred);
+  }
+
+  return {
+    schedule(work: () => Promise<void>): void {
+      Promise.resolve()
+        .then(work)
+        .catch(() => {})
+        .finally(finish);
+    },
+    complete(): void {
+      finish();
+    },
+  };
 }

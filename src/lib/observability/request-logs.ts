@@ -45,7 +45,7 @@ export interface RequestLogFilters {
 export interface RequestLogListResult {
   items: RequestLogEntry[];
   degraded: boolean;
-  source: 'postgres' | 'kv' | 'memory';
+  source: 'd1' | 'postgres' | 'kv' | 'memory';
 }
 
 import { getRuntimeSettings } from '@/lib/admin/runtime-settings';
@@ -163,11 +163,13 @@ export async function listRequestLogs(filters: RequestLogFilters = {}): Promise<
 
   // Detect backend type for source label
   const storeName = store.constructor.name;
-  const source = storeName.includes('Postgres')
-    ? 'postgres'
-    : storeName.includes('KV')
-      ? 'kv'
-      : 'memory';
+  const source: RequestLogListResult['source'] = storeName.includes('D1')
+    ? 'd1'
+    : storeName.includes('Postgres')
+      ? 'postgres'
+      : storeName.includes('KV')
+        ? 'kv'
+        : 'memory';
 
   return { items: filtered, degraded: false, source };
 }
@@ -176,7 +178,7 @@ export async function listRequestLogs(filters: RequestLogFilters = {}): Promise<
  * Enable on-demand capture for a short TTL window (e.g., when admin opens the logs tab).
  */
 export async function enableRequestLogCapture(ttlSeconds = 300): Promise<void> {
-  if (!isRequestLogsEnabled()) return;
+  if (!(await isRequestLogsEnabled())) return;
   const store = getDefaultRequestLogStore();
   await store.enableCapture(ttlSeconds);
 }
@@ -185,7 +187,7 @@ export async function enableRequestLogCapture(ttlSeconds = 300): Promise<void> {
  * Check if capture is currently enabled.
  */
 export async function isRequestLogCaptureEnabled(): Promise<boolean> {
-  if (!isRequestLogsEnabled()) return false;
+  if (!(await isRequestLogsEnabled())) return false;
   const store = getDefaultRequestLogStore();
   return await store.isCaptureEnabled();
 }

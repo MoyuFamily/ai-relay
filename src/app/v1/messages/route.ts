@@ -13,11 +13,12 @@ import { createUsageEvent, getBatchRecorder } from '@/lib/usage';
 import { createUsageStorage } from '@/lib/usage/factory';
 import { recordRequestLog } from '@/lib/observability/request-logs';
 import { chunkHasUsage, jsonStringFieldLength, createByteCountingStream, estimateCompletionTokensFromStreamBytes } from '@/lib/usage/stream-usage';
-import { isCloudflareSync, runAfterResponse } from '@/lib/cf-env';
+import { isCloudflareSync, runAfterResponse, createAfterStreamHook, type AfterStreamHook } from '@/lib/cf-env';
 import type { AnthropicMessagesRequest } from '@/lib/types';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+// Vercel Hobby (Fluid Compute) supports up to 300s maxDuration.
+export const maxDuration = 300;
 
 const batchRecorder = getBatchRecorder();
 
@@ -80,7 +81,9 @@ function wrapAnthropicStreamWithUsageTracking(
   model: string,
   startTime: number,
   requestPromptTokens: number,
-  traceId: string
+  traceId: string,
+  abortUpstream?: () => void,
+  afterStream?: AfterStreamHook
 ): ReadableStream<Uint8Array> {
   const reader = upstreamBody.getReader();
   const decoder = new TextDecoder();
@@ -88,6 +91,7 @@ function wrapAnthropicStreamWithUsageTracking(
   let accumulatedContentChars = 0;
   let lastUsage: { input_tokens?: number; output_tokens?: number } | null = null;
   let recorded = false;
+  const onVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
 
   async function recordUsage(promptTokens: number, completionTokens: number): Promise<void> {
     if (recorded) return;
@@ -118,20 +122,39 @@ function wrapAnthropicStreamWithUsageTracking(
       totalTokens: promptTokens + completionTokens,
       isStream: true,
     });
+    if (onVercel) {
+      await batchRecorder.flushForServerlessAfter();
+    }
   }
 
   return new ReadableStream({
     async pull(controller) {
-      const { done, value } = await reader.read();
+      let done: boolean;
+      let value: Uint8Array | undefined;
+      try {
+        ({ done, value } = await reader.read());
+      } catch (error) {
+        afterStream?.complete();
+        controller.error(error);
+        return;
+      }
       if (done) {
-        try {
-          if (lastUsage) {
-            await recordUsage(lastUsage.input_tokens ?? requestPromptTokens, lastUsage.output_tokens ?? 0);
-          } else if (accumulatedContentChars > 0) {
-            await recordUsage(requestPromptTokens, estimateTokensFromChars(accumulatedContentChars));
+        const finalize = async () => {
+          try {
+            if (lastUsage) {
+              await recordUsage(lastUsage.input_tokens ?? requestPromptTokens, lastUsage.output_tokens ?? 0);
+            } else if (accumulatedContentChars > 0) {
+              await recordUsage(requestPromptTokens, estimateTokensFromChars(accumulatedContentChars));
+            }
+          } catch (error) {
+            console.error('[Usage] anthropic stream recordUsage failed:', error);
           }
-        } catch (error) {
-          console.error('[Usage] anthropic stream recordUsage failed:', error);
+        };
+        if (onVercel && afterStream) {
+          afterStream.schedule(finalize);
+        } else {
+          await finalize();
+          afterStream?.complete();
         }
         controller.close();
         return;
@@ -179,6 +202,8 @@ function wrapAnthropicStreamWithUsageTracking(
     },
     cancel() {
       reader.cancel().catch(() => {});
+      abortUpstream?.();
+      afterStream?.complete();
     },
   });
 }
@@ -190,7 +215,9 @@ function wrapOpenAIStreamToAnthropic(
   model: string,
   startTime: number,
   requestPromptTokens: number,
-  traceId: string
+  traceId: string,
+  abortUpstream?: () => void,
+  afterStream?: AfterStreamHook
 ): ReadableStream<Uint8Array> {
   const reader = openAiStream.getReader();
   const decoder = new TextDecoder();
@@ -332,11 +359,25 @@ function wrapOpenAIStreamToAnthropic(
                 type: 'message_stop',
               }));
 
-              try {
-                await recordUsage(finalPromptTokens, finalCompletionTokens);
-              } catch (error) {
-                console.error('[Usage] translate stream recordUsage failed:', error);
+              const onVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
+              const finalize = async () => {
+                try {
+                  await recordUsage(finalPromptTokens, finalCompletionTokens);
+                  if (onVercel) {
+                    await batchRecorder.flushForServerlessAfter();
+                  }
+                } catch (error) {
+                  console.error('[Usage] translate stream recordUsage failed:', error);
+                }
+              };
+              if (onVercel && afterStream) {
+                afterStream.schedule(finalize);
+              } else {
+                await finalize();
+                afterStream?.complete();
               }
+            } else {
+              afterStream?.complete();
             }
             controller.close();
             break;
@@ -443,11 +484,14 @@ function wrapOpenAIStreamToAnthropic(
           }
         }
       } catch (err) {
+        afterStream?.complete();
         controller.error(err);
       }
     },
     cancel() {
       reader.cancel().catch(() => {});
+      abortUpstream?.();
+      afterStream?.complete();
     },
   });
 }
@@ -481,28 +525,26 @@ export async function POST(request: NextRequest) {
   const usageStorage = await createUsageStorage();
   batchRecorder.setStorage(usageStorage as any);
 
-  // On Cloudflare Free, keep the original request text so the relay can forward
+  // Keep the original request text across ALL platforms so the relay can forward
   // it byte-for-byte to the upstream when the body is unchanged, skipping a
-  // costly re-serialization of large (Claude Code) contexts. The Anthropic
-  // Messages path only swaps the model, so an unchanged model means the raw
-  // text is safe to forward as-is. The parse still happens once here.
+  // costly JSON.stringify of large (Claude Code) contexts (saves CF 10ms CPU
+  // and Vercel Fluid Compute Active CPU / memory).
   const onCloudflare = isCloudflareSync();
   let body: AnthropicMessagesRequest;
   let rawBody: string | undefined;
   try {
-    if (onCloudflare) {
-      rawBody = await request.text();
-      body = JSON.parse(rawBody);
-    } else {
-      body = await request.json();
-    }
+    rawBody = await request.text();
+    body = JSON.parse(rawBody);
   } catch {
     return jsonError(400, 'Invalid JSON in request body.');
   }
 
-  const sizeCheck = onCloudflare
-    ? validateRequestSize(rawBody?.length ?? 0)
-    : validateBase64ImageSizes(body);
+  const totalSizeCheck = validateRequestSize(rawBody?.length ?? 0);
+  const sizeCheck = !totalSizeCheck.valid
+    ? totalSizeCheck
+    : onCloudflare
+      ? totalSizeCheck
+      : validateBase64ImageSizes(body);
   if (!sizeCheck.valid) {
     return jsonError(400, sizeCheck.error || 'Request payload exceeds size limit.');
   }
@@ -535,7 +577,14 @@ export async function POST(request: NextRequest) {
     const startTime = Date.now();
     const userAgent = request.headers.get('user-agent') || undefined;
     const passthroughHeaders = collectPassthroughHeaders(request.headers);
-    const { response, provider, apiKey } = await relayRequest(body, 'anthropicMessages', userAgent, rawBody, passthroughHeaders);
+    const { response, provider, apiKey, abortUpstream } = await relayRequest(
+      body,
+      'anthropicMessages',
+      userAgent,
+      rawBody,
+      passthroughHeaders,
+      request.signal
+    );
     const latencyMs = Date.now() - startTime;
 
     const isAnthropic = provider.headerFormat === 'anthropic';
@@ -551,39 +600,43 @@ export async function POST(request: NextRequest) {
       // forwarded unchanged. For non-anthropic providers the OpenAI→Anthropic
       // stream translation below is mandatory, so CF must fall through to it.
       if (isCloudflareSync() && isAnthropic) {
-        const cfBody = createByteCountingStream(response.body, (totalBytes) => {
-          // Schedule usage recording in the background so slow D1/log writes
-          // don't delay the client's stream close. See runAfterResponse.
-          const completionTokens = estimateCompletionTokensFromStreamBytes(totalBytes);
-          const recordLatencyMs = Date.now() - startTime;
-          const event = createUsageEvent({
-            provider: provider.name,
-            model: body.model,
-            apiKeyHash: apiKey.hash,
-            statusCode: 200,
-            promptTokens: estimatedPromptTokens,
-            completionTokens,
-            latencyMs: recordLatencyMs,
-            isStream: true,
-          });
-          runAfterResponse(async () => {
-            await batchRecorder.record(event);
-            await recordRequestLog({
-              traceId,
-              timestamp: new Date().toISOString(),
-              apiKeyHash: apiKey.hash,
-              model: body.model,
+        const cfBody = createByteCountingStream(
+          response.body,
+          (totalBytes) => {
+            // Schedule usage recording in the background so slow D1/log writes
+            // don't delay the client's stream close. See runAfterResponse.
+            const completionTokens = estimateCompletionTokensFromStreamBytes(totalBytes);
+            const recordLatencyMs = Date.now() - startTime;
+            const event = createUsageEvent({
               provider: provider.name,
-              status: 'success',
-              httpStatus: 200,
-              latencyMs: recordLatencyMs,
+              model: body.model,
+              apiKeyHash: apiKey.hash,
+              statusCode: 200,
               promptTokens: estimatedPromptTokens,
               completionTokens,
-              totalTokens: estimatedPromptTokens + completionTokens,
+              latencyMs: recordLatencyMs,
               isStream: true,
             });
-          });
-        });
+            runAfterResponse(async () => {
+              await batchRecorder.record(event);
+              await recordRequestLog({
+                traceId,
+                timestamp: new Date().toISOString(),
+                apiKeyHash: apiKey.hash,
+                model: body.model,
+                provider: provider.name,
+                status: 'success',
+                httpStatus: 200,
+                latencyMs: recordLatencyMs,
+                promptTokens: estimatedPromptTokens,
+                completionTokens,
+                totalTokens: estimatedPromptTokens + completionTokens,
+                isStream: true,
+              });
+            });
+          },
+          abortUpstream
+        );
         return new Response(cfBody, {
           status: response.status,
           headers: {
@@ -597,6 +650,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      const afterStream = createAfterStreamHook();
       const wrappedBody = isAnthropic
         ? wrapAnthropicStreamWithUsageTracking(
             response.body,
@@ -605,7 +659,9 @@ export async function POST(request: NextRequest) {
             body.model,
             startTime,
             estimatedPromptTokens,
-            traceId
+            traceId,
+            abortUpstream,
+            afterStream
           )
         : wrapOpenAIStreamToAnthropic(
             response.body,
@@ -614,7 +670,9 @@ export async function POST(request: NextRequest) {
             body.model,
             startTime,
             estimatedPromptTokens,
-            traceId
+            traceId,
+            abortUpstream,
+            afterStream
           );
       return new Response(wrappedBody, {
         status: response.status,
@@ -660,6 +718,9 @@ export async function POST(request: NextRequest) {
           isStream: false,
         });
         await batchRecorder.record(event);
+        if (process.env.VERCEL || process.env.VERCEL_ENV) {
+          runAfterResponse(() => batchRecorder.flushForServerlessAfter());
+        }
         await recordRequestLog({
           traceId,
           timestamp: new Date().toISOString(),

@@ -6,17 +6,11 @@
 import { NextRequest } from 'next/server';
 import { requireAdminAuth } from '@/lib/admin/auth';
 import { getRuntimeSettings, saveRuntimeSettings } from '@/lib/admin/runtime-settings';
-import { isCloudflareSync } from '@/lib/cf-env';
+import { getDefaultUpstreamTimeoutMs } from '@/lib/relay/relay';
+import { getDefaultMaxConcurrent, getDefaultMaxQueue } from '@/lib/relay/concurrency';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-function getPlatformDefaultTimeoutMs(): number {
-  if (process.env.VERCEL || process.env.VERCEL_ENV || process.env.CF_PAGES || isCloudflareSync()) {
-    return 50_000;
-  }
-  return 300_000;
-}
 
 function getEnvDefaults() {
   const rawTimeout = Number(process.env.RELAY_UPSTREAM_TIMEOUT_MS);
@@ -29,9 +23,9 @@ function getEnvDefaults() {
         ? rawTimeout <= 0
           ? 0
           : Math.max(1_000, Math.floor(rawTimeout))
-        : getPlatformDefaultTimeoutMs(),
-    maxConcurrent: Number.isFinite(rawConcurrent) && rawConcurrent >= 1 ? rawConcurrent : 3,
-    maxQueue: Number.isFinite(rawQueue) && rawQueue >= 0 ? rawQueue : 10,
+        : getDefaultUpstreamTimeoutMs(),
+    maxConcurrent: Number.isFinite(rawConcurrent) && rawConcurrent >= 1 ? rawConcurrent : getDefaultMaxConcurrent(),
+    maxQueue: Number.isFinite(rawQueue) && rawQueue >= 0 ? rawQueue : getDefaultMaxQueue(),
     enableRequestLogs: process.env.ENABLE_REQUEST_LOGS === 'true',
     allowLocalKeySync: process.env.ALLOW_LOCAL_KEY_SYNC !== 'false',
     defaultUserAgent: process.env.RELAY_DEFAULT_USER_AGENT?.trim() || '',

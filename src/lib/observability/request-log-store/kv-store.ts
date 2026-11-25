@@ -12,6 +12,7 @@ const PREFIX = 'request_log:';
 const CAPTURE_FLAG_KEY = 'request_log_capture_enabled';
 const DEFAULT_MAX_ENTRIES = 100;
 const PRUNE_INTERVAL = 10; // Prune every N appends instead of every append
+const CAPTURE_CACHE_TTL_MS = 15_000; // Avoid a KV GET on every single request when logging is enabled
 
 async function scanLogKeys(kv: any): Promise<string[]> {
   const seen = new Set<string>();
@@ -39,6 +40,7 @@ async function scanLogKeys(kv: any): Promise<string[]> {
 export class KVRequestLogStore implements RequestLogStore {
   private defaultMaxEntries: number;
   private appendCount: number = 0;
+  private captureCache: { enabled: boolean; expiresAt: number } | null = null;
 
   constructor() {
     const userMax = parseInt(process.env.REQUEST_LOGS_MAX_ENTRIES || '', 10);
@@ -134,6 +136,7 @@ export class KVRequestLogStore implements RequestLogStore {
   }
 
   async clear(): Promise<void> {
+    this.captureCache = { enabled: false, expiresAt: Date.now() + CAPTURE_CACHE_TTL_MS };
     const kv = await getKV();
     if (!kv) return;
 
@@ -150,19 +153,31 @@ export class KVRequestLogStore implements RequestLogStore {
   }
 
   async isCaptureEnabled(): Promise<boolean> {
+    const now = Date.now();
+    if (this.captureCache && now < this.captureCache.expiresAt) {
+      return this.captureCache.enabled;
+    }
+
     const kv = await getKV();
     if (!kv) return false;
 
     try {
       const flag = await kv.get(CAPTURE_FLAG_KEY);
       // Both @vercel/kv and CFKVAdapter auto-deserialize JSON `'1'` into `1`
-      return flag === '1' || flag === 1 || flag === true;
+      const enabled = flag === '1' || flag === 1 || flag === true;
+      this.captureCache = { enabled, expiresAt: now + CAPTURE_CACHE_TTL_MS };
+      return enabled;
     } catch {
       return false;
     }
   }
 
   async enableCapture(ttlSeconds: number): Promise<void> {
+    const now = Date.now();
+    this.captureCache = {
+      enabled: true,
+      expiresAt: Math.min(now + CAPTURE_CACHE_TTL_MS, now + Math.max(1, ttlSeconds) * 1000),
+    };
     const kv = await getKV();
     if (!kv) return;
 

@@ -7,25 +7,45 @@
 
 import type { LatencyRecord, LatencyStats } from './types';
 import { getKV } from './kv-client';
+import { getCFEnv, getCFEnvSync, isCloudflareSync, runAfterResponse } from '../cf-env';
+import { ensureD1Schema } from '../db/d1-schema';
 
-/** In-memory latency cache: provider → records[] */
-const latencyCache = new Map<string, LatencyRecord[]>();
+interface SharedLatencyState {
+  latencyCache: Map<string, LatencyRecord[]>;
+  cacheTimestamps: Map<string, number>;
+  lastWriteAt: Map<string, number>;
+  dirtyCount: Map<string, number>;
+}
+
+const sharedLatencyState: SharedLatencyState = ((globalThis as any).__aiRelayLatencyTrackerState ??= {
+  latencyCache: new Map<string, LatencyRecord[]>(),
+  cacheTimestamps: new Map<string, number>(),
+  lastWriteAt: new Map<string, number>(),
+  dirtyCount: new Map<string, number>(),
+});
+
+/** In-memory latency cache: provider → records[] (shared across route bundles) */
+const latencyCache = sharedLatencyState.latencyCache;
 
 /** Cache TTL */
 const CACHE_TTL_MS = 30_000; // 30s
-const cacheTimestamps = new Map<string, number>();
+const cacheTimestamps = sharedLatencyState.cacheTimestamps;
 
-/** Write debounce: minimum interval between KV writes per provider */
-const WRITE_INTERVAL_MS = 60_000; // 60s
-const lastWriteAt = new Map<string, number>();
+/** Write debounce: minimum interval between KV/D1 writes per provider */
+const WRITE_INTERVAL_MS = 60_000; // 60s (Redis/Upstash/File/Postgres)
+const CF_D1_WRITE_INTERVAL_MS = 120_000; // 2m when persisting to Cloudflare D1
+const CF_KV_WRITE_INTERVAL_MS = 10 * 60_000; // 10m fallback when CF has KV-only (1,000 writes/day cap)
+const lastWriteAt = sharedLatencyState.lastWriteAt;
 /** Dirty record count since last write — flush early if enough accumulate */
-const dirtyCount = new Map<string, number>();
+const dirtyCount = sharedLatencyState.dirtyCount;
 const DIRTY_FLUSH_THRESHOLD = 5;
+const CF_D1_DIRTY_FLUSH_THRESHOLD = 20;
+const CF_KV_DIRTY_FLUSH_THRESHOLD = 50;
 
 /** Max samples per provider (sliding window) */
 const MAX_SAMPLES = 100;
 
-/** KV key prefix */
+/** KV / D1 config_flags key prefix */
 const KV_PREFIX = 'relay:route:latency:';
 
 /** How long to keep samples in KV (24h) */
@@ -45,10 +65,30 @@ function getCachedRecords(provider: string): LatencyRecord[] | null {
 }
 
 /**
- * Load latency records from KV.
+ * Load latency records from D1 (on Cloudflare when bound) or KV.
  */
 async function loadFromKV(provider: string): Promise<LatencyRecord[]> {
   try {
+    if (isCloudflareSync()) {
+      const cfEnv = getCFEnvSync() || (await getCFEnv());
+      if (cfEnv?.DB) {
+        await ensureD1Schema(cfEnv.DB);
+        const row = await cfEnv.DB
+          .prepare('SELECT value FROM config_flags WHERE key = ?')
+          .bind(`${KV_PREFIX}${provider}`)
+          .first<{ value?: string }>();
+        if (row?.value) {
+          const parsed = JSON.parse(row.value);
+          if (Array.isArray(parsed)) {
+            latencyCache.set(provider, parsed as LatencyRecord[]);
+            cacheTimestamps.set(provider, Date.now());
+            return parsed as LatencyRecord[];
+          }
+        }
+        return [];
+      }
+    }
+
     const kv = await getKV();
     if (!kv) return [];
     const data = await kv.get(`${KV_PREFIX}${provider}`);
@@ -64,8 +104,10 @@ async function loadFromKV(provider: string): Promise<LatencyRecord[]> {
 }
 
 /**
- * Save latency records to KV (debounced, fire-and-forget).
- * Writes if: 60s elapsed since last write OR dirty count >= threshold.
+ * Save latency records to D1 (on Cloudflare when bound) or KV (debounced).
+ * On Cloudflare Workers, avoids burning CF KV's 1,000 writes/day Free Tier limit
+ * by persisting into D1 `config_flags` (100,000 rows written/day) via `ctx.waitUntil`,
+ * and throttling aggressively if only CF KV is bound.
  */
 function saveToKV(provider: string, records: LatencyRecord[]): void {
   const now = Date.now();
@@ -73,16 +115,53 @@ function saveToKV(provider: string, records: LatencyRecord[]): void {
   const dirty = (dirtyCount.get(provider) || 0) + 1;
   dirtyCount.set(provider, dirty);
 
-  if (now - lastWrite < WRITE_INTERVAL_MS && dirty < DIRTY_FLUSH_THRESHOLD) return;
+  const onCf = isCloudflareSync();
+  const cfEnv = onCf ? getCFEnvSync() : null;
+  const useCfD1 = Boolean(onCf && cfEnv?.DB);
+
+  const writeInterval = useCfD1
+    ? CF_D1_WRITE_INTERVAL_MS
+    : onCf
+      ? CF_KV_WRITE_INTERVAL_MS
+      : WRITE_INTERVAL_MS;
+  const dirtyThreshold = useCfD1
+    ? CF_D1_DIRTY_FLUSH_THRESHOLD
+    : onCf
+      ? CF_KV_DIRTY_FLUSH_THRESHOLD
+      : DIRTY_FLUSH_THRESHOLD;
+
+  if (now - lastWrite < writeInterval && dirty < dirtyThreshold) return;
 
   lastWriteAt.set(provider, now);
   dirtyCount.set(provider, 0);
 
-  getKV().then((kv: any) => {
+  if (useCfD1 && cfEnv?.DB) {
+    const db = cfEnv.DB;
+    const serialized = JSON.stringify(records);
+    const expiresAt = new Date(now + KV_TTL_SECONDS * 1000).toISOString();
+    runAfterResponse(async () => {
+      await ensureD1Schema(db);
+      await db
+        .prepare(
+          `INSERT INTO config_flags (key, value, expires_at, updated_at)
+           VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(key) DO UPDATE SET
+             value = excluded.value,
+             expires_at = excluded.expires_at,
+             updated_at = CURRENT_TIMESTAMP`
+        )
+        .bind(`${KV_PREFIX}${provider}`, serialized, expiresAt)
+        .run();
+    });
+    return;
+  }
+
+  runAfterResponse(async () => {
+    const kv: any = await getKV();
     if (kv) {
-      kv.set(`${KV_PREFIX}${provider}`, records, { ex: KV_TTL_SECONDS });
+      await kv.set(`${KV_PREFIX}${provider}`, records, { ex: KV_TTL_SECONDS });
     }
-  }).catch(() => {});
+  });
 }
 
 /**
@@ -172,6 +251,25 @@ export async function getLatencyStats(provider: string): Promise<LatencyStats> {
  */
 export async function getAllLatencyStats(): Promise<Record<string, LatencyStats>> {
   try {
+    if (isCloudflareSync()) {
+      const cfEnv = getCFEnvSync() || (await getCFEnv());
+      if (cfEnv?.DB) {
+        await ensureD1Schema(cfEnv.DB);
+        const rows = await cfEnv.DB
+          .prepare('SELECT key FROM config_flags WHERE key LIKE ?')
+          .bind(`${KV_PREFIX}%`)
+          .all();
+        const stats: Record<string, LatencyStats> = {};
+        for (const row of (rows.results || []) as Array<{ key?: string }>) {
+          if (typeof row.key === 'string' && row.key.startsWith(KV_PREFIX)) {
+            const provider = row.key.slice(KV_PREFIX.length);
+            stats[provider] = await getLatencyStats(provider);
+          }
+        }
+        return stats;
+      }
+    }
+
     const kv = await getKV();
     if (!kv) return {};
 

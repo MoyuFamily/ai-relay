@@ -347,7 +347,7 @@ export async function startLocalServer(options: StartServerOptions): Promise<Loc
 
         const userAgent = webHeaders.get('user-agent') || undefined;
         const passthroughHeaders = collectPassthroughHeaders(webHeaders);
-        const { response, provider, apiKey } = await relayRequest(
+        const { response, provider, apiKey, abortUpstream } = await relayRequest(
           body,
           apiType,
           userAgent,
@@ -368,6 +368,7 @@ export async function startLocalServer(options: StartServerOptions): Promise<Loc
           let streamBytes = 0;
           req.on('close', () => {
             reader.cancel().catch(() => {});
+            abortUpstream?.();
           });
           while (true) {
             const { done, value } = await reader.read();

@@ -12,7 +12,8 @@ export type ErrorType =
   | 'rate_limit_error'       // 429 — quota exceeded
   | 'server_error'           // 500 — internal error
   | 'upstream_error'         // 502 — upstream provider failure
-  | 'not_found_error';       // 404 — resource not found
+  | 'not_found_error'        // 404 — resource not found
+  | 'client_closed_request'; // 499 — client disconnected before response
 
 /**
  * Standardized relay error.
