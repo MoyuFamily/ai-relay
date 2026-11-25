@@ -26,6 +26,7 @@ async function getD1(): Promise<D1Database | null> {
 }
 
 export class D1RequestLogStore implements RequestLogStore {
+  readonly source = 'd1' as const;
   private defaultMaxEntries: number;
   private appendCount = 0;
   private captureCache: { enabled: boolean; expiresAt: number } | null = null;
