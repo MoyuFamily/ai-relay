@@ -86,7 +86,14 @@ const BROWSER_COMPAT_USER_AGENTS = [
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36',
   'Mozilla/5.0',
 ];
-const DEFAULT_SERVERLESS_UPSTREAM_TIMEOUT_MS = 50_000;
+// Platform-aware default upstream header/TTFB timeouts:
+// - Cloudflare Workers: 90s (aligns with CF's ~100s origin/idle proxy boundary
+//   with 10s headroom; streaming after headers has no hard duration cap).
+// - Vercel Hobby (Fluid Compute): 240s (aligns with maxDuration=300, leaving
+//   60s headroom for streaming/post-response work).
+// - Self-hosted VPS / Docker / Local CLI: 300s (5 minutes).
+const DEFAULT_CLOUDFLARE_UPSTREAM_TIMEOUT_MS = 90_000;
+const DEFAULT_VERCEL_UPSTREAM_TIMEOUT_MS = 240_000;
 const DEFAULT_SELF_HOSTED_UPSTREAM_TIMEOUT_MS = 300_000;
 
 class UpstreamTimeoutError extends Error {
@@ -99,11 +106,26 @@ class UpstreamTimeoutError extends Error {
   }
 }
 
-function getDefaultUpstreamTimeoutMs(): number {
-  if (process.env.VERCEL || process.env.VERCEL_ENV || process.env.CF_PAGES || isCloudflareSync()) {
-    return DEFAULT_SERVERLESS_UPSTREAM_TIMEOUT_MS;
+class ClientDisconnectedError extends Error {
+  constructor() {
+    super('Client disconnected before upstream responded');
+    this.name = 'ClientDisconnectedError';
+  }
+}
+
+export function getDefaultUpstreamTimeoutMs(): number {
+  if (process.env.CF_PAGES || isCloudflareSync()) {
+    return DEFAULT_CLOUDFLARE_UPSTREAM_TIMEOUT_MS;
+  }
+  if (process.env.VERCEL || process.env.VERCEL_ENV) {
+    return DEFAULT_VERCEL_UPSTREAM_TIMEOUT_MS;
   }
   return DEFAULT_SELF_HOSTED_UPSTREAM_TIMEOUT_MS;
+}
+
+function shouldFallbackOnTimeout(): boolean {
+  const raw = process.env.RELAY_FALLBACK_ON_TIMEOUT?.trim().toLowerCase();
+  return raw === 'true' || raw === '1';
 }
 
 import { getCachedRuntimeSettingsSync, getRuntimeSettings } from '../admin/runtime-settings';
@@ -162,23 +184,45 @@ async function fetchUpstreamWithUserAgentCandidates(input: {
   // bodies. Falls back to JSON.stringify when absent. See tryProviderWithRetries.
   rawPayload?: string;
   passthroughHeaders?: Record<string, string>;
-}): Promise<Response> {
+  clientSignal?: AbortSignal;
+}): Promise<{ response: Response; abortUpstream: () => void }> {
   const payload = input.rawPayload ?? JSON.stringify(input.body);
-  let lastResponse: Response | null = null;
+  let lastResult: { response: Response; abortUpstream: () => void } | null = null;
   const timeoutMs = getUpstreamTimeoutMs();
 
   const uaCandidates = getUserAgentCandidates(input.provider);
 
   for (let idx = 0; idx < uaCandidates.length; idx++) {
+    if (input.clientSignal?.aborted) {
+      throw new ClientDisconnectedError();
+    }
+
     const customUserAgent = uaCandidates[idx];
-    const controller = timeoutMs > 0 ? new AbortController() : null;
+    const controller = timeoutMs > 0 || input.clientSignal || input.isStream ? new AbortController() : null;
     let timedOut = false;
-    const timer = controller
-      ? setTimeout(() => {
-          timedOut = true;
-          controller.abort();
-        }, timeoutMs)
-      : null;
+    let clientAborted = false;
+
+    const onClientAbort = () => {
+      clientAborted = true;
+      controller?.abort();
+    };
+    if (input.clientSignal && controller) {
+      input.clientSignal.addEventListener('abort', onClientAbort, { once: true });
+    }
+
+    const detachClientAbort = () => {
+      if (input.clientSignal) {
+        input.clientSignal.removeEventListener('abort', onClientAbort);
+      }
+    };
+
+    const timer =
+      controller && timeoutMs > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+          }, timeoutMs)
+        : null;
 
     let response: Response;
     try {
@@ -189,6 +233,10 @@ async function fetchUpstreamWithUserAgentCandidates(input: {
         signal: controller?.signal,
       });
     } catch (error) {
+      detachClientAbort();
+      if (clientAborted || input.clientSignal?.aborted) {
+        throw new ClientDisconnectedError();
+      }
       if (timedOut || isAbortError(error)) {
         throw new UpstreamTimeoutError(timeoutMs);
       }
@@ -197,18 +245,33 @@ async function fetchUpstreamWithUserAgentCandidates(input: {
       if (timer) clearTimeout(timer);
     }
 
-    lastResponse = response;
+    const abortUpstream = () => {
+      detachClientAbort();
+      try {
+        controller?.abort();
+      } catch {
+        // Ignore already-aborted controller
+      }
+    };
+
+    lastResult = { response, abortUpstream };
     if (!shouldRetryWithAlternateUserAgent(response)) {
-      return response;
+      // For non-streaming responses we don't need to keep the clientSignal listener attached
+      // after headers arrive if body is consumed quickly; still keep abortUpstream callable.
+      if (!input.isStream) {
+        detachClientAbort();
+      }
+      return lastResult;
     }
     // Release socket before retrying with the next User-Agent candidate
-    // (skip on the final candidate so the caller can still inspect lastResponse).
+    // (skip on the final candidate so the caller can still inspect lastResult).
     if (idx < uaCandidates.length - 1) {
+      detachClientAbort();
       await cancelResponseBody(response);
     }
   }
 
-  return lastResponse!;
+  return lastResult!;
 }
 
 /**
@@ -239,7 +302,8 @@ export async function relayRequest(
   apiType: RelayApiType = 'chat',
   userAgent?: string,
   rawBody?: string,
-  passthroughHeaders?: Record<string, string>
+  passthroughHeaders?: Record<string, string>,
+  clientSignal?: AbortSignal
 ): Promise<RelayResult> {
   // Warm runtime settings cache (60s TTL; near-zero cost after first request)
   await getRuntimeSettings().catch(() => {});
@@ -383,7 +447,7 @@ export async function relayRequest(
 
       // Try primary provider with retries (with concurrency control)
       primaryResult = await withConcurrency(
-        () => tryProviderWithRetries(effectiveProvider, body, apiKey, maxRetries, apiType, smartRoutingConfigured, userAgent, rawBody, passthroughHeaders)
+        () => tryProviderWithRetries(effectiveProvider, body, apiKey, maxRetries, apiType, smartRoutingConfigured, userAgent, rawBody, passthroughHeaders, clientSignal)
       );
       if (primaryResult.result) {
         return primaryResult.result;
@@ -447,7 +511,7 @@ export async function relayRequest(
     // Supported fallback to non-Anthropic format via request translation.
 
     const fbResult = await withConcurrency(
-      () => tryProviderWithRetries(fbProvider, fbBody, fbKey, fbMaxRetries, apiType, smartRoutingConfigured, userAgent, undefined, passthroughHeaders)
+      () => tryProviderWithRetries(fbProvider, fbBody, fbKey, fbMaxRetries, apiType, smartRoutingConfigured, userAgent, undefined, passthroughHeaders, clientSignal)
     );
     if (fbResult.result) {
       return fbResult.result;
@@ -477,16 +541,21 @@ async function tryProviderWithRetries(
   userAgent?: string,
   // Original request text. When the outgoing body would be byte-identical to
   // it (no model rewrite / transform / stream_options injection), it is
-  // forwarded as-is to skip a costly JSON.stringify of large bodies. Only
-  // supplied for the primary attempt on Cloudflare; fallbacks remap the model
-  // and so always re-serialize. See relayRequest.
+  // forwarded as-is to skip a costly JSON.stringify of large bodies across
+  // Cloudflare (10ms CPU budget), Vercel (Active CPU/memory), and Node.js.
+  // Only supplied for the primary attempt; fallbacks may remap the model.
   rawBody?: string,
-  passthroughHeaders?: Record<string, string>
+  passthroughHeaders?: Record<string, string>,
+  clientSignal?: AbortSignal
 ): Promise<{ result: RelayResult | null; lastError: Error | null }> {
   let currentKey = initialKey;
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
+    if (clientSignal?.aborted) {
+      throw new RelayError('Client disconnected.', 'client_closed_request', 499);
+    }
+
     // Exponential backoff between retries (skip on first attempt)
     if (attempt > 0) {
       await backoffSleep(attempt - 1);
@@ -517,12 +586,16 @@ async function tryProviderWithRetries(
     const resolvedModel = resolveUpstreamModel(resolvedAlias, provider);
 
     // On Cloudflare, streaming usage is estimated from byte counts (see the
-    // byte-counting passthrough in the route handlers), so we no longer need
-    // to inject stream_options.include_usage. Skipping it keeps the body
-    // byte-identical to the client's, which lets us forward the raw text below.
-    // Keyed to the actual CF runtime (not to rawBody presence) so a future
-    // non-CF caller passing rawBody can never accidentally suppress usage.
-    const injectStreamOptions = !!body.stream && !isAnthropic && !isCloudflareSync();
+    // byte-counting passthrough in the route handlers), so we skip injecting
+    // stream_options.include_usage. Off Cloudflare, if the client already sent
+    // stream_options.include_usage === true we also skip re-injecting it so the
+    // request stays byte-identical and eligible for raw forwarding (saving
+    // Active CPU and heap memory on Vercel Fluid Compute & VPS).
+    const alreadyIncludesUsage =
+      typeof (body as ChatCompletionRequest).stream_options === 'object' &&
+      (body as ChatCompletionRequest).stream_options !== null &&
+      ((body as ChatCompletionRequest).stream_options as Record<string, unknown>).include_usage === true;
+    const injectStreamOptions = !!body.stream && !isAnthropic && !isCloudflareSync() && !alreadyIncludesUsage;
 
     // Transform request body if needed (use resolved model name)
     // For Responses API: pass body directly (no Anthropic transform — Responses API is OpenAI-only)
@@ -574,7 +647,7 @@ async function tryProviderWithRetries(
       break;
     }
     try {
-      const upstreamResponse = await fetchUpstreamWithUserAgentCandidates({
+      const { response: upstreamResponse, abortUpstream } = await fetchUpstreamWithUserAgentCandidates({
         provider,
         apiKey: currentKey.key,
         isStream: !!body.stream,
@@ -583,6 +656,7 @@ async function tryProviderWithRetries(
         body: requestBody,
         rawPayload,
         passthroughHeaders,
+        clientSignal,
       });
 
       const latencyMs = Date.now() - startTime;
@@ -590,6 +664,7 @@ async function tryProviderWithRetries(
       // 429 → record in rate limiter + try next key
       if (upstreamResponse.status === 429) {
         await cancelResponseBody(upstreamResponse);
+        abortUpstream();
         await record429(provider.name);
         await markCooldown(currentKey);
         await recordError(provider.name, currentKey.hash, 429, 'Rate limited by upstream');
@@ -606,6 +681,7 @@ async function tryProviderWithRetries(
       // 401/403 → key invalid/expired, rotate to next key
       if (upstreamResponse.status === 401 || upstreamResponse.status === 403) {
         await cancelResponseBody(upstreamResponse);
+        abortUpstream();
         await markCooldown(currentKey);
         await recordError(provider.name, currentKey.hash, upstreamResponse.status, 'Auth failed — key invalid or expired');
         if (smartRoutingConfigured) recordProviderResult(provider.name, false, latencyMs, upstreamResponse.status);
@@ -621,6 +697,7 @@ async function tryProviderWithRetries(
       // 5xx → try next key (but don't count as 429 for circuit breaker)
       if (upstreamResponse.status >= 500) {
         await cancelResponseBody(upstreamResponse);
+        abortUpstream();
         await markCooldown(currentKey);
         await recordError(provider.name, currentKey.hash, upstreamResponse.status, 'Upstream server error');
         if (smartRoutingConfigured) recordProviderResult(provider.name, false, latencyMs, upstreamResponse.status);
@@ -643,8 +720,11 @@ async function tryProviderWithRetries(
       // NOTE: Usage tracking is done in the route handler, not here.
       // This avoids double-counting for non-streaming responses.
 
-      return { result: { response: upstreamResponse, provider, apiKey: currentKey }, lastError };
+      return { result: { response: upstreamResponse, provider, apiKey: currentKey, abortUpstream }, lastError };
     } catch (error) {
+      if (error instanceof ClientDisconnectedError) {
+        throw new RelayError('Client disconnected.', 'client_closed_request', 499);
+      }
       lastError = error instanceof Error ? error : new Error(String(error));
       if (smartRoutingConfigured) recordProviderResult(provider.name, false, Date.now() - startTime);
       if (error instanceof UpstreamTimeoutError) {
@@ -652,10 +732,13 @@ async function tryProviderWithRetries(
           markCooldown(currentKey);
           await recordError(provider.name, currentKey.hash, 504, `Upstream timeout after ${error.timeoutMs}ms`);
         }
-        // Fail fast with 504 without attempting fallback providers: on Vercel
-        // (maxDuration=60s) and CF Pages, DEFAULT_UPSTREAM_TIMEOUT_MS=50s leaves
-        // just enough headroom to return a structured JSON 504 before the platform
-        // hard-kills the function.
+        // When RELAY_FALLBACK_ON_TIMEOUT=true (useful with short custom TTFB
+        // timeouts on 300s Vercel Fluid Compute / VPS / 90s CF), fall through
+        // to let relayRequest try the next fallback provider. Otherwise fail
+        // fast with structured 504 before platform limits kill the function.
+        if (shouldFallbackOnTimeout()) {
+          return { result: null, lastError };
+        }
         throw new RelayError(
           `${provider.displayName} timed out after ${error.timeoutMs}ms while waiting for upstream response.`,
           'upstream_error',

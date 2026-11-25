@@ -85,17 +85,28 @@ export function validateBase64ImageSizes(body: any): { valid: boolean; error?: s
 }
 
 /**
- * Default cap for the total request-size guard (10MB). Generous enough
- * for legitimate multi-modal requests (several images + text) while bounding
- * oversized payloads before memory/CPU exhaustion.
+ * Default cap for the total request-size guard:
+ * - Vercel Hobby enforces a hard 4.5MB platform request body ceiling (413),
+ *   so align our default guard to 4.5MB on Vercel to surface a structured JSON
+ *   error rather than an opaque platform 413 whenever measurable.
+ * - Cloudflare / VPS / Local keep a 10MB default ceiling.
  */
 const DEFAULT_MAX_REQUEST_BYTES = 10 * 1024 * 1024;
+const VERCEL_DEFAULT_MAX_REQUEST_BYTES = Math.floor(4.5 * 1024 * 1024);
+
+export function getDefaultMaxRequestBytes(): number {
+  if (process.env.VERCEL || process.env.VERCEL_ENV) {
+    return VERCEL_DEFAULT_MAX_REQUEST_BYTES;
+  }
+  return DEFAULT_MAX_REQUEST_BYTES;
+}
 
 function maxRequestBytes(): number {
   const raw = process.env.RELAY_MAX_REQUEST_BYTES;
-  if (raw === undefined || raw.trim() === '') return DEFAULT_MAX_REQUEST_BYTES;
+  const fallback = getDefaultMaxRequestBytes();
+  if (raw === undefined || raw.trim() === '') return fallback;
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 0) return DEFAULT_MAX_REQUEST_BYTES;
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
   return parsed; // 0 disables the cap
 }
 

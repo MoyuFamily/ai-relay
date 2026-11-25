@@ -64,4 +64,6 @@ export interface RelayResult {
   response: Response;
   provider: ProviderConfig;
   apiKey: ApiKey;
+  /** Abort the active upstream fetch (e.g. when client disconnects mid-stream). */
+  abortUpstream?: () => void;
 }

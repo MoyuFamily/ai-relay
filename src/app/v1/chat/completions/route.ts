@@ -18,10 +18,11 @@ import { createUsageEvent, getBatchRecorder } from '@/lib/usage';
 import { createUsageStorage } from '@/lib/usage/factory';
 import { recordRequestLog } from '@/lib/observability/request-logs';
 import { chunkHasUsage, jsonStringFieldLength, createByteCountingStream, estimateCompletionTokensFromStreamBytes } from '@/lib/usage/stream-usage';
-import { isCloudflareSync, runAfterResponse } from '@/lib/cf-env';
+import { isCloudflareSync, runAfterResponse, createAfterStreamHook, type AfterStreamHook } from '@/lib/cf-env';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+// Vercel Hobby (Fluid Compute) supports up to 300s maxDuration.
+export const maxDuration = 300;
 
 const batchRecorder = getBatchRecorder();
 
@@ -53,7 +54,9 @@ function wrapStreamWithUsageTracking(
   model: string,
   startTime: number,
   requestPromptTokens: number,
-  traceId: string
+  traceId: string,
+  abortUpstream?: () => void,
+  afterStream?: AfterStreamHook
 ): ReadableStream<Uint8Array> {
   const reader = upstreamBody.getReader();
   const decoder = new TextDecoder();
@@ -61,6 +64,7 @@ function wrapStreamWithUsageTracking(
   let lastUsage: { prompt_tokens?: number; completion_tokens?: number } | null = null;
   let accumulatedContentChars = 0;
   let recorded = false;
+  const onVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
 
   async function recordUsage(promptTokens: number, completionTokens: number): Promise<void> {
     if (recorded) return;
@@ -91,18 +95,37 @@ function wrapStreamWithUsageTracking(
       totalTokens: promptTokens + completionTokens,
       isStream: true,
     });
+    if (onVercel) {
+      await batchRecorder.flushForServerlessAfter();
+    }
   }
 
   return new ReadableStream({
     async pull(controller) {
-      const { done, value } = await reader.read();
+      let done: boolean;
+      let value: Uint8Array | undefined;
+      try {
+        ({ done, value } = await reader.read());
+      } catch (error) {
+        afterStream?.complete();
+        controller.error(error);
+        return;
+      }
       if (done) {
         // Stream ended — record usage
-        if (lastUsage) {
-          await recordUsage(lastUsage.prompt_tokens || 0, lastUsage.completion_tokens || 0);
-        } else if (accumulatedContentChars > 0) {
-          // Fallback: estimate tokens from accumulated content length.
-          await recordUsage(requestPromptTokens, estimateTokensFromChars(accumulatedContentChars));
+        const finalize = async () => {
+          if (lastUsage) {
+            await recordUsage(lastUsage.prompt_tokens || 0, lastUsage.completion_tokens || 0);
+          } else if (accumulatedContentChars > 0) {
+            // Fallback: estimate tokens from accumulated content length.
+            await recordUsage(requestPromptTokens, estimateTokensFromChars(accumulatedContentChars));
+          }
+        };
+        if (onVercel && afterStream) {
+          afterStream.schedule(finalize);
+        } else {
+          await finalize();
+          afterStream?.complete();
         }
         controller.close();
         return;
@@ -158,6 +181,8 @@ function wrapStreamWithUsageTracking(
     },
     cancel() {
       reader.cancel().catch(() => {});
+      abortUpstream?.();
+      afterStream?.complete();
     },
   });
 }
@@ -174,7 +199,9 @@ function wrapAnthropicStreamToOpenAI(
   model: string,
   startTime: number,
   requestPromptTokens: number,
-  traceId: string
+  traceId: string,
+  abortUpstream?: () => void,
+  afterStream?: AfterStreamHook
 ): ReadableStream<Uint8Array> {
   const reader = upstreamBody.getReader();
   const decoder = new TextDecoder();
@@ -254,10 +281,22 @@ function wrapAnthropicStreamToOpenAI(
           if (done) {
             const finalPromptTokens = inputTokensFromUsage ?? requestPromptTokens;
             const finalCompletionTokens = outputTokensFromUsage ?? estimateTokensFromChars(accumulatedContentChars);
-            try {
-              await recordUsage(finalPromptTokens, finalCompletionTokens);
-            } catch (error) {
-              console.error('[Usage] anthropic-to-openai stream recordUsage failed:', error);
+            const onVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
+            const finalize = async () => {
+              try {
+                await recordUsage(finalPromptTokens, finalCompletionTokens);
+                if (onVercel) {
+                  await batchRecorder.flushForServerlessAfter();
+                }
+              } catch (error) {
+                console.error('[Usage] anthropic-to-openai stream recordUsage failed:', error);
+              }
+            };
+            if (onVercel && afterStream) {
+              afterStream.schedule(finalize);
+            } else {
+              await finalize();
+              afterStream?.complete();
             }
             ensureRole(controller);
             controller.enqueue(chunk({}, finalFinishReason || 'stop', {
@@ -347,11 +386,14 @@ function wrapAnthropicStreamToOpenAI(
           }
         }
       } catch (error) {
+        afterStream?.complete();
         controller.error(error);
       }
     },
     cancel() {
       reader.cancel().catch(() => {});
+      abortUpstream?.();
+      afterStream?.complete();
     },
   });
 }
@@ -427,20 +469,16 @@ export async function POST(request: NextRequest) {
   batchRecorder.setStorage(usageStorage as any);
 
   // 2. Parse request body
-  // On Cloudflare Free we also keep the original request text so the relay can
-  // forward it byte-for-byte to the upstream when the body is unchanged,
-  // skipping a costly re-serialization of large (Claude Code) contexts. The
-  // parse still happens once here for reliable model/stream resolution.
+  // Keep the original request text across ALL platforms (Cloudflare, Vercel,
+  // and self-hosted Node) so the relay can forward it byte-for-byte whenever
+  // the outgoing body is unchanged, skipping a costly JSON.stringify of large
+  // contexts (saves CF 10ms CPU and Vercel Fluid Compute Active CPU / memory).
   const onCloudflare = isCloudflareSync();
   let body;
   let rawBody: string | undefined;
   try {
-    if (onCloudflare) {
-      rawBody = await request.text();
-      body = JSON.parse(rawBody);
-    } else {
-      body = await request.json();
-    }
+    rawBody = await request.text();
+    body = JSON.parse(rawBody);
     requestedModel = body?.model;
   } catch {
     return new Response(
@@ -456,13 +494,15 @@ export async function POST(request: NextRequest) {
   }
 
   // Guard against oversized inline payloads (abuse / accidental huge images).
-  // On Vercel: the precise per-image base64 scan. On Cloudflare Free: that deep
-  // scan is O(body) CPU the ~10ms budget can't afford, so swap it for a cheap
-  // O(1) total request-size cap against the raw text length — an oversized
-  // image still pushes the body past the cap and is rejected before relay.
-  const sizeCheck = onCloudflare
-    ? validateRequestSize(rawBody?.length ?? 0)
-    : validateBase64ImageSizes(body);
+  // Always enforce the O(1) total request-size cap first (4.5MB on Vercel, 10MB
+  // elsewhere) to catch chunked bodies without Content-Length. Off Cloudflare,
+  // also run the precise per-image 1MB base64 scan (too expensive for CF's 10ms CPU).
+  const totalSizeCheck = validateRequestSize(rawBody?.length ?? 0);
+  const sizeCheck = !totalSizeCheck.valid
+    ? totalSizeCheck
+    : onCloudflare
+      ? totalSizeCheck
+      : validateBase64ImageSizes(body);
   if (!sizeCheck.valid) {
     return new Response(
       JSON.stringify({
@@ -532,7 +572,14 @@ export async function POST(request: NextRequest) {
     const startTime = Date.now();
     const userAgent = request.headers.get('user-agent') || undefined;
     const passthroughHeaders = collectPassthroughHeaders(request.headers);
-    const { response, provider, apiKey } = await relayRequest(body, 'chat', userAgent, rawBody, passthroughHeaders);
+    const { response, provider, apiKey, abortUpstream } = await relayRequest(
+      body,
+      'chat',
+      userAgent,
+      rawBody,
+      passthroughHeaders,
+      request.signal
+    );
     const latencyMs = Date.now() - startTime;
     const isAnthropicProvider = provider.headerFormat === 'anthropic';
 
@@ -548,39 +595,43 @@ export async function POST(request: NextRequest) {
       // exact wrapper below.
       // Anthropic fallback must be translated, so large CF streams can exceed the CPU budget.
       if (isCloudflareSync() && !isAnthropicProvider) {
-        const cfBody = createByteCountingStream(response.body, (totalBytes) => {
-          // Schedule usage recording in the background so slow D1/log writes
-          // don't delay the client's stream close. See runAfterResponse.
-          const completionTokens = estimateCompletionTokensFromStreamBytes(totalBytes);
-          const recordLatencyMs = Date.now() - startTime;
-          const event = createUsageEvent({
-            provider: provider.name,
-            model: body.model,
-            apiKeyHash: apiKey.hash,
-            statusCode: 200,
-            promptTokens: estimatedPromptTokens,
-            completionTokens,
-            latencyMs: recordLatencyMs,
-            isStream: true,
-          });
-          runAfterResponse(async () => {
-            await batchRecorder.record(event);
-            await recordRequestLog({
-              traceId,
-              timestamp: new Date().toISOString(),
-              apiKeyHash: apiKey.hash,
-              model: body.model,
+        const cfBody = createByteCountingStream(
+          response.body,
+          (totalBytes) => {
+            // Schedule usage recording in the background so slow D1/log writes
+            // don't delay the client's stream close. See runAfterResponse.
+            const completionTokens = estimateCompletionTokensFromStreamBytes(totalBytes);
+            const recordLatencyMs = Date.now() - startTime;
+            const event = createUsageEvent({
               provider: provider.name,
-              status: 'success',
-              httpStatus: 200,
-              latencyMs: recordLatencyMs,
+              model: body.model,
+              apiKeyHash: apiKey.hash,
+              statusCode: 200,
               promptTokens: estimatedPromptTokens,
               completionTokens,
-              totalTokens: estimatedPromptTokens + completionTokens,
+              latencyMs: recordLatencyMs,
               isStream: true,
             });
-          });
-        });
+            runAfterResponse(async () => {
+              await batchRecorder.record(event);
+              await recordRequestLog({
+                traceId,
+                timestamp: new Date().toISOString(),
+                apiKeyHash: apiKey.hash,
+                model: body.model,
+                provider: provider.name,
+                status: 'success',
+                httpStatus: 200,
+                latencyMs: recordLatencyMs,
+                promptTokens: estimatedPromptTokens,
+                completionTokens,
+                totalTokens: estimatedPromptTokens + completionTokens,
+                isStream: true,
+              });
+            });
+          },
+          abortUpstream
+        );
         return new Response(cfBody, {
           status: response.status,
           headers: {
@@ -594,6 +645,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      const afterStream = createAfterStreamHook();
       const wrappedBody = isAnthropicProvider
         ? wrapAnthropicStreamToOpenAI(
             response.body,
@@ -602,7 +654,9 @@ export async function POST(request: NextRequest) {
             body.model,
             startTime,
             estimatedPromptTokens,
-            traceId
+            traceId,
+            abortUpstream,
+            afterStream
           )
         : wrapStreamWithUsageTracking(
             response.body,
@@ -611,7 +665,9 @@ export async function POST(request: NextRequest) {
             body.model,
             startTime,
             estimatedPromptTokens,
-            traceId
+            traceId,
+            abortUpstream,
+            afterStream
           );
       return new Response(wrappedBody, {
         status: response.status,
@@ -661,6 +717,9 @@ export async function POST(request: NextRequest) {
             isStream: false,
           });
           await batchRecorder.record(event);
+          if (process.env.VERCEL || process.env.VERCEL_ENV) {
+            runAfterResponse(() => batchRecorder.flushForServerlessAfter());
+          }
           await recordRequestLog({
             traceId,
             timestamp: new Date().toISOString(),

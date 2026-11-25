@@ -74,7 +74,22 @@ interface CircuitBreakerState {
   openedAt: number;
 }
 
-const circuits = new Map<string, CircuitBreakerState>();
+interface SharedRateLimiterState {
+  circuits: Map<string, CircuitBreakerState>;
+  buckets: Map<string, TokenBucket>;
+}
+
+interface TokenBucket {
+  tokens: number;
+  lastRefillAt: number;
+}
+
+const sharedRateLimiterState: SharedRateLimiterState = ((globalThis as any).__aiRelayRateLimiterState ??= {
+  circuits: new Map<string, CircuitBreakerState>(),
+  buckets: new Map<string, TokenBucket>(),
+});
+
+const circuits = sharedRateLimiterState.circuits;
 
 function getCircuit(provider: string): CircuitBreakerState {
   let circuit = circuits.get(provider);
@@ -159,12 +174,7 @@ export function getCircuitStatus(provider: string): {
 // Token Bucket (per-provider)
 // ---------------------------------------------------------------------------
 
-interface TokenBucket {
-  tokens: number;
-  lastRefillAt: number;
-}
-
-const buckets = new Map<string, TokenBucket>();
+const buckets = sharedRateLimiterState.buckets;
 
 function getBucket(provider: string): TokenBucket {
   let bucket = buckets.get(provider);

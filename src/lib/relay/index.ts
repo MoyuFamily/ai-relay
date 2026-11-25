@@ -1,5 +1,5 @@
 export { validateAuth, getRelayApiKeys, requireAuth, generateTempKey, validateTempKey, constantTimeEqual, constantTimeIncludes } from './auth';
-export { relayRequest, isRawForwardEligible } from './relay';
+export { relayRequest, isRawForwardEligible, getDefaultUpstreamTimeoutMs } from './relay';
 export { selectKey, markCooldown, hashKey, getKeyPoolStats, initAllKeyPools, updateMemoryKeyPool } from './key-pool';
 export { transformToAnthropic, buildHeaders } from './transform';
 export {
@@ -9,5 +9,5 @@ export {
   getRateLimiterStats,
   getBackoffDelay,
 } from './rate-limiter';
-export { getConcurrencyStats } from './concurrency';
-export { validateBase64ImageSizes, validateRequestSize, validateContentLengthHeader } from './validation';
+export { getConcurrencyStats, getDefaultMaxConcurrent, getDefaultMaxQueue } from './concurrency';
+export { validateBase64ImageSizes, validateRequestSize, validateContentLengthHeader, getDefaultMaxRequestBytes } from './validation';

@@ -9,9 +9,31 @@
 // ============================================================
 
 import { getCachedRuntimeSettingsSync } from '../admin/runtime-settings';
+import { isCloudflareSync } from '../cf-env';
 
-const DEFAULT_MAX_CONCURRENT = 3;
-const DEFAULT_MAX_QUEUE = 10;
+// Platform-aware defaults:
+// - Cloudflare Workers enforces a 6 simultaneous outbound connection ceiling per
+//   isolate/invocation, so keep default concurrency at 5 (1 slot headroom for KV/D1).
+// - Vercel Fluid Compute and self-hosted Node.js benefit from multiplexing many
+//   I/O-bound LLM streams on one warm instance (reducing 360 GB-hours on Hobby).
+const CF_DEFAULT_MAX_CONCURRENT = 5;
+const CF_DEFAULT_MAX_QUEUE = 10;
+const NODE_DEFAULT_MAX_CONCURRENT = 20;
+const NODE_DEFAULT_MAX_QUEUE = 50;
+
+export function getDefaultMaxConcurrent(): number {
+  if (isCloudflareSync() || process.env.CF_PAGES) {
+    return CF_DEFAULT_MAX_CONCURRENT;
+  }
+  return NODE_DEFAULT_MAX_CONCURRENT;
+}
+
+export function getDefaultMaxQueue(): number {
+  if (isCloudflareSync() || process.env.CF_PAGES) {
+    return CF_DEFAULT_MAX_QUEUE;
+  }
+  return NODE_DEFAULT_MAX_QUEUE;
+}
 
 function getMaxConcurrent(): number {
   const configured = getCachedRuntimeSettingsSync().maxConcurrent;
@@ -19,7 +41,7 @@ function getMaxConcurrent(): number {
     return Math.floor(configured);
   }
   const parsed = parseInt(process.env.RELAY_MAX_CONCURRENT || '', 10);
-  return Number.isFinite(parsed) && parsed >= 1 ? parsed : DEFAULT_MAX_CONCURRENT;
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : getDefaultMaxConcurrent();
 }
 
 function getMaxQueue(): number {
@@ -28,7 +50,7 @@ function getMaxQueue(): number {
     return Math.floor(configured);
   }
   const parsed = parseInt(process.env.RELAY_MAX_QUEUE || '', 10);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_MAX_QUEUE;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : getDefaultMaxQueue();
 }
 
 let inFlight = 0;

@@ -17,10 +17,11 @@ import { createUsageEvent, getBatchRecorder } from '@/lib/usage';
 import { createUsageStorage } from '@/lib/usage/factory';
 import { recordRequestLog } from '@/lib/observability/request-logs';
 import { chunkHasUsage, jsonStringFieldLength, createByteCountingStream, estimateCompletionTokensFromStreamBytes } from '@/lib/usage/stream-usage';
-import { isCloudflareSync, runAfterResponse } from '@/lib/cf-env';
+import { isCloudflareSync, runAfterResponse, createAfterStreamHook, type AfterStreamHook } from '@/lib/cf-env';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+// Vercel Hobby (Fluid Compute) supports up to 300s maxDuration.
+export const maxDuration = 300;
 
 const batchRecorder = getBatchRecorder();
 
@@ -113,7 +114,9 @@ function wrapStreamWithUsageTracking(
   model: string,
   startTime: number,
   requestPromptTokens: number,
-  traceId: string
+  traceId: string,
+  abortUpstream?: () => void,
+  afterStream?: AfterStreamHook
 ): ReadableStream<Uint8Array> {
   const reader = upstreamBody.getReader();
   const decoder = new TextDecoder();
@@ -121,6 +124,7 @@ function wrapStreamWithUsageTracking(
   let lastUsage: { prompt_tokens?: number; completion_tokens?: number; input_tokens?: number; output_tokens?: number } | null = null;
   let accumulatedContentChars = 0;
   let recorded = false;
+  const onVercel = Boolean(process.env.VERCEL || process.env.VERCEL_ENV);
 
   async function recordUsage(promptTokens: number, completionTokens: number): Promise<void> {
     if (recorded) return;
@@ -151,6 +155,9 @@ function wrapStreamWithUsageTracking(
       totalTokens: promptTokens + completionTokens,
       isStream: true,
     });
+    if (onVercel) {
+      await batchRecorder.flushForServerlessAfter();
+    }
   }
 
   return new ReadableStream({
@@ -160,6 +167,7 @@ function wrapStreamWithUsageTracking(
       try {
         ({ done, value } = await reader.read());
       } catch (error) {
+        afterStream?.complete();
         controller.error(error);
         return;
       }
@@ -185,16 +193,24 @@ function wrapStreamWithUsageTracking(
         }
 
         // Record usage (best-effort, never stall the stream)
-        try {
-          if (lastUsage) {
-            const prompt = lastUsage.prompt_tokens ?? lastUsage.input_tokens ?? requestPromptTokens;
-            const completion = lastUsage.completion_tokens ?? lastUsage.output_tokens ?? 0;
-            await recordUsage(prompt, completion);
-          } else if (accumulatedContentChars > 0) {
-            await recordUsage(requestPromptTokens, estimateTokensFromChars(accumulatedContentChars));
+        const finalize = async () => {
+          try {
+            if (lastUsage) {
+              const prompt = lastUsage.prompt_tokens ?? lastUsage.input_tokens ?? requestPromptTokens;
+              const completion = lastUsage.completion_tokens ?? lastUsage.output_tokens ?? 0;
+              await recordUsage(prompt, completion);
+            } else if (accumulatedContentChars > 0) {
+              await recordUsage(requestPromptTokens, estimateTokensFromChars(accumulatedContentChars));
+            }
+          } catch (e) {
+            console.error('[Usage] streaming recordUsage failed:', e);
           }
-        } catch (e) {
-          console.error('[Usage] streaming recordUsage failed:', e);
+        };
+        if (onVercel && afterStream) {
+          afterStream.schedule(finalize);
+        } else {
+          await finalize();
+          afterStream?.complete();
         }
         controller.close();
         return;
@@ -246,6 +262,8 @@ function wrapStreamWithUsageTracking(
     },
     cancel() {
       reader.cancel().catch(() => {});
+      abortUpstream?.();
+      afterStream?.complete();
     },
   });
 }
@@ -294,21 +312,16 @@ export async function POST(request: NextRequest) {
   batchRecorder.setStorage(usageStorage as any);
 
   // 2. Parse request body
-  // On Cloudflare Free, keep the original request text so the relay can forward
+  // Keep the original request text across ALL platforms so the relay can forward
   // it byte-for-byte to the upstream when the body is unchanged, skipping a
-  // costly re-serialization of large contexts. The Responses path only swaps
-  // the model, so an unchanged model means the raw text is safe to forward
-  // as-is. The parse still happens once here for reliable field resolution.
+  // costly JSON.stringify of large contexts (saves CF 10ms CPU and Vercel
+  // Fluid Compute Active CPU / memory).
   const onCloudflare = isCloudflareSync();
   let body;
   let rawBody: string | undefined;
   try {
-    if (onCloudflare) {
-      rawBody = await request.text();
-      body = JSON.parse(rawBody);
-    } else {
-      body = await request.json();
-    }
+    rawBody = await request.text();
+    body = JSON.parse(rawBody);
     requestedModel = body?.model;
   } catch {
     return new Response(
@@ -323,9 +336,12 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const sizeCheck = onCloudflare
-    ? validateRequestSize(rawBody?.length ?? 0)
-    : validateBase64ImageSizes(body);
+  const totalSizeCheck = validateRequestSize(rawBody?.length ?? 0);
+  const sizeCheck = !totalSizeCheck.valid
+    ? totalSizeCheck
+    : onCloudflare
+      ? totalSizeCheck
+      : validateBase64ImageSizes(body);
   if (!sizeCheck.valid) {
     return new Response(
       JSON.stringify({
@@ -409,7 +425,14 @@ export async function POST(request: NextRequest) {
     const startTime = Date.now();
     const userAgent = request.headers.get('user-agent') || undefined;
     const passthroughHeaders = collectPassthroughHeaders(request.headers);
-    const { response, provider, apiKey } = await relayRequest(body, 'responses', userAgent, rawBody, passthroughHeaders);
+    const { response, provider, apiKey, abortUpstream } = await relayRequest(
+      body,
+      'responses',
+      userAgent,
+      rawBody,
+      passthroughHeaders,
+      request.signal
+    );
     const latencyMs = Date.now() - startTime;
 
     // 5. Stream or return the response
@@ -420,39 +443,43 @@ export async function POST(request: NextRequest) {
       // trading usage precision for near-constant per-byte CPU. Vercel keeps the
       // exact wrapper below.
       if (isCloudflareSync()) {
-        const cfBody = createByteCountingStream(response.body, (totalBytes) => {
-          // Schedule usage recording in the background so slow D1/log writes
-          // don't delay the client's stream close. See runAfterResponse.
-          const completionTokens = estimateCompletionTokensFromStreamBytes(totalBytes);
-          const recordLatencyMs = Date.now() - startTime;
-          const event = createUsageEvent({
-            provider: provider.name,
-            model: body.model,
-            apiKeyHash: apiKey.hash,
-            statusCode: 200,
-            promptTokens: estimatedPromptTokens,
-            completionTokens,
-            latencyMs: recordLatencyMs,
-            isStream: true,
-          });
-          runAfterResponse(async () => {
-            await batchRecorder.record(event);
-            await recordRequestLog({
-              traceId,
-              timestamp: new Date().toISOString(),
-              apiKeyHash: apiKey.hash,
-              model: body.model,
+        const cfBody = createByteCountingStream(
+          response.body,
+          (totalBytes) => {
+            // Schedule usage recording in the background so slow D1/log writes
+            // don't delay the client's stream close. See runAfterResponse.
+            const completionTokens = estimateCompletionTokensFromStreamBytes(totalBytes);
+            const recordLatencyMs = Date.now() - startTime;
+            const event = createUsageEvent({
               provider: provider.name,
-              status: 'success',
-              httpStatus: 200,
-              latencyMs: recordLatencyMs,
+              model: body.model,
+              apiKeyHash: apiKey.hash,
+              statusCode: 200,
               promptTokens: estimatedPromptTokens,
               completionTokens,
-              totalTokens: estimatedPromptTokens + completionTokens,
+              latencyMs: recordLatencyMs,
               isStream: true,
             });
-          });
-        });
+            runAfterResponse(async () => {
+              await batchRecorder.record(event);
+              await recordRequestLog({
+                traceId,
+                timestamp: new Date().toISOString(),
+                apiKeyHash: apiKey.hash,
+                model: body.model,
+                provider: provider.name,
+                status: 'success',
+                httpStatus: 200,
+                latencyMs: recordLatencyMs,
+                promptTokens: estimatedPromptTokens,
+                completionTokens,
+                totalTokens: estimatedPromptTokens + completionTokens,
+                isStream: true,
+              });
+            });
+          },
+          abortUpstream
+        );
         return new Response(cfBody, {
           status: response.status,
           headers: {
@@ -466,6 +493,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      const afterStream = createAfterStreamHook();
       const wrappedBody = wrapStreamWithUsageTracking(
         response.body,
         apiKey.hash,
@@ -473,7 +501,9 @@ export async function POST(request: NextRequest) {
         body.model,
         startTime,
         estimatedPromptTokens,
-        traceId
+        traceId,
+        abortUpstream,
+        afterStream
       );
       return new Response(wrappedBody, {
         status: response.status,
@@ -516,6 +546,9 @@ export async function POST(request: NextRequest) {
             isStream: false,
           });
           await batchRecorder.record(event);
+          if (process.env.VERCEL || process.env.VERCEL_ENV) {
+            runAfterResponse(() => batchRecorder.flushForServerlessAfter());
+          }
           await recordRequestLog({
             traceId,
             timestamp: new Date().toISOString(),

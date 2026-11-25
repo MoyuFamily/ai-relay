@@ -79,6 +79,7 @@ const D1_SCHEMA_STATEMENTS: readonly string[] = [
 
 type GlobalWithD1Schema = typeof globalThis & {
   __aiRelayD1SchemaState?: WeakMap<object, Promise<void>>;
+  __aiRelayD1IsolateReady?: Promise<void> | null;
 };
 
 export async function ensureD1Schema(db: D1Database): Promise<void> {
@@ -86,22 +87,44 @@ export async function ensureD1Schema(db: D1Database): Promise<void> {
     return;
   }
   const g = globalThis as GlobalWithD1Schema;
+
+  // Outside unit tests, Cloudflare Workers binds a single D1 database per isolate
+  // (though `getCloudflareContext().env.DB` may hand back a new request-scoped
+  // proxy wrapper on every request). Cache once per isolate so we never re-run
+  // 13 DDL statements on every request and burn D1's 50-queries/request budget.
+  if (!process.env.VITEST && g.__aiRelayD1IsolateReady) {
+    return g.__aiRelayD1IsolateReady;
+  }
+
   const stateMap = (g.__aiRelayD1SchemaState ??= new WeakMap<object, Promise<void>>());
   const existing = stateMap.get(db as unknown as object);
   if (existing) {
     return existing;
   }
 
-  const initPromise = (async () => {
+  let initPromise!: Promise<void>;
+  initPromise = (async () => {
     try {
       await db.batch(D1_SCHEMA_STATEMENTS.map((sql) => db.prepare(sql)));
     } catch (err) {
       // Allow retry on transient D1 error rather than caching a rejected promise forever
       stateMap.delete(db as unknown as object);
+      if (g.__aiRelayD1IsolateReady === initPromise) {
+        g.__aiRelayD1IsolateReady = null;
+      }
       throw err;
     }
   })();
 
   stateMap.set(db as unknown as object, initPromise);
+  if (!process.env.VITEST) {
+    g.__aiRelayD1IsolateReady = initPromise;
+  }
   return initPromise;
+}
+
+export function __resetD1SchemaCacheForTests(): void {
+  const g = globalThis as GlobalWithD1Schema;
+  g.__aiRelayD1SchemaState = new WeakMap<object, Promise<void>>();
+  g.__aiRelayD1IsolateReady = null;
 }

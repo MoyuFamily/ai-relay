@@ -72,7 +72,8 @@ export function estimateCompletionTokensFromStreamBytes(totalBytes: number): num
  */
 export function createByteCountingStream(
   upstreamBody: ReadableStream<Uint8Array>,
-  onDone: (totalBytes: number) => void | Promise<void>
+  onDone: (totalBytes: number) => void | Promise<void>,
+  onCancel?: () => void
 ): ReadableStream<Uint8Array> {
   const reader = upstreamBody.getReader();
   let totalBytes = 0;
@@ -103,6 +104,11 @@ export function createByteCountingStream(
     },
     cancel() {
       reader.cancel().catch(() => {});
+      try {
+        onCancel?.();
+      } catch {
+        // Ignore abort cleanup failures
+      }
     },
   });
 }

@@ -16,6 +16,8 @@ import { getUsageSamplingInfo, shouldSample } from './kv-storage';
 
 const MAX_BATCH_SIZE = 100;
 const FLUSH_INTERVAL_MS = 60_000;
+const SERVERLESS_AFTER_FLUSH_BATCH_SIZE = 10;
+const SERVERLESS_AFTER_FLUSH_AGE_MS = 15_000;
 
 interface PendingEntry {
   requests: number;
@@ -31,6 +33,7 @@ export class BatchUsageRecorder {
   private storage: UsageStorage | null = null;
   private shouldRecordDirect = false;
   private totalPending = 0;
+  private oldestPendingAt = 0;
   private destroyed = false;
   private flushing = false;
 
@@ -91,11 +94,31 @@ export class BatchUsageRecorder {
       }
     }
 
+    if (this.totalPending === 0) {
+      this.oldestPendingAt = Date.now();
+    }
     this.totalPending++;
     this.ensureTimer();
 
     if (this.totalPending >= MAX_BATCH_SIZE) {
       this.flush();
+    }
+  }
+
+  /**
+   * Flush pending usage inside Vercel's `after()` / `waitUntil` lifecycle when
+   * either enough events have accumulated (>=10) or the oldest buffered event
+   * has aged (>=15s). This prevents low-traffic serverless freezes from dropping
+   * buffered usage while preserving Upstash command batching under steady load.
+   */
+  async flushForServerlessAfter(): Promise<void> {
+    if (this.shouldRecordDirect || this.totalPending === 0) return;
+    const ageMs = this.oldestPendingAt > 0 ? Date.now() - this.oldestPendingAt : Infinity;
+    if (
+      this.totalPending >= SERVERLESS_AFTER_FLUSH_BATCH_SIZE ||
+      ageMs >= SERVERLESS_AFTER_FLUSH_AGE_MS
+    ) {
+      await this.flush();
     }
   }
 
@@ -144,6 +167,7 @@ export class BatchUsageRecorder {
     this.pending.clear();
     this.errorPending.clear();
     this.totalPending = 0;
+    this.oldestPendingAt = 0;
 
     // Flush usage data via direct KV writes
     const usagePromises: Promise<void>[] = [];

@@ -5,8 +5,9 @@
 import type { RequestLogStore } from './types';
 import { MemoryRequestLogStore } from './memory-store';
 import { KVRequestLogStore } from './kv-store';
+import { D1RequestLogStore } from './d1-store';
 import { PostgresRequestLogStore } from './postgres-store';
-import { isCloudflareSync } from '@/lib/cf-env';
+import * as cfEnvModule from '@/lib/cf-env';
 import {
   getRedisRestConfig,
   hasExplicitFileStorageEnv,
@@ -20,9 +21,10 @@ let _override: RequestLogStore | null = null;
 // "_defaultStore") so the backend is re-selected on every call while each
 // store keeps a stable instance. This matters most for the in-memory store,
 // whose logs live in the instance itself — caching it preserves them across
-// calls. The KV/Postgres stores are effectively stateless (every method
-// re-resolves its connection), so reusing the instance is just an allocation
-// saving.
+// calls. The D1/KV/Postgres stores are effectively stateless across requests
+// (every method re-resolves its connection), while preserving in-isolate
+// capture-flag caches and append counters.
+let _d1Store: D1RequestLogStore | null = null;
 let _kvStore: KVRequestLogStore | null = null;
 let _pgStore: PostgresRequestLogStore | null = null;
 let _memStore: MemoryRequestLogStore | null = null;
@@ -34,10 +36,9 @@ let _memStore: MemoryRequestLogStore | null = null;
  * CF signal is request-scoped: the first caller in an isolate must not be able
  * to pin every later request onto the wrong backend.
  *
- * - Cloudflare Pages: KV/D1 — detected via request-scoped CF context, NOT
- *   process.env.CF_PAGES (a build-time-only var that is absent at runtime on
- *   the OpenNext Worker; relying on it silently fell through to the in-memory
- *   store, which is per-isolate and loses logs across requests).
+ * - Cloudflare Pages/Workers with D1 binding: D1RequestLogStore (100k rows
+ *   written/day Free Tier budget, instead of CF KV's 1,000 writes/day limit)
+ * - Cloudflare Pages/Workers without D1 binding: KVRequestLogStore fallback
  * - VPS/Server (DATABASE_URL set, not Vercel/CF): Postgres
  * - Vercel / external KV: KV
  * - Fallback (dev/test, no backend): In-memory
@@ -45,10 +46,21 @@ let _memStore: MemoryRequestLogStore | null = null;
 export function getDefaultRequestLogStore(): RequestLogStore {
   if (_override) return _override;
 
-  // Cloudflare Pages: KV/D1 via admin-config's unified getKV().
-  // Checked first because CF_PAGES is not set at runtime — must use the
-  // request-scoped context detector that the rest of the codebase relies on.
-  if (isCloudflareSync()) {
+  // Cloudflare Pages/Workers: prefer D1 when bound to stay off CF KV's
+  // 1,000 writes/deletes/lists daily Free Tier ceiling; fall back to CF KV
+  // when only KV is bound.
+  if (cfEnvModule.isCloudflareSync()) {
+    let cfEnv: { DB?: unknown } | null = null;
+    try {
+      if (typeof cfEnvModule.getCFEnvSync === 'function') {
+        cfEnv = cfEnvModule.getCFEnvSync();
+      }
+    } catch {
+      cfEnv = null;
+    }
+    if (cfEnv?.DB) {
+      return (_d1Store ??= new D1RequestLogStore());
+    }
     return (_kvStore ??= new KVRequestLogStore());
   }
   // VPS/Server: Postgres (takes precedence over default Docker RELAY_DATA_DIR)
@@ -84,6 +96,7 @@ export function setDefaultRequestLogStore(store: RequestLogStore): void {
  */
 export function __resetDefaultRequestLogStore(): void {
   _override = null;
+  _d1Store = null;
   _kvStore = null;
   _pgStore = null;
   _memStore = null;
@@ -92,4 +105,5 @@ export function __resetDefaultRequestLogStore(): void {
 export * from './types';
 export { MemoryRequestLogStore } from './memory-store';
 export { KVRequestLogStore } from './kv-store';
+export { D1RequestLogStore } from './d1-store';
 export { PostgresRequestLogStore } from './postgres-store';
