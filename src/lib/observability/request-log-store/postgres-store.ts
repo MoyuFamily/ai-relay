@@ -21,6 +21,7 @@ async function ensureReadyDb() {
 }
 
 export class PostgresRequestLogStore implements RequestLogStore {
+  readonly source = 'postgres' as const;
   private maxEntries: number;
 
   constructor() {

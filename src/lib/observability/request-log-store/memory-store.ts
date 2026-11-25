@@ -10,6 +10,7 @@ const DEFAULT_MAX_ENTRIES = 50;
 const MAX_ENTRIES_HARD_CAP = 500;
 
 export class MemoryRequestLogStore implements RequestLogStore {
+  readonly source = 'memory' as const;
   private logs: RequestLogEntry[] = [];
   private captureEnabled = false;
   private captureTimer: NodeJS.Timeout | null = null;

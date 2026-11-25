@@ -161,15 +161,18 @@ export async function listRequestLogs(filters: RequestLogFilters = {}): Promise<
   // Apply client-side traceId filter (not all backends support it natively)
   const filtered = applyTraceIdFilter(converted, filters.traceId);
 
-  // Detect backend type for source label
-  const storeName = store.constructor.name;
-  const source: RequestLogListResult['source'] = storeName.includes('D1')
-    ? 'd1'
-    : storeName.includes('Postgres')
-      ? 'postgres'
-      : storeName.includes('KV')
-        ? 'kv'
-        : 'memory';
+  // Detect backend type for source label — prefer explicit `store.source`
+  // so production bundler minification of class names never degrades it to 'memory'.
+  const storeName = store.constructor?.name || '';
+  const source: RequestLogListResult['source'] =
+    store.source ??
+    (storeName.includes('D1')
+      ? 'd1'
+      : storeName.includes('Postgres')
+        ? 'postgres'
+        : storeName.includes('KV')
+          ? 'kv'
+          : 'memory');
 
   return { items: filtered, degraded: false, source };
 }

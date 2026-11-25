@@ -26,7 +26,12 @@ export interface RequestLogFilters {
   limit?: number;
 }
 
+export type RequestLogSource = 'd1' | 'postgres' | 'kv' | 'memory';
+
 export interface RequestLogStore {
+  /** Explicit backend tag that survives production minification. */
+  readonly source?: RequestLogSource;
+
   /**
    * Append a request log entry. May no-op if capture is disabled.
    */

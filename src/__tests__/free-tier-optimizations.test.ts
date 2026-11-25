@@ -283,6 +283,35 @@ describe('Vercel & Cloudflare Free Tier optimizations', () => {
       expect(stats.avgLatencyMs).toBe(180);
       expect(stats.sampleCount).toBe(1);
     });
+
+    it('reports explicit store.source ("d1" / "kv") even when class names are minified', async () => {
+      vi.stubEnv('ENABLE_REQUEST_LOGS', 'true');
+      const { setDefaultRequestLogStore, __resetDefaultRequestLogStore } = await import(
+        '@/lib/observability/request-log-store'
+      );
+      const { listRequestLogs } = await import('@/lib/observability/request-logs');
+
+      try {
+        const minifiedD1Store = Object.assign(
+          Object.create({ constructor: { name: 'a' } }),
+          {
+            source: 'd1' as const,
+            append: async () => {},
+            list: async () => [],
+            clear: async () => {},
+            isCaptureEnabled: async () => true,
+            enableCapture: async () => {},
+          }
+        );
+        setDefaultRequestLogStore(minifiedD1Store);
+        const res = await listRequestLogs();
+        expect(res.source).toBe('d1');
+        expect(new D1RequestLogStore().source).toBe('d1');
+        expect(new KVRequestLogStore().source).toBe('kv');
+      } finally {
+        __resetDefaultRequestLogStore();
+      }
+    });
   });
 
   describe('KVRequestLogStore capture-flag TTL caching (Upstash command savings)', () => {

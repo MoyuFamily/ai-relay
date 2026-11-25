@@ -38,6 +38,7 @@ async function scanLogKeys(kv: any): Promise<string[]> {
 }
 
 export class KVRequestLogStore implements RequestLogStore {
+  readonly source = 'kv' as const;
   private defaultMaxEntries: number;
   private appendCount: number = 0;
   private captureCache: { enabled: boolean; expiresAt: number } | null = null;
