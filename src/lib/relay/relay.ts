@@ -124,6 +124,8 @@ export function getDefaultUpstreamTimeoutMs(): number {
 }
 
 function shouldFallbackOnTimeout(): boolean {
+  const configured = getCachedRuntimeSettingsSync().fallbackOnTimeout;
+  if (typeof configured === 'boolean') return configured;
   const raw = process.env.RELAY_FALLBACK_ON_TIMEOUT?.trim().toLowerCase();
   return raw === 'true' || raw === '1';
 }

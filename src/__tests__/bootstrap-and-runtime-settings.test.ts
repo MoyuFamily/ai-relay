@@ -7,6 +7,11 @@ import { requireAdminAuth, requireCronOrAdminAuth } from '@/lib/admin/auth';
 import { generateTempKey, validateAuth, validateTempKey } from '@/lib/relay/auth';
 import { getConcurrencyStats } from '@/lib/relay/concurrency';
 import { resolveUpstreamUserAgent } from '@/lib/relay/transform';
+import { validateRequestSize } from '@/lib/relay/validation';
+import { getApiKeyMinLength } from '@/lib/config/env';
+import { getSampleRate, getUsageSamplingInfo } from '@/lib/usage/storage/kv-storage';
+import { estimateCompletionTokensFromStreamBytes } from '@/lib/usage/stream-usage';
+import { MemoryRequestLogStore } from '@/lib/observability/request-log-store/memory-store';
 import { ensureD1Schema } from '@/lib/db/d1-schema';
 
 describe('Zero-Env First-Time Bootstrap Auth & Admin Runtime Settings', () => {
@@ -263,6 +268,129 @@ describe('Zero-Env First-Time Bootstrap Auth & Admin Runtime Settings', () => {
         })
       );
       expect(badRes.status).toBe(400);
+    });
+
+    it('persists and applies migrated operational & sampling settings with RuntimeSettings > Env > Default precedence', async () => {
+      vi.stubEnv('RELAY_ADMIN_KEY', 'admin-master-secret');
+      vi.stubEnv('RELAY_KV_USAGE_SAMPLE_RATE', '0.5');
+      vi.stubEnv('RELAY_MAX_REQUEST_BYTES', '2097152');
+      vi.stubEnv('RELAY_STREAM_BYTES_PER_TOKEN', '5');
+      vi.stubEnv('RELAY_API_KEY_MIN_LENGTH', '12');
+
+      const { GET, PUT } = await import('@/app/api/admin/settings/route');
+
+      // 1. Before saving runtime overrides, GET exposes env defaults
+      const beforeRes = await GET(
+        new NextRequest('http://localhost/api/admin/settings', {
+          headers: { Authorization: 'Bearer admin-master-secret' },
+        })
+      );
+      expect(beforeRes.status).toBe(200);
+      const beforeJson = await beforeRes.json();
+      expect(beforeJson.defaults).toMatchObject({
+        fallbackOnTimeout: false,
+        maxRequestBytes: 2097152,
+        requestLogsMaxEntries: 100,
+        kvUsageSampleRate: 0.5,
+        kvKeyUsageMode: 'off',
+        kvKeyUsageSampleRate: 0.1,
+        kvErrorDetailSampleRate: 0.2,
+        streamBytesPerToken: 5,
+        keyPoolVersionCheckTtlMs: 30000,
+        selfHostedProbeIntervalMinutes: 60,
+        apiKeyMinLength: 12,
+      });
+
+      // 2. Save all 11 migrated operational settings via Admin API
+      const putRes = await PUT(
+        new NextRequest('http://localhost/api/admin/settings', {
+          method: 'PUT',
+          headers: {
+            Authorization: 'Bearer admin-master-secret',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            enableRequestLogs: true,
+            fallbackOnTimeout: true,
+            maxRequestBytes: 1024,
+            requestLogsMaxEntries: 2,
+            kvUsageSampleRate: 0.25,
+            kvKeyUsageMode: 'off',
+            kvKeyUsageSampleRate: 0,
+            kvErrorDetailSampleRate: 0.5,
+            streamBytesPerToken: 2,
+            keyPoolVersionCheckTtlMs: 15000,
+            selfHostedProbeIntervalMinutes: 30,
+            apiKeyMinLength: 8,
+          }),
+        })
+      );
+      expect(putRes.status).toBe(200);
+      const putJson = await putRes.json();
+      expect(putJson.settings).toMatchObject({
+        fallbackOnTimeout: true,
+        maxRequestBytes: 1024,
+        requestLogsMaxEntries: 2,
+        kvUsageSampleRate: 0.25,
+        kvKeyUsageMode: 'off',
+        kvKeyUsageSampleRate: 0,
+        kvErrorDetailSampleRate: 0.5,
+        streamBytesPerToken: 2,
+        keyPoolVersionCheckTtlMs: 15000,
+        selfHostedProbeIntervalMinutes: 30,
+        apiKeyMinLength: 8,
+      });
+
+      // 3. Verify runtime consumers honor RuntimeSettings over env vars
+      expect(getUsageSamplingInfo()).toEqual({ sampleRate: 0.25, estimated: true });
+      expect(getSampleRate('RELAY_KV_KEY_USAGE_SAMPLE_RATE', 0.2)).toBe(0);
+      expect(getSampleRate('RELAY_KV_ERROR_DETAIL_SAMPLE_RATE', 0.1)).toBe(0.5);
+      expect(validateRequestSize(1024).valid).toBe(true);
+      expect(validateRequestSize(1025).valid).toBe(false);
+      expect(estimateCompletionTokensFromStreamBytes(20)).toBe(10);
+      expect(getApiKeyMinLength()).toBe(8);
+
+      // 4. MemoryRequestLogStore respects requestLogsMaxEntries=2
+      const memStore = new MemoryRequestLogStore();
+      await memStore.enableCapture(60);
+      const baseLog = {
+        timestamp: new Date().toISOString(),
+        apiKeyHash: 'hash-1',
+        model: 'gpt-4o',
+        provider: 'openai',
+        status: 'success' as const,
+        httpStatus: 200,
+        latencyMs: 50,
+        isStream: false,
+      };
+      await memStore.append({ ...baseLog, traceId: 'log-1' });
+      await memStore.append({ ...baseLog, traceId: 'log-2' });
+      await memStore.append({ ...baseLog, traceId: 'log-3' });
+      const logs = await memStore.list({ limit: 10 });
+      expect(logs.map((l) => l.traceId)).toEqual(['log-3', 'log-2']);
+      memStore.__reset();
+
+      // 5. Validation rejects out-of-range sampling/tuning inputs
+      for (const invalidPayload of [
+        { kvUsageSampleRate: 1.5 },
+        { kvKeyUsageMode: 'bogus' },
+        { streamBytesPerToken: 0 },
+        { maxRequestBytes: 500 },
+        { requestLogsMaxEntries: 0 },
+        { apiKeyMinLength: 2 },
+      ]) {
+        const res = await PUT(
+          new NextRequest('http://localhost/api/admin/settings', {
+            method: 'PUT',
+            headers: {
+              Authorization: 'Bearer admin-master-secret',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(invalidPayload),
+          })
+        );
+        expect(res.status).toBe(400);
+      }
     });
   });
 

@@ -13,6 +13,7 @@
 
 import { isCloudflareSync } from '@/lib/cf-env';
 import { getKV, getWebhookSettings } from '@/lib/admin/admin-config';
+import { getRuntimeSettings } from '@/lib/admin/runtime-settings';
 import { probeAllProviders } from '@/lib/health/probe';
 import {
   aggregateUsageDailyReport,
@@ -145,7 +146,12 @@ export async function runSelfHostedScheduledTick(
     const nowMs = now.getTime();
 
     // 1. Periodic Upstream Provider Health Probe
-    const rawIntervalMin = Number(process.env.SELF_HOSTED_PROBE_INTERVAL_MINUTES ?? '60');
+    const runtimeSettings = await getRuntimeSettings().catch(() => ({} as { selfHostedProbeIntervalMinutes?: number | null }));
+    const rawIntervalMin =
+      typeof runtimeSettings.selfHostedProbeIntervalMinutes === 'number' &&
+      Number.isFinite(runtimeSettings.selfHostedProbeIntervalMinutes)
+        ? runtimeSettings.selfHostedProbeIntervalMinutes
+        : Number(process.env.SELF_HOSTED_PROBE_INTERVAL_MINUTES ?? '60');
     if (Number.isFinite(rawIntervalMin) && rawIntervalMin > 0) {
       const intervalMs = Math.max(60_000, rawIntervalMin * 60_000);
       let lastProbeAt = state.lastProbeAtMs;

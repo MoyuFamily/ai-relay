@@ -15,6 +15,7 @@ import type { DailyReportData } from '@/lib/webhooks/types';
 import { kvKeys } from './kv-keys';
 import { getLegacyKeyUsage } from './legacy-key-usage';
 import { isCloudflareSync } from '@/lib/cf-env';
+import { getCachedRuntimeSettingsSync } from '@/lib/admin/runtime-settings';
 
 function getBeijingDate(d: Date = new Date()): Date {
   return new Date(d.getTime() + 8 * 60 * 60 * 1000);
@@ -200,13 +201,32 @@ const QUOTA_CRITICAL_RATIO = 0.85;
 const QUOTA_CRITICAL_REMAINING = 500;
 
 function getMode(): 'off' | 'sampled' | 'full' {
+  const configured = getCachedRuntimeSettingsSync().kvKeyUsageMode;
+  if (configured === 'off' || configured === 'sampled' || configured === 'full') {
+    return configured;
+  }
   const raw = (process.env.RELAY_KV_KEY_USAGE_MODE || 'off').toLowerCase();
   if (raw === 'sampled' || raw === 'full') return raw;
   return 'off';
 }
 
+const SAMPLE_RATE_SETTING_MAP: Record<string, 'kvUsageSampleRate' | 'kvKeyUsageSampleRate' | 'kvErrorDetailSampleRate'> = {
+  RELAY_KV_USAGE_SAMPLE_RATE: 'kvUsageSampleRate',
+  RELAY_KV_KEY_USAGE_SAMPLE_RATE: 'kvKeyUsageSampleRate',
+  RELAY_KV_ERROR_DETAIL_SAMPLE_RATE: 'kvErrorDetailSampleRate',
+};
+
 export function getSampleRate(envName: string, fallback: number): number {
-  const value = Number(process.env[envName] || fallback);
+  const settingField = SAMPLE_RATE_SETTING_MAP[envName];
+  if (settingField) {
+    const configured = getCachedRuntimeSettingsSync()[settingField];
+    if (typeof configured === 'number' && Number.isFinite(configured)) {
+      return Math.min(1, Math.max(0, configured));
+    }
+  }
+  const raw = process.env[envName];
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
   if (!Number.isFinite(value)) return fallback;
   return Math.min(1, Math.max(0, value));
 }
@@ -513,7 +533,10 @@ export class KVUsageStorage implements UsageStorage {
       let writeKeyUsage = false;
       let keyRequests = 0;
       let keyTokens = 0;
-      const mode = kv._isFileKV && !process.env.RELAY_KV_KEY_USAGE_MODE ? 'full' : getMode();
+      const configuredMode = getCachedRuntimeSettingsSync().kvKeyUsageMode;
+      const mode =
+        configuredMode ??
+        (kv._isFileKV && !process.env.RELAY_KV_KEY_USAGE_MODE ? 'full' : getMode());
       if (mode === 'full') {
         writeKeyUsage = true;
         keyRequests = requestCount;

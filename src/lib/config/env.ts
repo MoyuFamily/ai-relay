@@ -208,5 +208,17 @@ export function hasExplicitFileStorageEnv(): boolean {
 
 /** Minimum character length for API keys added via the admin UI. Default: 20. */
 export function getApiKeyMinLength(): number {
+  const cacheEntry = (globalThis as { __aiRelayRuntimeSettingsCache?: { data?: { apiKeyMinLength?: number | null }; expiresAt?: number } | null })
+    .__aiRelayRuntimeSettingsCache;
+  if (
+    cacheEntry &&
+    typeof cacheEntry.expiresAt === 'number' &&
+    Date.now() < cacheEntry.expiresAt &&
+    typeof cacheEntry.data?.apiKeyMinLength === 'number' &&
+    Number.isFinite(cacheEntry.data.apiKeyMinLength) &&
+    cacheEntry.data.apiKeyMinLength >= 4
+  ) {
+    return Math.floor(cacheEntry.data.apiKeyMinLength);
+  }
   return getEnvInt('RELAY_API_KEY_MIN_LENGTH', 20);
 }

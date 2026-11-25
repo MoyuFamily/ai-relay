@@ -1,3 +1,5 @@
+import { getCachedRuntimeSettingsSync } from '../admin/runtime-settings';
+
 const MAX_INLINE_IMAGE_BYTES = 1024 * 1024; // 1MB
 
 function checkBase64Bytes(base64Data: string): { valid: boolean; error?: string } {
@@ -102,6 +104,10 @@ export function getDefaultMaxRequestBytes(): number {
 }
 
 function maxRequestBytes(): number {
+  const configured = getCachedRuntimeSettingsSync().maxRequestBytes;
+  if (typeof configured === 'number' && Number.isFinite(configured) && configured >= 0) {
+    return configured === 0 ? 0 : Math.floor(configured);
+  }
   const raw = process.env.RELAY_MAX_REQUEST_BYTES;
   const fallback = getDefaultMaxRequestBytes();
   if (raw === undefined || raw.trim() === '') return fallback;

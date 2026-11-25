@@ -3,6 +3,7 @@
 // ============================================================
 
 import type { ApiKey, KeyPool, ProviderConfig } from '../providers/types';
+import { getCachedRuntimeSettingsSync } from '../admin/runtime-settings';
 
 interface SharedKeyPoolState {
   keyPools: Map<string, KeyPool>;
@@ -32,6 +33,10 @@ const lastManagedVersionCheck = sharedState.lastManagedVersionCheck;
 const knownManagedVersions = sharedState.knownManagedVersions;
 
 function keyVersionCheckTtlMs(): number {
+  const configured = getCachedRuntimeSettingsSync().keyPoolVersionCheckTtlMs;
+  if (typeof configured === 'number' && Number.isFinite(configured) && configured >= 1_000) {
+    return Math.floor(configured);
+  }
   const raw = Number(process.env.RELAY_KEY_POOL_VERSION_CHECK_TTL_MS || DEFAULT_KEY_VERSION_CHECK_TTL_MS);
   if (!Number.isFinite(raw) || raw < 1_000) return DEFAULT_KEY_VERSION_CHECK_TTL_MS;
   return raw;

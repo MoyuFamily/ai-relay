@@ -8,6 +8,7 @@ import type { RequestLogStore, RequestLogEntry, RequestLogFilters } from './type
 import { getDbOrNull, getPostgresSqlOrNull } from '@/lib/db/client';
 import { ensureSelfHostedPostgresSchema } from '@/lib/db/self-hosted-schema';
 import { requestLogs } from '@/lib/db/schema';
+import { getCachedRuntimeSettingsSync } from '@/lib/admin/runtime-settings';
 import { desc, eq, and, sql } from 'drizzle-orm';
 
 const DEFAULT_MAX_ENTRIES = 500;
@@ -160,17 +161,26 @@ export class PostgresRequestLogStore implements RequestLogStore {
     }
   }
 
+  private getMaxEntries(): number {
+    const configured = getCachedRuntimeSettingsSync().requestLogsMaxEntries;
+    if (typeof configured === 'number' && Number.isFinite(configured) && configured >= 1) {
+      return Math.floor(configured);
+    }
+    return this.maxEntries;
+  }
+
   private async pruneIfNeeded(db: any): Promise<void> {
     try {
+      const maxEntries = this.getMaxEntries();
       // Count total entries
       const [{ count }] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(requestLogs);
 
-      if (count <= this.maxEntries) return;
+      if (count <= maxEntries) return;
 
       // Delete oldest entries beyond maxEntries
-      const toDelete = count - this.maxEntries;
+      const toDelete = count - maxEntries;
       await db.execute(sql`
         DELETE FROM ${requestLogs}
         WHERE id IN (

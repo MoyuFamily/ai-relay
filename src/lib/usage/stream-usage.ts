@@ -10,6 +10,8 @@
 // completion_tokens / input_tokens / output_tokens). A cheap substring
 // check lets us skip JSON.parse for the content deltas entirely.
 
+import { getCachedRuntimeSettingsSync } from '@/lib/admin/runtime-settings';
+
 /** True only for chunks that could carry token-usage data. */
 export function chunkHasUsage(data: string): boolean {
   return data.indexOf('_tokens') !== -1;
@@ -42,6 +44,10 @@ export function chunkHasUsage(data: string): boolean {
 const DEFAULT_STREAM_BYTES_PER_TOKEN = 20;
 
 function streamBytesPerToken(): number {
+  const configured = getCachedRuntimeSettingsSync().streamBytesPerToken;
+  if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+    return configured;
+  }
   const raw = process.env.RELAY_STREAM_BYTES_PER_TOKEN;
   if (raw === undefined || raw.trim() === '') return DEFAULT_STREAM_BYTES_PER_TOKEN;
   const parsed = Number(raw);

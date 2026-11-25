@@ -61,8 +61,8 @@
 
 ### 请求返回 `504 Gateway Timeout`
 
-- **Vercel / Cloudflare Serverless** 默认上游超时为 `50000ms`（50 秒），以便在 Serverless 60 秒硬限制前安全返回结构化 JSON 错误。
-- **Docker / VPS 自部署与本地 CLI** 默认上游超时已自动放宽至 `300000ms`（5 分钟）；如需进一步调整或关闭超时限制，可直接到 `/admin` → **辅助工具 → 运行时配置** 中修改「上游超时时间」实时生效（设为 `0` 关闭限制），或设置环境变量 `RELAY_UPSTREAM_TIMEOUT_MS`。
+- **Cloudflare Workers** 默认上游超时为 `90000ms`（90 秒）；**Vercel Fluid Compute** 默认上游超时为 `240000ms`（4 分钟，匹配 `300s` 函数上限）；**Docker / VPS 自部署与本地 CLI** 默认上游超时为 `300000ms`（5 分钟）。
+- 如需进一步调整、开启超时自动切入 Fallback 链路或关闭超时限制，可直接到 `/admin` → **辅助工具 → 运行时配置** 中修改「上游超时时间」或「超时自动切换备选 Provider」实时生效（设为 `0` 关闭限制），无需修改环境变量或重新部署。
 
 ---
 

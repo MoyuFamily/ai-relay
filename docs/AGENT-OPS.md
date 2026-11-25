@@ -35,9 +35,9 @@ Before executing any deployment or maintenance command, follow these non-negotia
 
 | Mode | When to choose | Runtime | Persistent Storage | Cron / Background Tasks | Hard Limits |
 |---|---|---|---|---|---|
-| **Cloudflare Workers** | Recommended free-tier personal gateway | Workers + Static Assets (`@opennextjs/cloudflare`) | Cloudflare `KV` (config) + `D1` (usage/logs, auto-migrated on first request) | Native `worker.ts` `scheduled()` or GitHub Actions `cron.yml` | ~10ms Free CPU budget, 6 concurrent subrequests, KV 60s edge negative cache |
-| **Vercel** | Fast cloud deploy, light personal usage | Node.js Serverless (`60s` max) | Upstash Redis (`UPSTASH_REDIS_REST_*` or `KV_REST_API_*`) | `vercel.json` Cron (requires `CRON_SECRET`) | 60s timeout (`RELAY_UPSTREAM_TIMEOUT_MS=50000`), Hobby bandwidth & Redis cmd caps |
-| **Docker / VPS (Disk)** | Single-node self-hosted, zero serverless limits | Standalone Node.js (`next start`) | Atomic JSON on disk (`/app/data/kv-store.json`) | Built-in Node scheduler (`ENABLE_SELF_HOSTED_CRON=true`) | Bound only by host |
+| **Cloudflare Workers** | Recommended free-tier personal gateway | Workers + Static Assets (`@opennextjs/cloudflare`) | Cloudflare `KV` (config) + `D1` (usage, request logs & routing latency, auto-migrated on first request) | Native `worker.ts` `scheduled()` or GitHub Actions `cron.yml` | ~10ms Free CPU budget, 6 concurrent subrequests (defaults: `90s` timeout, `5` concurrent / `10` queue), KV 60s edge negative cache |
+| **Vercel** | Fast cloud deploy, light personal usage | Node.js Fluid Compute (`300s` max on `/v1/*`) | Upstash Redis (`UPSTASH_REDIS_REST_*` or `KV_REST_API_*`) | `vercel.json` Cron (requires `CRON_SECRET`) | `300s` wall-clock cap (defaults: `240s` timeout, `20` concurrent / `50` queue, `4.5MB` body limit), Hobby bandwidth & Redis cmd caps |
+| **Docker / VPS (Disk)** | Single-node self-hosted, zero serverless limits | Standalone Node.js (`next start`) | Atomic JSON on disk (`/app/data/kv-store.json`) | Built-in Node scheduler (`ENABLE_SELF_HOSTED_CRON=true`) | Bound only by host (defaults: `300s` timeout, `20` concurrent / `50` queue) |
 | **Docker / VPS (Postgres)** | Self-hosted with external PostgreSQL | Standalone Node.js (`next start`) | PostgreSQL (`DATABASE_URL`, auto-migrates on boot) | Built-in Node scheduler (`ENABLE_SELF_HOSTED_CRON=true`) | Bound only by host/DB |
 | **Local CLI (`airelay`)** | Laptop coding agents (`codex`, `claude-code`) | Local HTTP (`127.0.0.1:3147`) | Local JSON / env / cloud snapshot sync | 30s config poll + 60s heartbeat | Localhost only by default |
 
@@ -52,9 +52,12 @@ Understand this exact order before debugging storage issues:
 
 ### 1.3 Core Environment Variables & Runtime Settings
 
-> **Zero-Env First-Time Setup & Live Runtime Settings**:
+> **Zero-Env First-Time Setup & Live Runtime Settings (Recommended over Env Vars)**:
 > - When `RELAY_API_KEY` / `RELAY_ADMIN_KEY` are **unset** and persistent storage (Cloudflare KV/D1, Upstash Redis, Disk, or Postgres) is attached, `/admin` exposes a one-time atomic bootstrap flow (`GET/POST /api/admin/bootstrap`) that locks a generated key permanently (`409 already_initialized` thereafter). Environment variables always override bootstrapped keys.
-> - Operational settings (`extraClientKeys`, `cronSecret`, `upstreamTimeoutMs`, `maxConcurrent`, `maxQueue`, `enableRequestLogs`, `allowLocalKeySync`, `defaultUserAgent`, `deployUrl`) can be updated live without redeploying via `/admin` → **Tools → Runtime Settings** (`GET/PUT /api/admin/settings`).
+> - Operational settings are managed live without redeploying via `/admin` → **Tools → Runtime Settings** (`GET/PUT /api/admin/settings`), with precedence **Admin Runtime Settings > Env Var > Platform Default**:
+>   - Core controls: `extraClientKeys`, `cronSecret`, `upstreamTimeoutMs`, `fallbackOnTimeout`, `maxConcurrent`, `maxQueue`, `maxRequestBytes`, `enableRequestLogs`, `requestLogsMaxEntries`, `allowLocalKeySync`, `defaultUserAgent`, `deployUrl`.
+>   - Advanced sampling & tuning: `kvUsageSampleRate`, `kvKeyUsageMode`, `kvKeyUsageSampleRate`, `kvErrorDetailSampleRate`, `streamBytesPerToken`, `keyPoolVersionCheckTtlMs`, `selfHostedProbeIntervalMinutes`, `apiKeyMinLength`.
+> - **Minimal production env vars**: keep only **storage bindings/URLs** and **auth/boot secrets** in platform env vars; manage providers, upstream keys, quotas, and operational tuning in `/admin`.
 
 | Variable | Required | Default / Fallback | Purpose |
 |---|---|---|---|
@@ -62,18 +65,15 @@ Understand this exact order before debugging storage issues:
 | `RELAY_ADMIN_KEY` | No | Falls back to `RELAY_API_KEY` | Comma-separated Admin keys for `/admin` & `/api/admin/*`. |
 | `RELAY_SIGNING_SECRET` | No | Falls back to Admin/Relay key | HMAC secret for temporary keys (`/api/admin/temp-keys`). |
 | `DEVICE_TOKEN_SECRET` | No | Falls back to Admin/Relay key | Hashing secret for Local CLI device login (`airelay login`). |
-| `CRON_SECRET` | Recommended | — | Constant-time auth for `/api/cron/*` (`Authorization: Bearer` or `x-cron-secret`). **Bare `x-vercel-cron: 1` is intentionally rejected.** |
-| `OPENAI_KEYS`, `CLAUDE_KEYS`, `GEMINI_KEYS`, `DEEPSEEK_KEYS`, `OPENROUTER_KEYS`, `XIAOMI_KEYS`, `XIAOMI_CODING_KEYS`, `XIAOMIMIMO_SGP_CODING_KEYS` | Optional | Managed in `/admin` / KV | Comma-separated upstream provider API keys. Managed KV keys override env keys once written. |
-| `*_BASE_URL` | Optional | Built-in provider URL | Override upstream endpoint (e.g. `OPENAI_BASE_URL`, `GEMINI_BASE_URL`). |
+| `CRON_SECRET` | Recommended (or set in `/admin`) | `cronSecret` in Runtime Settings | Constant-time auth for `/api/cron/*` (`Authorization: Bearer` or `x-cron-secret`). **Bare `x-vercel-cron: 1` is intentionally rejected.** |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` (or `KV_REST_API_*`) | Vercel | — | Persistent config + usage store on Vercel. |
 | `DATABASE_URL` | Optional (Self-host HA) | — | PostgreSQL URL (`postgresql://...`). Auto-creates tables on startup. |
 | `RELAY_DATA_DIR` / `RELAY_STORAGE_PATH` / `RELAY_STORAGE_BACKEND` | Optional (Self-host) | `./data` (`/app/data` in Docker) | Disk storage directory / file path / explicit override (`file` \| `postgres`). |
-| `DEPLOY_URL` | CF Cron / Reverse Proxy | — | Public `https://...` URL for GitHub Actions `cron.yml` & device login links. |
-| `ENABLE_SELF_HOSTED_CRON` / `SELF_HOSTED_PROBE_INTERVAL_MINUTES` | Self-host | `true` / `60` | Built-in background health probes, daily report, cleanup (auto-off on Vercel/CF). |
-| `ENABLE_REQUEST_LOGS` / `REQUEST_LOGS_MAX_ENTRIES` | Optional | `false` | Persist request logs to KV/D1/DB (when `false`, `/api/admin/request-logs` returns `"source": "memory"`). |
+| `DEPLOY_URL` | GitHub Actions `cron.yml` / Reverse Proxy | `deployUrl` in Runtime Settings | Public `https://...` URL for GitHub Actions `cron.yml` & device login links. |
+| `ENABLE_SELF_HOSTED_CRON` | Self-host | `true` (auto-off on Vercel/CF) | Enable/disable built-in Node.js background health probes, daily report, cleanup. |
 | `RELAY_ALLOWED_ORIGINS` (alias `CORS_ORIGINS`) | Optional | `*` | Allowed CORS origins (comma-separated or `*`). |
-| `RELAY_UPSTREAM_TIMEOUT_MS` | Optional | `50000` (Serverless) / `300000` (Self-host) | Upstream fetch timeout in ms (`0` disables). |
-| `RELAY_DAILY_LIMIT` / `RELAY_MONTHLY_LIMIT` / `RELAY_MAX_CONCURRENT` | Optional | `0` (unlimited) | Global quotas & concurrency guard. |
+| `OPENAI_KEYS`, `CLAUDE_KEYS`, `GEMINI_KEYS`, `DEEPSEEK_KEYS`, `OPENROUTER_KEYS`, `*_BASE_URL` | Optional (Legacy fallback) | Managed in `/admin` / KV | Initial upstream keys/URLs; prefer managing providers & keys in `/admin` UI. |
+| `RELAY_UPSTREAM_TIMEOUT_MS`, `RELAY_FALLBACK_ON_TIMEOUT`, `RELAY_MAX_CONCURRENT`, `RELAY_MAX_QUEUE`, `RELAY_MAX_REQUEST_BYTES`, `ENABLE_REQUEST_LOGS`, `REQUEST_LOGS_MAX_ENTRIES`, `RELAY_KV_*`, `RELAY_DAILY_LIMIT`, `RELAY_MONTHLY_LIMIT` | Optional (Env fallback) | Platform defaults / Runtime Settings | Operational overrides now editable live in `/admin` → Tools → Runtime Settings (env vars act only as fallback defaults). |
 
 ---
 
@@ -387,7 +387,7 @@ All `/api/admin/*` routes authenticate with `Authorization: Bearer $ADMIN_KEY` (
 | Area | Endpoint | Methods | Purpose / Payload |
 |---|---|---|---|
 | **First-Time Bootstrap** | `/api/admin/bootstrap` | `GET`, `POST` | Check uninitialized status (`GET`) or atomically lock first-time key (`POST {apiKey?}`) when env keys are unset |
-| **Runtime Settings** | `/api/admin/settings` | `GET`, `PUT` | View/update live settings (`extraClientKeys`, `cronSecret`, `upstreamTimeoutMs`, `maxConcurrent`, `maxQueue`, `enableRequestLogs`, `allowLocalKeySync`, `defaultUserAgent`, `deployUrl`) |
+| **Runtime Settings** | `/api/admin/settings` | `GET`, `PUT` | View/update live settings (`extraClientKeys`, `cronSecret`, `upstreamTimeoutMs`, `fallbackOnTimeout`, `maxConcurrent`, `maxQueue`, `maxRequestBytes`, `enableRequestLogs`, `requestLogsMaxEntries`, `allowLocalKeySync`, `defaultUserAgent`, `deployUrl`, `kvUsageSampleRate`, `kvKeyUsageMode`, `kvKeyUsageSampleRate`, `kvErrorDetailSampleRate`, `streamBytesPerToken`, `keyPoolVersionCheckTtlMs`, `selfHostedProbeIntervalMinutes`, `apiKeyMinLength`) |
 | **Diagnostics** | `/api/admin/setup?refresh=1` | `GET` | Runtime, storage backend, auth/KV checks, provider key counts |
 | **Provider Keys** | `/api/admin/providers/:provider/keys` | `GET`, `POST`, `DELETE` | List masked keys + `hash`; add `{key}` or `{keys:[...]}`; remove `{hash}` or `{key}` |
 | **Key Connectivity Test** | `/api/admin/providers/:provider/keys/test` | `POST` | Test `{hash?, key?, model?, prompt?}` against live upstream |
@@ -498,5 +498,5 @@ When adding or refreshing built-in provider models:
 | CF Workers newly written alias/key briefly unseen by next request | Cloudflare KV edge negative-cache (up to 60s across different isolates after cold miss) | Retry after a brief delay or query `GET /api/admin/setup?refresh=1`. |
 | `GET /api/admin/request-logs` returns `"source": "memory"` | `enableRequestLogs` is `false` (default to save KV/D1 writes) | Toggle `enableRequestLogs: true` via `/admin` → Tools → Runtime Settings (`PUT /api/admin/settings`) or set `ENABLE_REQUEST_LOGS=true`. |
 | Vercel Preview URL returns SSO login HTML / `401` | Vercel Deployment Protection enabled on preview URLs by default | Test against the Production domain (`https://<project>.vercel.app`). |
-| `504 Gateway Timeout` on long reasoning models | Serverless `50000ms` default timeout (60s platform cap) | Switch long-reasoning workloads to Docker self-hosted (`300000ms` default) or update `upstreamTimeoutMs` via `/admin` → Tools → Runtime Settings. |
+| `504 Gateway Timeout` on long reasoning models | Upstream exceeded platform timeout (`90s` CF / `240s` Vercel Fluid Compute / `300s` Self-host) | Raise `upstreamTimeoutMs` (or enable `fallbackOnTimeout`) via `/admin` → Tools → Runtime Settings (`PUT /api/admin/settings`), or use Docker self-hosted for >5 min workloads. |
 | `wrangler` hangs indefinitely in agent shell | Interactive telemetry or AI skills prompt | Always prefix with `CI=true WRANGLER_SEND_METRICS=false`. |
