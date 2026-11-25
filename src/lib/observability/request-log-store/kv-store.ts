@@ -7,6 +7,7 @@
 
 import type { RequestLogStore, RequestLogEntry, RequestLogFilters } from './types';
 import { getKV } from '@/lib/admin/admin-config';
+import { getCachedRuntimeSettingsSync } from '@/lib/admin/runtime-settings';
 
 const PREFIX = 'request_log:';
 const CAPTURE_FLAG_KEY = 'request_log_capture_enabled';
@@ -49,6 +50,10 @@ export class KVRequestLogStore implements RequestLogStore {
   }
 
   private getMaxEntries(): number {
+    const configured = getCachedRuntimeSettingsSync().requestLogsMaxEntries;
+    if (typeof configured === 'number' && Number.isFinite(configured) && configured >= 1) {
+      return Math.floor(configured);
+    }
     const userMax = parseInt(process.env.REQUEST_LOGS_MAX_ENTRIES || '', 10);
     return isNaN(userMax) ? this.defaultMaxEntries : Math.max(1, userMax);
   }

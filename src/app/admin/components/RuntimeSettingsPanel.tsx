@@ -6,24 +6,46 @@ interface RuntimeSettingsData {
   extraClientKeys?: string[];
   cronSecret?: string | null;
   upstreamTimeoutMs?: number | null;
+  fallbackOnTimeout?: boolean | null;
   maxConcurrent?: number | null;
   maxQueue?: number | null;
+  maxRequestBytes?: number | null;
   enableRequestLogs?: boolean | null;
+  requestLogsMaxEntries?: number | null;
   allowLocalKeySync?: boolean | null;
   defaultUserAgent?: string | null;
   deployUrl?: string | null;
+  kvUsageSampleRate?: number | null;
+  kvKeyUsageMode?: 'off' | 'sampled' | 'full' | null;
+  kvKeyUsageSampleRate?: number | null;
+  kvErrorDetailSampleRate?: number | null;
+  streamBytesPerToken?: number | null;
+  keyPoolVersionCheckTtlMs?: number | null;
+  selfHostedProbeIntervalMinutes?: number | null;
+  apiKeyMinLength?: number | null;
   updatedAt?: string;
 }
 
 interface EnvDefaults {
   upstreamTimeoutMs: number;
+  fallbackOnTimeout: boolean;
   maxConcurrent: number;
   maxQueue: number;
+  maxRequestBytes: number;
   enableRequestLogs: boolean;
+  requestLogsMaxEntries: number;
   allowLocalKeySync: boolean;
   defaultUserAgent: string;
   deployUrl: string;
   hasEnvCronSecret: boolean;
+  kvUsageSampleRate: number;
+  kvKeyUsageMode: 'off' | 'sampled' | 'full';
+  kvKeyUsageSampleRate: number;
+  kvErrorDetailSampleRate: number;
+  streamBytesPerToken: number;
+  keyPoolVersionCheckTtlMs: number;
+  selfHostedProbeIntervalMinutes: number;
+  apiKeyMinLength: number;
 }
 
 interface Props {
@@ -53,13 +75,25 @@ export default function RuntimeSettingsPanel({ apiKey, lang }: Props) {
   const [newClientKey, setNewClientKey] = useState('');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [upstreamTimeoutMs, setUpstreamTimeoutMs] = useState('');
+  const [fallbackOnTimeout, setFallbackOnTimeout] = useState<'default' | 'true' | 'false'>('default');
   const [maxConcurrent, setMaxConcurrent] = useState('');
   const [maxQueue, setMaxQueue] = useState('');
+  const [maxRequestBytes, setMaxRequestBytes] = useState('');
   const [enableRequestLogs, setEnableRequestLogs] = useState<'default' | 'true' | 'false'>('default');
+  const [requestLogsMaxEntries, setRequestLogsMaxEntries] = useState('');
   const [allowLocalKeySync, setAllowLocalKeySync] = useState<'default' | 'true' | 'false'>('default');
   const [defaultUserAgent, setDefaultUserAgent] = useState('');
   const [deployUrl, setDeployUrl] = useState('');
   const [cronSecret, setCronSecret] = useState('');
+  // Advanced sampling & tuning
+  const [kvUsageSampleRate, setKvUsageSampleRate] = useState('');
+  const [kvKeyUsageMode, setKvKeyUsageMode] = useState<'default' | 'off' | 'sampled' | 'full'>('default');
+  const [kvKeyUsageSampleRate, setKvKeyUsageSampleRate] = useState('');
+  const [kvErrorDetailSampleRate, setKvErrorDetailSampleRate] = useState('');
+  const [streamBytesPerToken, setStreamBytesPerToken] = useState('');
+  const [keyPoolVersionCheckTtlMs, setKeyPoolVersionCheckTtlMs] = useState('');
+  const [selfHostedProbeIntervalMinutes, setSelfHostedProbeIntervalMinutes] = useState('');
+  const [apiKeyMinLength, setApiKeyMinLength] = useState('');
 
   const isZh = lang === 'zh';
 
@@ -76,13 +110,24 @@ export default function RuntimeSettingsPanel({ apiKey, lang }: Props) {
       setDefaults(json.defaults || null);
       setExtraClientKeys(Array.isArray(s.extraClientKeys) ? s.extraClientKeys : []);
       setUpstreamTimeoutMs(s.upstreamTimeoutMs !== undefined && s.upstreamTimeoutMs !== null ? String(s.upstreamTimeoutMs) : '');
+      setFallbackOnTimeout(typeof s.fallbackOnTimeout === 'boolean' ? String(s.fallbackOnTimeout) as 'true' | 'false' : 'default');
       setMaxConcurrent(s.maxConcurrent !== undefined && s.maxConcurrent !== null ? String(s.maxConcurrent) : '');
       setMaxQueue(s.maxQueue !== undefined && s.maxQueue !== null ? String(s.maxQueue) : '');
+      setMaxRequestBytes(s.maxRequestBytes !== undefined && s.maxRequestBytes !== null ? String(s.maxRequestBytes) : '');
       setEnableRequestLogs(typeof s.enableRequestLogs === 'boolean' ? String(s.enableRequestLogs) as 'true' | 'false' : 'default');
+      setRequestLogsMaxEntries(s.requestLogsMaxEntries !== undefined && s.requestLogsMaxEntries !== null ? String(s.requestLogsMaxEntries) : '');
       setAllowLocalKeySync(typeof s.allowLocalKeySync === 'boolean' ? String(s.allowLocalKeySync) as 'true' | 'false' : 'default');
       setDefaultUserAgent(s.defaultUserAgent || '');
       setDeployUrl(s.deployUrl || '');
       setCronSecret(s.cronSecret || '');
+      setKvUsageSampleRate(s.kvUsageSampleRate !== undefined && s.kvUsageSampleRate !== null ? String(s.kvUsageSampleRate) : '');
+      setKvKeyUsageMode(s.kvKeyUsageMode || 'default');
+      setKvKeyUsageSampleRate(s.kvKeyUsageSampleRate !== undefined && s.kvKeyUsageSampleRate !== null ? String(s.kvKeyUsageSampleRate) : '');
+      setKvErrorDetailSampleRate(s.kvErrorDetailSampleRate !== undefined && s.kvErrorDetailSampleRate !== null ? String(s.kvErrorDetailSampleRate) : '');
+      setStreamBytesPerToken(s.streamBytesPerToken !== undefined && s.streamBytesPerToken !== null ? String(s.streamBytesPerToken) : '');
+      setKeyPoolVersionCheckTtlMs(s.keyPoolVersionCheckTtlMs !== undefined && s.keyPoolVersionCheckTtlMs !== null ? String(s.keyPoolVersionCheckTtlMs) : '');
+      setSelfHostedProbeIntervalMinutes(s.selfHostedProbeIntervalMinutes !== undefined && s.selfHostedProbeIntervalMinutes !== null ? String(s.selfHostedProbeIntervalMinutes) : '');
+      setApiKeyMinLength(s.apiKeyMinLength !== undefined && s.apiKeyMinLength !== null ? String(s.apiKeyMinLength) : '');
     } finally {
       setLoading(false);
     }
@@ -101,13 +146,24 @@ export default function RuntimeSettingsPanel({ apiKey, lang }: Props) {
       const payload: Record<string, unknown> = {
         extraClientKeys: overrideKeys ?? extraClientKeys,
         upstreamTimeoutMs: upstreamTimeoutMs.trim() === '' ? null : Number(upstreamTimeoutMs.trim()),
+        fallbackOnTimeout: fallbackOnTimeout === 'default' ? null : fallbackOnTimeout === 'true',
         maxConcurrent: maxConcurrent.trim() === '' ? null : Number(maxConcurrent.trim()),
         maxQueue: maxQueue.trim() === '' ? null : Number(maxQueue.trim()),
+        maxRequestBytes: maxRequestBytes.trim() === '' ? null : Number(maxRequestBytes.trim()),
         enableRequestLogs: enableRequestLogs === 'default' ? null : enableRequestLogs === 'true',
+        requestLogsMaxEntries: requestLogsMaxEntries.trim() === '' ? null : Number(requestLogsMaxEntries.trim()),
         allowLocalKeySync: allowLocalKeySync === 'default' ? null : allowLocalKeySync === 'true',
         defaultUserAgent: defaultUserAgent.trim() === '' ? null : defaultUserAgent.trim(),
         deployUrl: deployUrl.trim() === '' ? null : deployUrl.trim(),
         cronSecret: cronSecret.trim() === '' ? null : cronSecret.trim(),
+        kvUsageSampleRate: kvUsageSampleRate.trim() === '' ? null : Number(kvUsageSampleRate.trim()),
+        kvKeyUsageMode: kvKeyUsageMode === 'default' ? null : kvKeyUsageMode,
+        kvKeyUsageSampleRate: kvKeyUsageSampleRate.trim() === '' ? null : Number(kvKeyUsageSampleRate.trim()),
+        kvErrorDetailSampleRate: kvErrorDetailSampleRate.trim() === '' ? null : Number(kvErrorDetailSampleRate.trim()),
+        streamBytesPerToken: streamBytesPerToken.trim() === '' ? null : Number(streamBytesPerToken.trim()),
+        keyPoolVersionCheckTtlMs: keyPoolVersionCheckTtlMs.trim() === '' ? null : Number(keyPoolVersionCheckTtlMs.trim()),
+        selfHostedProbeIntervalMinutes: selfHostedProbeIntervalMinutes.trim() === '' ? null : Number(selfHostedProbeIntervalMinutes.trim()),
+        apiKeyMinLength: apiKeyMinLength.trim() === '' ? null : Number(apiKeyMinLength.trim()),
       };
       const res = await fetch('/api/admin/settings', {
         method: 'PUT',
@@ -290,7 +346,7 @@ export default function RuntimeSettingsPanel({ apiKey, lang }: Props) {
                 type="number"
                 value={upstreamTimeoutMs}
                 onChange={(e) => setUpstreamTimeoutMs(e.target.value)}
-                placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.upstreamTimeoutMs}` : '50000'}
+                placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.upstreamTimeoutMs}` : '240000'}
                 style={inputStyle}
               />
             </div>
@@ -303,7 +359,7 @@ export default function RuntimeSettingsPanel({ apiKey, lang }: Props) {
                 type="number"
                 value={maxConcurrent}
                 onChange={(e) => setMaxConcurrent(e.target.value)}
-                placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.maxConcurrent}` : '3'}
+                placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.maxConcurrent}` : '20'}
                 style={inputStyle}
               />
             </div>
@@ -316,7 +372,7 @@ export default function RuntimeSettingsPanel({ apiKey, lang }: Props) {
                 type="number"
                 value={maxQueue}
                 onChange={(e) => setMaxQueue(e.target.value)}
-                placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.maxQueue}` : '10'}
+                placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.maxQueue}` : '50'}
                 style={inputStyle}
               />
             </div>
@@ -389,6 +445,52 @@ export default function RuntimeSettingsPanel({ apiKey, lang }: Props) {
 
             <div>
               <label style={labelStyle}>
+                {isZh ? '超时自动切备用上游' : 'Fallback on Timeout'}
+              </label>
+              <select
+                className="custom-select"
+                value={fallbackOnTimeout}
+                onChange={(e) => setFallbackOnTimeout(e.target.value as 'default' | 'true' | 'false')}
+                style={inputStyle}
+              >
+                <option value="default">
+                  {isZh
+                    ? `跟随默认 (${defaults?.fallbackOnTimeout ? '开启' : '关闭'})`
+                    : `Default (${defaults?.fallbackOnTimeout ? 'On' : 'Off'})`}
+                </option>
+                <option value="true">{isZh ? '开启（超时切换 Fallback）' : 'Enabled (failover on timeout)'}</option>
+                <option value="false">{isZh ? '关闭（超时快速返回 504）' : 'Disabled (fail-fast 504)'}</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={labelStyle}>
+                {isZh ? '请求体大小上限 (bytes，0=不限)' : 'Max Request Body (bytes, 0=off)'}
+              </label>
+              <input
+                type="number"
+                value={maxRequestBytes}
+                onChange={(e) => setMaxRequestBytes(e.target.value)}
+                placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.maxRequestBytes}` : '10485760'}
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>
+                {isZh ? '日志最大保留条数' : 'Max Request Log Entries'}
+              </label>
+              <input
+                type="number"
+                value={requestLogsMaxEntries}
+                onChange={(e) => setRequestLogsMaxEntries(e.target.value)}
+                placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.requestLogsMaxEntries}` : '100'}
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={labelStyle}>
                 {isZh ? '默认上游 User-Agent' : 'Default Upstream User-Agent'}
               </label>
               <input
@@ -400,6 +502,143 @@ export default function RuntimeSettingsPanel({ apiKey, lang }: Props) {
               />
             </div>
           </div>
+
+          {/* Collapsible Advanced: KV Sampling & Internal Tuning */}
+          <details style={{
+            padding: '0.85rem 1rem',
+            borderRadius: '10px',
+            backgroundColor: 'rgba(255, 255, 255, 0.02)',
+            border: '1px solid rgba(255, 255, 255, 0.07)',
+          }}>
+            <summary style={{ cursor: 'pointer', fontSize: '0.86rem', fontWeight: 600, color: '#cbd5e1', userSelect: 'none' }}>
+              {isZh ? '🧪 高级调优（KV 采样节流 / 流式估算 / 自托管探测间隔）' : '🧪 Advanced Tuning (KV Sampling / Stream Estimator / Probe Interval)'}
+            </summary>
+            <div style={{
+              marginTop: '0.9rem',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '0.9rem',
+            }}>
+              <div>
+                <label style={labelStyle}>
+                  {isZh ? 'KV 用量采样率 (0~1，Vercel 省命令)' : 'KV Usage Sample Rate (0–1)'}
+                </label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  value={kvUsageSampleRate}
+                  onChange={(e) => setKvUsageSampleRate(e.target.value)}
+                  placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.kvUsageSampleRate}` : '1'}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>
+                  {isZh ? '单 Key 统计模式 (KV)' : 'Per-Key Usage Mode (KV)'}
+                </label>
+                <select
+                  className="custom-select"
+                  value={kvKeyUsageMode}
+                  onChange={(e) => setKvKeyUsageMode(e.target.value as 'default' | 'off' | 'sampled' | 'full')}
+                  style={inputStyle}
+                >
+                  <option value="default">
+                    {isZh ? `跟随默认 (${defaults?.kvKeyUsageMode || 'off'})` : `Default (${defaults?.kvKeyUsageMode || 'off'})`}
+                  </option>
+                  <option value="off">off ({isZh ? '关闭省命令' : 'saves commands'})</option>
+                  <option value="sampled">sampled ({isZh ? '按采样率记录' : 'sampled'})</option>
+                  <option value="full">full ({isZh ? '全量记录' : 'full'})</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={labelStyle}>
+                  {isZh ? '单 Key 采样率 (0~1)' : 'Per-Key Sample Rate (0–1)'}
+                </label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  value={kvKeyUsageSampleRate}
+                  onChange={(e) => setKvKeyUsageSampleRate(e.target.value)}
+                  placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.kvKeyUsageSampleRate}` : '0.1'}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>
+                  {isZh ? '错误详情采样率 (0~1)' : 'Error Detail Sample Rate (0–1)'}
+                </label>
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0"
+                  max="1"
+                  value={kvErrorDetailSampleRate}
+                  onChange={(e) => setKvErrorDetailSampleRate(e.target.value)}
+                  placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.kvErrorDetailSampleRate}` : '0.2'}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>
+                  {isZh ? 'CF 流式每 Token 字节估算' : 'Stream Bytes per Token (CF)'}
+                </label>
+                <input
+                  type="number"
+                  value={streamBytesPerToken}
+                  onChange={(e) => setStreamBytesPerToken(e.target.value)}
+                  placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.streamBytesPerToken}` : '20'}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>
+                  {isZh ? 'Key 池版本检查周期 (ms)' : 'Key Pool Version TTL (ms)'}
+                </label>
+                <input
+                  type="number"
+                  value={keyPoolVersionCheckTtlMs}
+                  onChange={(e) => setKeyPoolVersionCheckTtlMs(e.target.value)}
+                  placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.keyPoolVersionCheckTtlMs}` : '30000'}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>
+                  {isZh ? '自托管探测间隔 (分钟，0=关)' : 'Self-Hosted Probe Interval (min)'}
+                </label>
+                <input
+                  type="number"
+                  value={selfHostedProbeIntervalMinutes}
+                  onChange={(e) => setSelfHostedProbeIntervalMinutes(e.target.value)}
+                  placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.selfHostedProbeIntervalMinutes}` : '60'}
+                  style={inputStyle}
+                />
+              </div>
+
+              <div>
+                <label style={labelStyle}>
+                  {isZh ? '管理台密钥最小长度' : 'Min Provider Key Length'}
+                </label>
+                <input
+                  type="number"
+                  value={apiKeyMinLength}
+                  onChange={(e) => setApiKeyMinLength(e.target.value)}
+                  placeholder={defaults ? `${isZh ? '默认' : 'Default'}: ${defaults.apiKeyMinLength}` : '20'}
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+          </details>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
             <button

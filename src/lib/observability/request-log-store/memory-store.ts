@@ -5,6 +5,7 @@
 // is available. Logs live only in the current process; restarting clears them.
 
 import type { RequestLogStore, RequestLogEntry, RequestLogFilters } from './types';
+import { getCachedRuntimeSettingsSync } from '@/lib/admin/runtime-settings';
 
 const DEFAULT_MAX_ENTRIES = 50;
 const MAX_ENTRIES_HARD_CAP = 500;
@@ -16,6 +17,10 @@ export class MemoryRequestLogStore implements RequestLogStore {
   private captureTimer: NodeJS.Timeout | null = null;
 
   private getMaxEntries(): number {
+    const configured = getCachedRuntimeSettingsSync().requestLogsMaxEntries;
+    if (typeof configured === 'number' && Number.isFinite(configured) && configured >= 1) {
+      return Math.min(Math.floor(configured), MAX_ENTRIES_HARD_CAP);
+    }
     const userMax = parseInt(process.env.REQUEST_LOGS_MAX_ENTRIES || '', 10);
     return isNaN(userMax)
       ? DEFAULT_MAX_ENTRIES

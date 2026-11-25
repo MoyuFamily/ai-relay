@@ -112,13 +112,13 @@ ai-relay/
    - 当上游因默认 SDK UA 返回 HTML 拦截页时，自动切换浏览器兼容 User-Agent 重试一次。
 4. **跨 Provider Fallback 链与超时预算**：
    - 若当前 Provider 触发熔断或所有可用 Key 均失败（401/403/429/5xx/网络异常），按配置的 Fallback 链（支持 `provider` 或 `provider:targetModel`）自动切换备用 Provider，并通过 `attemptedProviders` 集合严格阻止循环回退。
-   - **超时保护不变量**：默认上游超时 `RELAY_UPSTREAM_TIMEOUT_MS = 50000ms`，为 Vercel Serverless 60 秒硬限制预留 10 秒安全窗口；一旦单次上游请求达到超时阈值立即返回结构化 `504`，避免触发平台强制杀进程导致客户端收到非预期断连。
+   - **超时保护不变量**：默认上游超时按平台自适应（Cloudflare `90000ms`、Vercel Fluid Compute `240000ms` 预留 `300s` 函数上限安全窗口、自部署 `300000ms`），并可在 `/admin` → 运行时配置实时调整；一旦单次上游请求达到超时阈值立即返回结构化 `504`（或按配置开启 `fallbackOnTimeout` 切入备选 Provider），避免平台强杀导致客户端收到非预期断连。
 
 ### 3.3 跨协议透明转换矩阵 (`src/lib/relay/transform.ts`)
 
 | 客户端接入端点 | 上游 Provider 类型 | 处理方式 |
 |---|---|---|
-| `POST /v1/chat/completions` | OpenAI 兼容 (`headerFormat: 'openai' / 'azure'`) | 原生转发（模型名未变且在 CF 环境时支持 `rawBody` 零重序列化直通） |
+| `POST /v1/chat/completions` | OpenAI 兼容 (`headerFormat: 'openai' / 'azure'`) | 原生转发（模型名与请求体未改写时全平台支持 `rawBody` 零重序列化直通） |
 | `POST /v1/chat/completions` | Anthropic (`headerFormat: 'anthropic'`) | 自动将 OpenAI 消息/系统提示词/工具定义转为 `/v1/messages`，并将响应或 SSE 流实时转回 OpenAI chunk 格式 |
 | `POST /v1/messages` | Anthropic (`headerFormat: 'anthropic'`) | 原生直通 Anthropic Messages API（含 `thinking`、`tool_use`、缓存控制等字段） |
 | `POST /v1/messages` | OpenAI 兼容 (`headerFormat: 'openai' / 'azure'`) | 自动将 Anthropic 请求转为 OpenAI Chat Completions，并将响应或流式 delta 实时合成标准 Anthropic SSE 事件流（`message_start` → `content_block_*` → `message_delta` → `message_stop`） |
@@ -130,7 +130,7 @@ ai-relay/
 
 | 平台维度 | 关键约束 | 项目内的针对性工程实现 |
 |---|---|---|
-| **Cloudflare Workers（含旧版 Pages）** | 免费层单请求 ~10ms CPU 预算；单请求最多 6 个并发出站连接；50 次子请求上限；无全局持久环境引用 | 1. 通过请求级 `getCloudflareContext()` 动态获取 `KV` / `DB` 绑定；<br>2. `ensureD1Schema()` 在首次请求时幂等自动建表，一键部署无需手动执行迁移；<br>3. `CFKVAdapter` 实现单 Key 互斥锁、按 Key 归并的 6 并发上限队列以及 `<60s` TTL 自动抬升至 `60s`；<br>4. 流式传输采用零 `JSON.parse` 字节扫描器提取末尾 `usage`；<br>5. 每次错误重试前显式 `res.body.cancel()` 防止占满 6 个并发 Socket；<br>6. `worker.ts` 注入 `scheduled()` 执行健康探测与 D1 历史表清理。 |
-| **Vercel Serverless** | 函数最大执行时长 60s；Upstash 免费 Redis 每日命令数有限 | 1. `BatchUsageRecorder` 内存环形缓冲区聚合写入 + Lua 脚本单次原子更新多维计数；<br>2. 支持 `RELAY_KV_USAGE_SAMPLE_RATE` 与错误明细采样率；<br>3. KV 读取瞬时超时返回 `TIMEOUT_OR_ERROR` 哨兵值，保留上一次健康内存缓存而不误覆盖为空。 |
+| **Cloudflare Workers（含旧版 Pages）** | 免费层单请求 ~10ms CPU 预算；单请求最多 6 个并发出站连接；50 次子请求上限；KV 免费版每日仅 1,000 次写入 | 1. 通过请求级 `getCloudflareContext()` 动态获取 `KV` / `DB` 绑定；<br>2. `ensureD1Schema()` 配合 Isolate 级缓存首次幂等建表，请求日志与 Smart Routing 延迟均落盘 D1 避开 KV 写入上限；<br>3. `CFKVAdapter` 实现单 Key 互斥锁、按 Key 归并的 6 并发上限队列以及 `<60s` TTL 自动抬升至 `60s`；<br>4. 流式传输采用零 `JSON.parse` 字节扫描器提取末尾 `usage`，后台写入通过 `ctx.waitUntil` 异步执行；<br>5. 每次错误重试前显式 `res.body.cancel()` 防止占满 6 个并发 Socket；<br>6. `worker.ts` 注入 `scheduled()` 执行健康探测与 D1 历史表清理。 |
+| **Vercel Serverless (Fluid Compute)** | `/v1/*` 最大执行时长 `300s`，请求体硬限 `4.5MB`；Upstash 免费 Redis 每日命令数有限 | 1. `BatchUsageRecorder` 内存聚合写入 + Lua 脚本原子更新多维计数，并在流结束后通过 Next.js `after()` 异步刷盘；<br>2. 采样率（`kvUsageSampleRate`、`kvKeyUsageMode`、`kvKeyUsageSampleRate`、`kvErrorDetailSampleRate`）均可在 `/admin` 运行时配置实时调整；<br>3. 客户端断连 `AbortSignal` 级联中止上游连接（返回 `499`）；KV 读取瞬时超时返回 `TIMEOUT_OR_ERROR` 哨兵值，保留上一次健康内存缓存而不误覆盖为空。 |
 | **Docker / VPS 自部署** | 无平台托管 Cron；编排器在未配 Key 时易因健康检查 503 重启容器；单机与多实例存储需求分化 | 1. 单机默认启用 `FileKVAdapter`（内存 O(1) 读写 + `0600` 临时文件原子 `rename` 落盘，零外部依赖）；<br>2. 配置 `DATABASE_URL` 时自动切换 `PostgresKVAdapter` + `PostgresUsageStorage`，首次连接幂等自动建表；<br>3. `src/instrumentation.ts` 自动拉起 `self-hosted-scheduler`（定时健康探针、UTC 日报聚合、过期清理、Webhook 推送）；<br>4. `/health?liveness=1` 专供容器编排存活探针。 |
 | **本地 CLI (`airelay`)** | 离线可用性、云端配置安全同步、开发机零配置体验 | 1. 支持 `--config` 本地文件、环境变量、云端 Device Code 授权同步四种模式；<br>2. 设备令牌经 SHA-256 哈希存储，换取令牌强制一次性消费；<br>3. 内置 `CodexAdapter` 自动备份并注入 `~/.codex/config.toml`。 |

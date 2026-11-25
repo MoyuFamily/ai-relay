@@ -12,6 +12,7 @@ import type { D1Database } from '@cloudflare/workers-types';
 import type { RequestLogStore, RequestLogEntry, RequestLogFilters } from './types';
 import { getCFEnv, getCFEnvSync } from '@/lib/cf-env';
 import { ensureD1Schema } from '@/lib/db/d1-schema';
+import { getCachedRuntimeSettingsSync } from '@/lib/admin/runtime-settings';
 
 const CAPTURE_FLAG_KEY = 'request_logs_capture_enabled';
 const DEFAULT_MAX_ENTRIES = 200;
@@ -37,6 +38,10 @@ export class D1RequestLogStore implements RequestLogStore {
   }
 
   private getMaxEntries(): number {
+    const configured = getCachedRuntimeSettingsSync().requestLogsMaxEntries;
+    if (typeof configured === 'number' && Number.isFinite(configured) && configured >= 1) {
+      return Math.floor(configured);
+    }
     const userMax = parseInt(process.env.REQUEST_LOGS_MAX_ENTRIES || '', 10);
     return isNaN(userMax) ? this.defaultMaxEntries : Math.max(1, userMax);
   }
