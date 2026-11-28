@@ -10,6 +10,7 @@ interface ExaRawResult {
   title?: string;
   url?: string;
   text?: string;
+  highlights?: string[];
   score?: number;
   publishedDate?: string;
 }
@@ -26,7 +27,9 @@ export async function searchExa(params: WebSearchParams): Promise<WebSearchResul
     query: params.query,
     type: 'auto',
     numResults: clampCount(params.count),
-    contents: { highlights: true },
+    // Request full text (capped) so snippets are not lost. `highlights` is
+    // also requested as a fallback for results where `text` is empty.
+    contents: { text: { maxCharacters: 2000 }, highlights: true },
   };
   if (params.allowedDomains?.length) {
     body.includeDomains = params.allowedDomains.map(normalizeDomain).filter(Boolean);
@@ -59,7 +62,13 @@ export async function searchExa(params: WebSearchParams): Promise<WebSearchResul
     .map((r) => ({
       title: (r.title || r.url || '').trim(),
       url: (r.url || '').trim(),
-      snippet: (typeof r.text === 'string' ? r.text : undefined)?.slice(0, 2000) || undefined,
+      snippet:
+        (typeof r.text === 'string' && r.text.trim()
+          ? r.text
+          : Array.isArray(r.highlights) && r.highlights.length
+            ? r.highlights.join('\n')
+            : undefined
+        )?.slice(0, 2000) || undefined,
       datePublished: r.publishedDate?.trim() || undefined,
       score: typeof r.score === 'number' ? r.score : undefined,
     }));

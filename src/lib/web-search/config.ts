@@ -30,10 +30,20 @@ export const DEFAULT_WEB_SEARCH_SETTINGS: WebSearchSettings = {
   defaultPrice: 0.001,
 };
 
-let _cache: { data: WebSearchSettings; at: number } | null = null;
+interface WebSearchCacheEntry {
+  data: WebSearchSettings;
+  at: number;
+}
+
+// Keep the cache on globalThis so it is shared across route bundles in
+// OpenNext / Next.js (a module-level variable would be duplicated per bundle).
+// Mirrors the __aiRelayAdminConfigCache pattern in admin-config.ts.
+const cacheStore = ((globalThis as any).__aiRelayWebSearchCache ??= {
+  entry: null as WebSearchCacheEntry | null,
+});
 
 export function __resetWebSearchConfigCache(): void {
-  _cache = null;
+  cacheStore.entry = null;
 }
 
 function normalize(raw: unknown): WebSearchSettings {
@@ -63,7 +73,8 @@ function normalize(raw: unknown): WebSearchSettings {
 
 /** Read settings. API keys are included — caller must be admin-authenticated. */
 export async function getWebSearchSettings(forceRefresh = false): Promise<WebSearchSettings> {
-  if (!forceRefresh && _cache && Date.now() - _cache.at < CACHE_TTL_MS) return _cache.data;
+  const cached = cacheStore.entry as WebSearchCacheEntry | null;
+  if (!forceRefresh && cached && Date.now() - cached.at < CACHE_TTL_MS) return cached.data;
   try {
     const kv = await getKV();
     if (kv) {
@@ -71,7 +82,7 @@ export async function getWebSearchSettings(forceRefresh = false): Promise<WebSea
       if (raw) {
         const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
         const settings = normalize(parsed);
-        _cache = { data: settings, at: Date.now() };
+        cacheStore.entry = { data: settings, at: Date.now() };
         return settings;
       }
     }
@@ -79,7 +90,7 @@ export async function getWebSearchSettings(forceRefresh = false): Promise<WebSea
     // fall through to defaults
   }
   const settings = { ...DEFAULT_WEB_SEARCH_SETTINGS, engines: {} };
-  _cache = { data: settings, at: Date.now() };
+  cacheStore.entry = { data: settings, at: Date.now() };
   return settings;
 }
 
@@ -89,7 +100,7 @@ export async function saveWebSearchSettings(settings: WebSearchSettings): Promis
   if (!kv) throw new Error('KV storage not configured — cannot persist web search settings');
   const normalized = normalize(settings);
   await kv.set(WEB_SEARCH_PREFIX, JSON.stringify(normalized));
-  _cache = { data: normalized, at: Date.now() };
+  cacheStore.entry = { data: normalized, at: Date.now() };
   return normalized;
 }
 

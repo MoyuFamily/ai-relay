@@ -13,6 +13,8 @@ export {
   WebSearchProviderError,
   clampCount,
   normalizeDomain,
+  assertPublicHttpUrl,
+  mapUpstreamStatus,
   type WebSearchResult,
   type WebSearchParams,
   type WebFetchParams,

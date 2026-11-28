@@ -7,7 +7,7 @@
 import { NextRequest } from 'next/server';
 import { requireAuth } from '@/lib/relay/auth';
 import { resolveActiveWebSearch } from '@/lib/web-search/config';
-import { fetchWeb, WebSearchProviderError } from '@/lib/web-search';
+import { fetchWeb, WebSearchProviderError, mapUpstreamStatus } from '@/lib/web-search';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (err) {
     if (err instanceof WebSearchProviderError) {
-      const status = err.status >= 500 ? 502 : err.status;
+      const status = mapUpstreamStatus(err.status);
       return Response.json(
         { error: { message: `Web fetch upstream error: ${err.message}`, code: status, provider: err.provider, type: 'upstream_error' } },
         { status }
